@@ -263,9 +263,7 @@ if st.button("Abrir Formulario de Contato"):
     dados = df_fila[df_fila['pv_abadi'] == loja_selecionada].iloc[0].to_dict()
     editar_contato(dados)
 # Exemplo de correção no carregamento da equipe
-df_instrutores = df_equipe[df_equipe['cargo'].str.contains('Instrutor', case=False, na=False)]
-import streamlit as st
-import pandas as pd
+df_instrutores = df[df['cargo'].str.contains('Instrutor', case=False, na=False)]
 
 # Configuração da página
 st.set_page_config(page_title="CRM Operacional AmPm", layout="wide")
