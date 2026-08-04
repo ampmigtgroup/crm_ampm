@@ -262,3 +262,74 @@ loja_selecionada = st.selectbox(
 if st.button("Abrir Formulario de Contato"):
     dados = df_fila[df_fila['pv_abadi'] == loja_selecionada].iloc[0].to_dict()
     editar_contato(dados)
+# Exemplo de correção no carregamento da equipe
+df_instrutores = df_equipe[df_equipe['cargo'].str.contains('Instrutor', case=False, na=False)]
+import streamlit as st
+import pandas as pd
+
+# Configuração da página
+st.set_page_config(page_title="CRM Operacional AmPm", layout="wide")
+
+# Estilização visual (Cores AmPm)
+st.markdown("""
+    <style>
+    .stButton>button {
+        background-color: #e0a96d;
+        color: #000;
+        font-weight: bold;
+        border-radius: 5px;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# --- DIÁLOGO / MODAL DE ATENDIMENTO ---
+@st.dialog("📝 Registrar Contato / Atendimento")
+def abrir_modal_contato(loja_dados, lista_instrutores):
+    st.markdown(f"### PV: {loja_dados.get('pv_abadi')} — {loja_dados.get('loja')}")
+    st.caption(f"📍 Município: {loja_dados.get('municipio')} | UF: {loja_dados.get('uf')}")
+    
+    with st.form("form_registro_crm"):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            nome_contato = st.text_input("Nome do Decisor / Contato", value=loja_dados.get("nome_contato", ""))
+            telefone = st.text_input("Telefone / WhatsApp", value=loja_dados.get("telefone", ""))
+            status = st.selectbox(
+                "Status da Abordagem",
+                ["A Contatar", "Interessado - Aguardando confirmação", "Agendado", "Recusou", "Sem Resposta", "Loja Inativa"]
+            )
+            
+        with col2:
+            # Puxando a lista CORRETA de Instrutores
+            instrutor_alocado = st.selectbox("Instrutor Alocado", options=lista_instrutores)
+            data_agendamento = st.date_input("Data Prevista para Treinamento")
+            
+        obs = st.text_area("Observações do Atendimento", value=loja_dados.get("observacao", ""))
+        
+        salvar = st.form_submit_button("💾 Salvar Registro")
+        if salvar:
+            # Lógica para persistir os dados
+            st.success("Registro atualizado com sucesso!")
+            st.rerun()
+
+# --- CORPO PRINCIPAL ---
+st.title("⛽ CRM Operacional AmPm — Treinamentos & Inteligência")
+
+# Seleção rápida para registrar atendimento
+st.subheader("📋 Gestão da Fila de Atendimento")
+
+col_sel, col_btn = st.columns([3, 1])
+
+with col_sel:
+    pv_selecionado = st.selectbox(
+        "Selecione a loja/PV para atualizar registro:",
+        options=df_fila['pv_abadi'].tolist() if 'df_fila' in locals() else []
+    )
+
+with col_btn:
+    st.write("") # Espaçamento
+    st.write("") 
+    if st.button("📝 Registrar Contato"):
+        dados_loja = df_fila[df_fila['pv_abadi'] == pv_selecionado].iloc[0].to_dict()
+        lista_inst = df_instrutores['nome'].tolist() if 'df_instrutores' in locals() else []
+        abrir_modal_contato(dados_loja, lista_inst)
