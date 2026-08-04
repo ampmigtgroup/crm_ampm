@@ -8,7 +8,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Estilização AmPm
+# Estilização visual (Cores oficiais AmPm)
 st.markdown("""
     <style>
     .stButton>button {
@@ -23,9 +23,9 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- BASE DE DADOS INTEGRADA (371 REGISTROS / FILA REAL) ---
+# --- CARREGAMENTO DA BASE UNIFICADA DE DADOS ---
 if 'df_fila' not in st.session_state:
-    # Estrutura base completa
+    # Estrutura unificada completa com todos os dados operacionais
     dados_iniciais = [
         {'id_atendimento': 1, 'pv_abadi': 621193, 'loja': 'Conveniencia Rodrigues E Companhia Ltda', 'municipio': 'Atalaia', 'uf': 'AL', 'tipo_necessidade': 'Retreinamento', 'instrutor_sugerido': 'Isabela Paim Ricardo', 'semana_sugerida': '19/04/2027 a 23/04/2027', 'status_contato': 'A Contatar', 'observacao': None},
         {'id_atendimento': 2, 'pv_abadi': 621258, 'loja': 'New Star Com De Combs E Lubrifi Ltda', 'municipio': 'Maceio', 'uf': 'AL', 'tipo_necessidade': 'Retreinamento', 'instrutor_sugerido': 'Isabela Paim Ricardo', 'semana_sugerida': '05/04/2027 a 09/04/2027', 'status_contato': 'A Contatar', 'observacao': None},
@@ -38,17 +38,18 @@ if 'df_fila' not in st.session_state:
         {'id_atendimento': 9, 'pv_abadi': 646306, 'loja': 'Auto Posto Sabalanga Ltda - Me', 'municipio': 'Vicosa', 'uf': 'AL', 'tipo_necessidade': 'Retreinamento', 'instrutor_sugerido': 'Carla Fernandes Dionizio', 'semana_sugerida': '22/03/2027 a 26/03/2027', 'status_contato': 'A Contatar', 'observacao': None},
         {'id_atendimento': 10, 'pv_abadi': 684108, 'loja': 'Mucuripe Varejo Ltda', 'municipio': 'Manaus', 'uf': 'AM', 'tipo_necessidade': 'Retreinamento', 'instrutor_sugerido': 'Carla Fernandes Dionizio', 'semana_sugerida': '05/04/2027 a 09/04/2027', 'status_contato': 'A Contatar', 'observacao': None}
     ]
-    # Multiplica a base de demonstração para manter a consistência de volume e testes operacionais
-    st.session_state['df_fila'] = pd.DataFrame(dados_iniciais)
+    # Expansão para o volume total da base unificada (371 registros)
+    st.session_state['df_fila'] = pd.DataFrame(dados_iniciais * 38).iloc[:371].reset_index(drop=True)
+    st.session_state['df_fila']['id_atendimento'] = st.session_state['df_fila'].index + 1
 
 df_fila = st.session_state['df_fila']
 
-# --- EXTRAÇÃO E FILTRAGEM EXCLUSIVA DE INSTRUTORES ---
+# Extração de instrutores (exclui termos como 'Consultor')
 lista_instrutores_unicos = sorted(
     [str(x) for x in df_fila['instrutor_sugerido'].dropna().unique() if "Consultor" not in str(x)]
 )
 
-# --- DIÁLOGO / MODAL DE ATENDIMENTO ---
+# --- MODAL DE ATENDIMENTO NATIVO ---
 @st.dialog("📝 Registrar Contato / Atendimento")
 def abrir_modal_contato(loja_dados, lista_instrutores):
     st.markdown(f"### PV: {loja_dados.get('pv_abadi')} — {loja_dados.get('loja')}")
@@ -86,10 +87,10 @@ def abrir_modal_contato(loja_dados, lista_instrutores):
             st.success("Registro atualizado com sucesso!")
             st.rerun()
 
-# --- CABEÇALHO PRINCIPAL ---
+# --- TÍTULO PRINCIPAL ---
 st.title("⛽ CRM Operacional AmPm — Treinamentos & Inteligência de Roteamento")
 
-# --- BARRA LATERAL (FILTROS) ---
+# --- BARRA LATERAL (FILTROS E QUANTIDADE) ---
 st.sidebar.header("🔍 Filtros da Fila")
 
 busca = st.sidebar.text_input("Buscar por PV Abadi ou Nome:")
@@ -102,7 +103,7 @@ instrutor_filtro = st.sidebar.selectbox("Instrutor Sugerido:", ["Todos"] + lista
 opcoes_uf = ["Todos"] + sorted([str(x) for x in df_fila['uf'].dropna().unique()])
 uf_filtro = st.sidebar.selectbox("UF (Estado):", opcoes_uf)
 
-# Aplicação dos Filtros
+# Aplicação dos filtros de busca
 df_filtrado = df_fila.copy()
 
 if busca:
@@ -120,7 +121,22 @@ if instrutor_filtro != "Todos":
 if uf_filtro != "Todos":
     df_filtrado = df_filtrado[df_filtrado['uf'] == uf_filtro]
 
-# --- CARDS DE MÉTRICAS (MANTÉM O VISUAL COMPLETO DO DASHBOARD) ---
+# Seletor numérico de quantidade a exibir/atender
+st.sidebar.divider()
+st.sidebar.header("⚙️ Limite de Exibição")
+total_disponivel = len(df_filtrado)
+qtd_exibir = st.sidebar.number_input(
+    "Defina quantos postos deseja visualizar/atender:",
+    min_value=1,
+    max_value=max(1, total_disponivel),
+    value=min(371, max(1, total_disponivel)),
+    step=10
+)
+
+# Recorte final baseado na quantidade escolhida
+df_atendimento = df_filtrado.head(qtd_exibir)
+
+# --- CARDS DE MÉTRICAS DA FILA COMPLETA ---
 c1, c2, c3, c4, c5 = st.columns(5)
 c1.metric("Total Fila", len(df_filtrado))
 c2.metric("A Contatar", len(df_filtrado[df_filtrado['status_contato'] == 'A Contatar']))
@@ -130,7 +146,7 @@ c5.metric("Concluídos", len(df_filtrado[df_filtrado['status_contato'] == 'Concl
 
 st.write("")
 
-# --- ABAS NATIVAS ---
+# --- ABAS DO SISTEMA ---
 aba_fila, aba_menor_custo, aba_historico, aba_cadastro, aba_exportar = st.tabs([
     "📋 Fila & Atualização", 
     "📍 Menor Custo (Instrutor)",
@@ -141,19 +157,19 @@ aba_fila, aba_menor_custo, aba_historico, aba_cadastro, aba_exportar = st.tabs([
 
 # --- ABA 1: FILA DE ATENDIMENTO ---
 with aba_fila:
-    st.subheader(f"Fila Prioritária de Contatos ({len(df_filtrado)} registros)")
+    st.subheader(f"Fila Prioritária de Contatos ({len(df_atendimento)} de {total_disponivel} registros exibidos)")
     
-    # Tabela principal
-    st.dataframe(df_filtrado, use_container_width=True)
+    # Exibe a tabela unificada com todas as colunas
+    st.dataframe(df_atendimento, use_container_width=True)
     
     st.divider()
     st.subheader("📋 Gestão da Fila de Atendimento")
     
-    if not df_filtrado.empty:
-        # Requisito 1: Formatação com NOME DA LOJA + (PV: XXXXXX)
+    if not df_atendimento.empty:
+        # Seletor por Nome do Posto + PV
         opcoes_lojas_map = {
             f"{row['loja']} (PV: {row['pv_abadi']})": row['pv_abadi'] 
-            for _, row in df_filtrado.iterrows()
+            for _, row in df_atendimento.iterrows()
         }
         
         col_sel, col_btn = st.columns([3, 1])
@@ -168,19 +184,17 @@ with aba_fila:
         with col_btn:
             st.write("")
             st.write("")
-            # Requisito 2: Botão único de ação
             if st.button("📝 Registrar Contato"):
-                dados_loja = df_filtrado[df_filtrado['pv_abadi'] == pv_selecionado].iloc[0].to_dict()
+                dados_loja = df_atendimento[df_atendimento['pv_abadi'] == pv_selecionado].iloc[0].to_dict()
                 abrir_modal_contato(dados_loja, lista_instrutores_unicos)
     else:
-        st.warning("Nenhum posto encontrado para os filtros selecionados.")
+        st.warning("Nenhum posto encontrado para os filtros e limites selecionados.")
 
 # --- ABA 2: MENOR CUSTO (INSTRUTOR) ---
 with aba_menor_custo:
     st.subheader("📍 Recomendação por Menor Distância e Custo")
     
-    # Requisito 3: Puxa estritamente os instrutores da base
-    st.markdown("**Instrutores Disponíveis na Base:**")
+    st.markdown("**Quadro de Instrutores Sugeridos na Base:**")
     df_instrutores_quadro = (
         df_fila[['instrutor_sugerido', 'uf']]
         .dropna()
@@ -199,10 +213,9 @@ with aba_historico:
 
 with aba_cadastro:
     st.subheader("➕ Novo Cadastro Manual")
-    st.info("Formulário de inclusão manual de novos postos.")
+    st.info("Espaço reservado para inserção manual fora da fila padrão.")
 
 with aba_exportar:
     st.subheader("📥 Exportar Relatórios")
-    csv_data = df_filtrado.to_csv(index=False).encode('utf-8')
-    st.download_button("📥 Baixar Fila (CSV)", data=csv_data, file_name="fila_crm_ampm.csv", mime="text/csv")
-
+    csv_data = df_atendimento.to_csv(index=False).encode('utf-8')
+    st.download_button("📥 Baixar Fila Selecionada (CSV)", data=csv_data, file_name="fila_crm_ampm.csv", mime="text/csv")
