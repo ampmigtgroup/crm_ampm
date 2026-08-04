@@ -263,8 +263,13 @@ if st.button("Abrir Formulario de Contato"):
     dados = df_fila[df_fila['pv_abadi'] == loja_selecionada].iloc[0].to_dict()
     editar_contato(dados)
 # Exemplo de correção no carregamento da equipe
-df_instrutores = df[df['cargo'].str.contains('Instrutor', case=False, na=False)]
-
+# Busca a lista de instrutores diretamente dos dados carregados na fila
+if 'df_fila' in locals() and 'instrutor_sugerido' in df_fila.columns:
+    lista_instrutores = df_fila['instrutor_sugerido'].dropna().unique().tolist()
+elif 'df_base' in locals() and 'instrutor_sugerido' in df_base.columns:
+    lista_instrutores = df_base['instrutor_sugerido'].dropna().unique().tolist()
+else:
+    lista_instrutores = ["Isabela Paim Ricardo", "Carla Fernandes Dionizio"] # Nomes de fallback baseados no seu painel
 # Configuração da página
 st.set_page_config(page_title="CRM Operacional AmPm", layout="wide")
 
