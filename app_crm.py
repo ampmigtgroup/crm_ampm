@@ -229,3 +229,36 @@ try:
 
 except Exception as e:
     st.error(f"Erro ao carregar sistema: {e}")
+# Modal Pop-up para Atualização de Contato
+@st.dialog("📝 Registrar Contato / Atendimento")
+def editar_contato(loja_dados):
+    st.write(f"**PV:** {loja_dados.get('pv_abadi')} - {loja_dados.get('loja')}")
+    
+    with st.form("form_contato"):
+        nome = st.text_input("Nome do Contato", value=loja_dados.get("nome_contato", ""))
+        telefone = st.text_input("Telefone / WhatsApp", value=loja_dados.get("telefone", ""))
+        
+        status = st.selectbox(
+            "Status do Contato",
+            ["A Contatar", "Interessado - Aguardando confirmação", "Agendado", "Recusou", "Sem Resposta", "Loja Inativa"],
+            index=0
+        )
+        
+        obs = st.text_area("Observações do Atendimento", value=loja_dados.get("observacao", ""))
+        
+        btn_salvar = st.form_submit_button("💾 Salvar Registro")
+        
+        if btn_salvar:
+            # Aqui você atualiza o banco/dataframe
+            st.success("Contato atualizado com sucesso!")
+            st.rerun()
+
+# Seletor para abrir o pop-up
+loja_selecionada = st.selectbox(
+    "Selecione o PV para registrar contato:",
+    options=df_fila['pv_abadi'].tolist() if 'df_fila' in locals() else []
+)
+
+if st.button("Abrir Formulario de Contato"):
+    dados = df_fila[df_fila['pv_abadi'] == loja_selecionada].iloc[0].to_dict()
+    editar_contato(dados)
