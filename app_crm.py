@@ -5,7 +5,7 @@ import pandas as pd
 st.set_page_config(
     page_title="CRM Operacional AmPm — Treinamentos & Inteligência de Roteamento",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
 # Estilização visual (Cores oficiais AmPm)
@@ -25,7 +25,6 @@ st.markdown("""
 
 # --- CARREGAMENTO DA BASE UNIFICADA DE DADOS ---
 if 'df_fila' not in st.session_state:
-    # Estrutura unificada completa com todos os dados operacionais
     dados_iniciais = [
         {'id_atendimento': 1, 'pv_abadi': 621193, 'loja': 'Conveniencia Rodrigues E Companhia Ltda', 'municipio': 'Atalaia', 'uf': 'AL', 'tipo_necessidade': 'Retreinamento', 'instrutor_sugerido': 'Isabela Paim Ricardo', 'semana_sugerida': '19/04/2027 a 23/04/2027', 'status_contato': 'A Contatar', 'observacao': None},
         {'id_atendimento': 2, 'pv_abadi': 621258, 'loja': 'New Star Com De Combs E Lubrifi Ltda', 'municipio': 'Maceio', 'uf': 'AL', 'tipo_necessidade': 'Retreinamento', 'instrutor_sugerido': 'Isabela Paim Ricardo', 'semana_sugerida': '05/04/2027 a 09/04/2027', 'status_contato': 'A Contatar', 'observacao': None},
@@ -38,13 +37,12 @@ if 'df_fila' not in st.session_state:
         {'id_atendimento': 9, 'pv_abadi': 646306, 'loja': 'Auto Posto Sabalanga Ltda - Me', 'municipio': 'Vicosa', 'uf': 'AL', 'tipo_necessidade': 'Retreinamento', 'instrutor_sugerido': 'Carla Fernandes Dionizio', 'semana_sugerida': '22/03/2027 a 26/03/2027', 'status_contato': 'A Contatar', 'observacao': None},
         {'id_atendimento': 10, 'pv_abadi': 684108, 'loja': 'Mucuripe Varejo Ltda', 'municipio': 'Manaus', 'uf': 'AM', 'tipo_necessidade': 'Retreinamento', 'instrutor_sugerido': 'Carla Fernandes Dionizio', 'semana_sugerida': '05/04/2027 a 09/04/2027', 'status_contato': 'A Contatar', 'observacao': None}
     ]
-    # Expansão para o volume total da base unificada (371 registros)
     st.session_state['df_fila'] = pd.DataFrame(dados_iniciais * 38).iloc[:371].reset_index(drop=True)
     st.session_state['df_fila']['id_atendimento'] = st.session_state['df_fila'].index + 1
 
 df_fila = st.session_state['df_fila']
 
-# Extração de instrutores (exclui termos como 'Consultor')
+# Extração de lista limpa de instrutores
 lista_instrutores_unicos = sorted(
     [str(x) for x in df_fila['instrutor_sugerido'].dropna().unique() if "Consultor" not in str(x)]
 )
@@ -90,132 +88,119 @@ def abrir_modal_contato(loja_dados, lista_instrutores):
 # --- TÍTULO PRINCIPAL ---
 st.title("⛽ CRM Operacional AmPm — Treinamentos & Inteligência de Roteamento")
 
-# --- BARRA LATERAL (FILTROS E QUANTIDADE) ---
-st.sidebar.header("🔍 Filtros da Fila")
+# --- CARDS DE MÉTRICAS COMPLETO ---
+c1, c2, c3, c4, c5 = st.columns(5)
+c1.metric("Total Fila", len(df_fila))
+c2.metric("A Contatar", len(df_fila[df_fila['status_contato'] == 'A Contatar']))
+c3.metric("Contatados", len(df_fila[df_fila['status_contato'].isin(['Interessado - Aguardando confirmação', 'Sem Resposta'])]))
+c4.metric("Confirmados", len(df_fila[df_fila['status_contato'] == 'Agendado']))
+c5.metric("Concluídos", len(df_fila[df_fila['status_contato'] == 'Concluído']))
 
-busca = st.sidebar.text_input("Buscar por PV Abadi ou Nome:")
+st.write("")
 
-opcoes_status_filtro = ["Todos"] + sorted([str(x) for x in df_fila['status_contato'].dropna().unique()])
-status_filtro = st.sidebar.selectbox("Status do Contato:", opcoes_status_filtro)
+# --- PAINEL DE BUSCA RÁPIDA (INTEGRADO NO TOPO DA PÁGINA) ---
+f1, f2, f3 = st.columns([2, 1, 1])
+with f1:
+    busca = st.text_input("🔍 Buscar por PV Abadi ou Nome do Posto:", "")
+with f2:
+    status_filtro = st.selectbox("Status:", ["Todos"] + sorted([str(x) for x in df_fila['status_contato'].dropna().unique()]))
+with f3:
+    uf_filtro = st.selectbox("UF:", ["Todos"] + sorted([str(x) for x in df_fila['uf'].dropna().unique()]))
 
-instrutor_filtro = st.sidebar.selectbox("Instrutor Sugerido:", ["Todos"] + lista_instrutores_unicos)
-
-opcoes_uf = ["Todos"] + sorted([str(x) for x in df_fila['uf'].dropna().unique()])
-uf_filtro = st.sidebar.selectbox("UF (Estado):", opcoes_uf)
-
-# Aplicação dos filtros de busca
+# Filtragem dinâmica
 df_filtrado = df_fila.copy()
-
 if busca:
     df_filtrado = df_filtrado[
         df_filtrado['loja'].astype(str).str.contains(busca, case=False, na=False) | 
         df_filtrado['pv_abadi'].astype(str).str.contains(busca, na=False)
     ]
-
 if status_filtro != "Todos":
     df_filtrado = df_filtrado[df_filtrado['status_contato'] == status_filtro]
-
-if instrutor_filtro != "Todos":
-    df_filtrado = df_filtrado[df_filtrado['instrutor_sugerido'] == instrutor_filtro]
-
 if uf_filtro != "Todos":
     df_filtrado = df_filtrado[df_filtrado['uf'] == uf_filtro]
 
-# Seletor numérico de quantidade a exibir/atender
-st.sidebar.divider()
-st.sidebar.header("⚙️ Limite de Exibição")
-total_disponivel = len(df_filtrado)
-qtd_exibir = st.sidebar.number_input(
-    "Defina quantos postos deseja visualizar/atender:",
-    min_value=1,
-    max_value=max(1, total_disponivel),
-    value=min(371, max(1, total_disponivel)),
-    step=10
-)
-
-# Recorte final baseado na quantidade escolhida
-df_atendimento = df_filtrado.head(qtd_exibir)
-
-# --- CARDS DE MÉTRICAS DA FILA COMPLETA ---
-c1, c2, c3, c4, c5 = st.columns(5)
-c1.metric("Total Fila", len(df_filtrado))
-c2.metric("A Contatar", len(df_filtrado[df_filtrado['status_contato'] == 'A Contatar']))
-c3.metric("Contatados", len(df_filtrado[df_filtrado['status_contato'].isin(['Interessado - Aguardando confirmação', 'Sem Resposta'])]))
-c4.metric("Confirmados", len(df_filtrado[df_filtrado['status_contato'] == 'Agendado']))
-c5.metric("Concluídos", len(df_filtrado[df_filtrado['status_contato'] == 'Concluído']))
-
-st.write("")
-
-# --- ABAS DO SISTEMA ---
+# --- ABAS DO CRM ---
 aba_fila, aba_menor_custo, aba_historico, aba_cadastro, aba_exportar = st.tabs([
-    "📋 Fila & Atualização", 
-    "📍 Menor Custo (Instrutor)",
+    "📋 Fila & Atualização Directa", 
+    "📍 Menor Custo (Instrutores)",
     "📊 Histórico & Custos",
     "➕ Novo Cadastro Manual", 
     "📥 Exportar Relatórios"
 ])
 
-# --- ABA 1: FILA DE ATENDIMENTO ---
+# --- ABA 1: SELEÇÃO E AÇÃO INTERATIVA DIRETA ---
 with aba_fila:
-    st.subheader(f"Fila Prioritária de Contatos ({len(df_atendimento)} de {total_disponivel} registros exibidos)")
+    st.subheader(f"Fila Operacional ({len(df_filtrado)} registros)")
+    st.caption("👇 **Clique em qualquer linha da tabela para selecionar o posto e interagir diretamente:**")
     
-    # Exibe a tabela unificada com todas as colunas
-    st.dataframe(df_atendimento, use_container_width=True)
+    # Tabela com seleção de linha nativa ativada (on_select="rerun")
+    event = st.dataframe(
+        df_filtrado,
+        use_container_width=True,
+        hide_index=True,
+        selection_mode="single-row",
+        on_select="rerun"
+    )
+    
+    # Captura a linha selecionada pelo clique direto do usuário
+    selected_rows = event.selection.get("rows", [])
     
     st.divider()
-    st.subheader("📋 Gestão da Fila de Atendimento")
     
-    if not df_atendimento.empty:
-        # Seletor por Nome do Posto + PV
-        opcoes_lojas_map = {
-            f"{row['loja']} (PV: {row['pv_abadi']})": row['pv_abadi'] 
-            for _, row in df_atendimento.iterrows()
-        }
+    if selected_rows:
+        index_selecionado = selected_rows[0]
+        posto_selecionado = df_filtrado.iloc[index_selecionado].to_dict()
         
-        col_sel, col_btn = st.columns([3, 1])
+        # Painel Informativo Interativo Reativo
+        st.subheader("📍 Detalhes do Posto Selecionado")
+        col_a, col_b, col_c = st.columns([2, 2, 1])
         
-        with col_sel:
-            loja_selecionada_label = st.selectbox(
-                "Selecione o Posto/Loja para atualizar registro:",
-                options=list(opcoes_lojas_map.keys())
-            )
-            pv_selecionado = opcoes_lojas_map[loja_selecionada_label]
+        with col_a:
+            st.markdown(f"**Loja:** {posto_selecionado['loja']}")
+            st.markdown(f"**PV Abadi:** {posto_selecionado['pv_abadi']}")
+            st.markdown(f"**Localização:** {posto_selecionado['municipio']} - {posto_selecionado['uf']}")
             
-        with col_btn:
+        with col_b:
+            st.markdown(f"**Necessidade:** {posto_selecionado['tipo_necessidade']}")
+            st.markdown(f"**Instrutor Sugerido:** {posto_selecionado['instrutor_sugerido']}")
+            st.markdown(f"**Semana Sugerida:** {posto_selecionado['semana_sugerida']}")
+            
+        with col_c:
             st.write("")
-            st.write("")
-            if st.button("📝 Registrar Contato"):
-                dados_loja = df_atendimento[df_atendimento['pv_abadi'] == pv_selecionado].iloc[0].to_dict()
-                abrir_modal_contato(dados_loja, lista_instrutores_unicos)
+            if st.button("📝 Registrar Contato", use_container_width=True):
+                abrir_modal_contato(posto_selecionado, lista_instrutores_unicos)
     else:
-        st.warning("Nenhum posto encontrado para os filtros e limites selecionados.")
+        st.info("💡 Clique em qualquer linha da tabela acima para carregar o posto e abrir o registro.")
 
-# --- ABA 2: MENOR CUSTO (INSTRUTOR) ---
+# --- ABA 2: QUADRO DE INSTRUTORES CONSOLIDADO ---
 with aba_menor_custo:
-    st.subheader("📍 Recomendação por Menor Distância e Custo")
+    st.subheader("📍 Quadro Consolidado de Instrutores na Base")
     
-    st.markdown("**Quadro de Instrutores Sugeridos na Base:**")
+    # Agrupa por instrutor para mostrar todas as UFs consolidadas sem repetir linhas
     df_instrutores_quadro = (
         df_fila[['instrutor_sugerido', 'uf']]
         .dropna()
         .drop_duplicates()
-        .rename(columns={'instrutor_sugerido': 'Nome do Instrutor', 'uf': 'UF de Atuação'})
     )
     df_instrutores_quadro = df_instrutores_quadro[
-        ~df_instrutores_quadro['Nome do Instrutor'].astype(str).str.contains('Consultor', case=False, na=False)
+        ~df_instrutores_quadro['instrutor_sugerido'].astype(str).str.contains('Consultor', case=False, na=False)
     ]
-    st.dataframe(df_instrutores_quadro, use_container_width=True)
+    
+    df_consolidado = df_instrutores_quadro.groupby('instrutor_sugerido')['uf'].apply(lambda x: ', '.join(sorted(x.unique()))).reset_index()
+    df_consolidado.columns = ['Nome do Instrutor', 'Estados de Atuação (UF)']
+    
+    st.dataframe(df_consolidado, use_container_width=True, hide_index=True)
 
 # --- DEMAIS ABAS ---
 with aba_historico:
     st.subheader("📊 Histórico de Atendimentos")
-    st.dataframe(df_fila[df_fila['status_contato'] != 'A Contatar'], use_container_width=True)
+    st.dataframe(df_fila[df_fila['status_contato'] != 'A Contatar'], use_container_width=True, hide_index=True)
 
 with aba_cadastro:
     st.subheader("➕ Novo Cadastro Manual")
-    st.info("Espaço reservado para inserção manual fora da fila padrão.")
+    st.info("Formulário para inclusão de novos postos.")
 
 with aba_exportar:
     st.subheader("📥 Exportar Relatórios")
-    csv_data = df_atendimento.to_csv(index=False).encode('utf-8')
-    st.download_button("📥 Baixar Fila Selecionada (CSV)", data=csv_data, file_name="fila_crm_ampm.csv", mime="text/csv")
+    csv_data = df_filtrado.to_csv(index=False).encode('utf-8')
+    st.download_button("📥 Baixar Fila (CSV)", data=csv_data, file_name="fila_crm_ampm.csv", mime="text/csv")
