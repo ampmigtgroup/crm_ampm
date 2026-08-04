@@ -105,8 +105,9 @@ try:
         if not df_filtrado.empty:
             st.divider()
             st.subheader("📝 Atualizar Agendamento / Status")
-            lista_atendimentos = df_filtrado['id_atendimento'].tolist()
-            id_selecionado = st.selectbox("Selecione o ID para editar:", lista_atendimentos)
+     # Puxa a lista única de instrutores
+            lista_instrutores_filtro = df_filtrado['instrutor_sugerido'].dropna().unique().tolist()
+            instrutor_selecionado = st.selectbox("Selecione o Instrutor:", lista_instrutores_filtro)
             item = df_filtrado[df_filtrado['id_atendimento'] == id_selecionado].iloc[0]
             
             col1, col2, col3 = st.columns(3)
@@ -253,16 +254,6 @@ def editar_contato(loja_dados):
             st.success("Contato atualizado com sucesso!")
             st.rerun()
 
-# Seletor para abrir o pop-up
-loja_selecionada = st.selectbox(
-    "Selecione o PV para registrar contato:",
-    options=df_fila['pv_abadi'].tolist() if 'df_fila' in locals() else []
-)
-
-if st.button("Abrir Formulario de Contato"):
-    dados = df_fila[df_fila['pv_abadi'] == loja_selecionada].iloc[0].to_dict()
-    editar_contato(dados)
-# Exemplo de correção no carregamento da equipe
 # Busca a lista de instrutores diretamente dos dados carregados na fila
 if 'df_fila' in locals() and 'instrutor_sugerido' in df_fila.columns:
     lista_instrutores = df_fila['instrutor_sugerido'].dropna().unique().tolist()
@@ -324,15 +315,14 @@ st.subheader("📋 Gestão da Fila de Atendimento")
 col_sel, col_btn = st.columns([3, 1])
 
 with col_sel:
-    pv_selecionado = st.selectbox(
-        "Selecione a loja/PV para atualizar registro:",
-        options=df_fila['pv_abadi'].tolist() if 'df_fila' in locals() else []
+    # Formata o texto para exibir Nome da Loja + PV
+    opcoes_lojas = {f"{row['loja']} (PV: {row['pv_abadi']})": row['pv_abadi'] for _, row in df_fila.iterrows()}
+    loja_selecionada_texto = st.selectbox(
+        "Selecione o Posto/Loja para atualizar registro:",
+        options=list(opcoes_lojas.keys())
     )
-
-with col_btn:
-    st.write("") # Espaçamento
-    st.write("") 
-    if st.button("📝 Registrar Contato"):
+    pv_selecionado = opcoes_lojas[loja_selecionada_texto]
+if st.button("📝 Registrar Contato"):
         dados_loja = df_fila[df_fila['pv_abadi'] == pv_selecionado].iloc[0].to_dict()
-        lista_inst = df_instrutores['nome'].tolist() if 'df_instrutores' in locals() else []
+        lista_inst = df_fila['instrutor_sugerido'].dropna().unique().tolist()
         abrir_modal_contato(dados_loja, lista_inst)
