@@ -105,10 +105,10 @@ try:
         if not df_filtrado.empty:
             st.divider()
             st.subheader("📝 Atualizar Agendamento / Status")
-     # Puxa a lista única de instrutores
-            lista_instrutores_filtro = df_filtrado['instrutor_sugerido'].dropna().unique().tolist()
-            instrutor_selecionado = st.selectbox("Selecione o Instrutor:", lista_instrutores_filtro)
-            item = df_filtrado[df_filtrado['id_atendimento'] == id_selecionado].iloc[0]
+lista_atendimentos = df_filtrado['id_atendimento'].tolist()
+if lista_atendimentos:
+    id_selecionado = st.selectbox("Selecione o ID do atendimento:", lista_atendimentos)
+    item = df_filtrado[df_filtrado['id_atendimento'] == id_selecionado].iloc[0]
             
             col1, col2, col3 = st.columns(3)
             with col1:
