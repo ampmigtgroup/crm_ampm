@@ -240,7 +240,7 @@ elif modulo == "🔍 PROCV & Gestão de Lojas":
                 st.markdown("</div>", unsafe_allow_html=True)
 
 # ==========================================
-# MÓDULO 3: MENOR CUSTO & GEODESLOCAMENTO (TOP 3) + MAPA DE ROTA
+# MÓDULO 3: MENOR CUSTO & GEODESLOCAMENTO (TOP 3) + MINI MAPA
 # ==========================================
 elif modulo == "📍 Menor Custo & Geodeslocamento (Top 3)":
     st.title("📍 Otimizador de Deslocamento & Rotas — Top 3 Instrutores")
@@ -268,7 +268,6 @@ elif modulo == "📍 Menor Custo & Geodeslocamento (Top 3)":
             
             for idx, (_, row) in enumerate(top_3.iterrows()):
                 dist = row['Distancia_km_linha_reta']
-                # Classificação automática do meio de transporte
                 if dist > 300:
                     modal = "✈️ Aéreo (Avião + Conexão)"
                     badge = "<span class='modal-badge-aereo'>Viagem Aérea</span>"
@@ -288,36 +287,50 @@ elif modulo == "📍 Menor Custo & Geodeslocamento (Top 3)":
             
             st.divider()
             
-            # --- MAPA DE VISUALIZAÇÃO DE DESLOCAMENTO ---
-            st.subheader("🗺️ Mapa Visual de Deslocamento & Rotas")
+            # --- MINI MAPA DE VISUALIZAÇÃO DE VIAGEM DO INSTRUTOR ---
+            st.subheader("🗺️ Mini Mapa de Viagem do Instrutor")
             
-            instrutor_opcoes = top_3['Instrutor_Sugerido'].tolist()
-            inst_selecionado = st.radio(
-                "Selecione um instrutor para traçar a rota visual no mapa:",
-                instrutor_opcoes,
-                horizontal=True
-            )
+            col_selecao, col_mapa = st.columns([1, 2])
             
-            dados_rota = top_3[top_3['Instrutor_Sugerido'] == inst_selecionado].iloc[0]
-            
-            # Monta dataframe de coordenadas para o mapa do Streamlit
-            lat_loja = dados_rota.get('Lat_Loja')
-            lon_loja = dados_rota.get('Lon_Loja')
-            lat_inst = dados_rota.get('Lat_Instrutor')
-            lon_inst = dados_rota.get('Lon_Instrutor')
-            
-            if pd.notna(lat_loja) and pd.notna(lon_loja) and pd.notna(lat_inst) and pd.notna(lon_inst):
-                df_mapa = pd.DataFrame({
-                    'lat': [lat_loja, lat_inst],
-                    'lon': [lon_loja, lon_inst],
-                    'Ponto': [f"Loja: {dados_rota['Razao_Social']}", f"Instrutor: {dados_rota['Instrutor_Sugerido']}"]
-                })
+            with col_selecao:
+                st.markdown("##### 🔍 Selecione o Instrutor:")
+                instrutor_opcoes = top_3['Instrutor_Sugerido'].tolist()
+                inst_selecionado = st.radio(
+                    "Clique para gerar a rota:",
+                    instrutor_opcoes
+                )
                 
-                st.map(df_mapa, zoom=5)
-                st.caption(f"🔵 Marcadores no mapa: Posto ({dados_rota['Municipio_Loja']}/{dados_rota['UF_Loja']}) e Instrutor ({dados_rota['Cidade_Instrutor']}/{dados_rota['UF_Instrutor']})")
-            else:
-                st.info("ℹ️ Coordenadas de latitude/longitude do posto ou instrutor selecionado indisponíveis para plotagem.")
+                dados_rota = top_3[top_3['Instrutor_Sugerido'] == inst_selecionado].iloc[0]
+                
+                dist_sel = dados_rota['Distancia_km_linha_reta']
+                modal_sel = "✈️ Aéreo (Avião)" if dist_sel > 300 else "🚗 Terrestre (Uber / Carro)"
+                
+                st.info(f"""
+                **Resumo da Rota:**
+                - **Origem:** {dados_rota['Cidade_Instrutor']}/{dados_rota['UF_Instrutor']}
+                - **Destino:** {dados_rota['Municipio_Loja']}/{dados_rota['UF_Loja']}
+                - **Distância:** `{dist_sel} km`
+                - **Meio Sugerido:** {modal_sel}
+                """)
+                
+            with col_mapa:
+                lat_loja = dados_rota.get('Lat_Loja')
+                lon_loja = dados_rota.get('Lon_Loja')
+                lat_inst = dados_rota.get('Lat_Instrutor')
+                lon_inst = dados_rota.get('Lon_Instrutor')
+                
+                if pd.notna(lat_loja) and pd.notna(lon_loja) and pd.notna(lat_inst) and pd.notna(lon_inst):
+                    df_mini_mapa = pd.DataFrame({
+                        'lat': [lat_inst, lat_loja],
+                        'lon': [lon_inst, lon_loja]
+                    })
+                    
+                    st.map(df_mini_mapa, zoom=5, use_container_width=True)
+                    st.caption(f"🗺️ **Mini Mapa de Trajeto**: Partida de {dados_rota['Cidade_Instrutor']} até o Posto {dados_rota['Razao_Social']} ({dados_rota['Municipio_Loja']}).")
+                else:
+                    st.warning("⚠️ Coordenadas geográficas indisponíveis para este trajeto.")
 
+            st.divider()
             st.markdown("### 📊 Tabela de Comparação Logística")
             st.dataframe(
                 top_3[['Ranking_Proximidade', 'Instrutor_Sugerido', 'Cidade_Instrutor', 'UF_Instrutor', 'Distancia_km_linha_reta']],
@@ -447,4 +460,3 @@ elif modulo == "👔 Gestão de Instrutores":
     st.title("👔 Relação de Instrutores")
     if not df_instrutores.empty:
         st.dataframe(df_instrutores[['NOME_COMPLETO', 'STATUS', 'TELEFONE', 'EMAIL', 'Cidade', 'UF']], use_container_width=True, hide_index=True)
-
