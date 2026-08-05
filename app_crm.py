@@ -335,6 +335,7 @@ elif modulo == "📋 Pipeline Kanban":
                     st.write(f"**Cidade:** {item['Municipio']}/{item['UF']}")
                     st.write(f"**Necessidade:** {item['Tipo_Necessidade']}")
                     st.write(f"**Treinandos:** {item.get('Qtd_Funcionarios', 0)} pessoas")
+                    st.write(f"**Instrutor:** {item.get('Instrutor_Sugerido', 'Pendente')}")
                     
                     mudar_status = st.selectbox(
                         "Alterar Status:",
@@ -481,7 +482,7 @@ elif modulo == "📍 Calculadora & Otimizador de Custos":
                 st.success(f"💡 **Economia Eficiente:** Optar pelo **1º Instrutor Recomendado** garante uma economia estimada de **R$ {economia:.2f}** nesta operação.")
 
 # ==========================================
-# MÓDULO 5: CALL CENTER & TIMELINE WHATSAPP (ENRIQUECIDO)
+# MÓDULO 5: CALL CENTER & TIMELINE WHATSAPP (INSTRUTOR EDITÁVEL)
 # ==========================================
 elif modulo == "📞 Call Center & Timeline WhatsApp":
     if not df_base.empty:
@@ -518,9 +519,9 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                             </div>
                             <div style="flex: 1; min-width: 200px;">
                                 <p>🎯 <b>Necessidade:</b> <span class="badge-info">{posto.get('Tipo_Necessidade', '-')}</span></p>
-                                <p>👨‍🏫 <b>Instrutor Sugerido:</b> {posto.get('Instrutor_Sugerido', '-')}</p>
                                 <p>⏱️ <b>Dias sem Treinamento:</b> {posto.get('Dias_desde_Ultimo_Treinamento', 'N/A')}</p>
                                 <p>📅 <b>Inauguração Prevista:</b> {posto.get('Previsão Inauguração', 'N/A')}</p>
+                                <p>💡 <b>Sugestão Logística:</b> {posto.get('Instrutor_Sugerido', 'Pendente')}</p>
                             </div>
                         </div>
                     </div>
@@ -532,15 +533,24 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                     link_wa = f"https://wa.me/55{tel_limpo}?text={msg.replace(' ', '%20')}"
                     st.markdown(f"📲 **[Clique aqui para chamar no WhatsApp Direct]( {link_wa} )**")
 
-                # --- FORMULÁRIO RÁPIDO DO ATENDENTE ---
-                with st.form("form_callcenter_enriquecido"):
-                    st.markdown("#### ✍️ Registros Rápidos da Ligação")
+                # Lista para seleção do Instrutor
+                lista_instrutores = ["Pendente de Alocação"]
+                if not df_instrutores.empty and 'NOME_COMPLETO' in df_instrutores.columns:
+                    lista_instrutores += sorted(df_instrutores['NOME_COMPLETO'].dropna().unique().tolist())
+                
+                instrutor_atual = str(posto.get('Instrutor_Sugerido', 'Pendente de Alocação'))
+                idx_instrutor = lista_instrutores.index(instrutor_atual) if instrutor_atual in lista_instrutores else 0
+
+                # --- FORMULÁRIO DO ATENDENTE (AGORA COM INSTRUTOR MANUALLY EDITÁVEL) ---
+                with st.form("form_callcenter_editavel"):
+                    st.markdown("#### ✍️ Registros do Atendimento")
                     
                     col_f1, col_f2 = st.columns(2)
                     with col_f1:
                         nome_c = st.text_input("👤 Nome do Responsável na Loja:", value=str(posto.get('Nome_Contato', '')))
                         tel_c = st.text_input("📞 Telefone de Contato:", value=str(posto.get('Telefone_Contato', '')))
                         qtd_func = st.number_input("👥 Qtd. de Funcionários para Treinar:", value=int(posto.get('Qtd_Funcionarios', 0)), min_value=0, step=1)
+                        instrutor_escolhido = st.selectbox("👨‍🏫 Instrutor Selecionado / Alocado:", lista_instrutores, index=idx_instrutor)
                         
                     with col_f2:
                         novo_st = st.selectbox(
@@ -558,13 +568,14 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                         st.session_state['df_base'].loc[mask, 'Nome_Contato'] = nome_c
                         st.session_state['df_base'].loc[mask, 'Telefone_Contato'] = tel_c
                         st.session_state['df_base'].loc[mask, 'Qtd_Funcionarios'] = qtd_func
+                        st.session_state['df_base'].loc[mask, 'Instrutor_Sugerido'] = instrutor_escolhido
                         st.session_state['df_base'].loc[mask, 'Material_Em_Loja'] = mat_loja
                         st.session_state['df_base'].loc[mask, 'Data_Agendada'] = data_ag
                         st.session_state['df_base'].loc[mask, 'Status_Contato'] = novo_st
                         st.session_state['df_base'].loc[mask, 'Observacoes'] = obs
                         st.session_state['df_base'].loc[mask, 'Data_do_Contato'] = datetime.today().strftime('%d/%m/%Y %H:%M')
                         
-                        st.success("✅ Atendimento registrado com sucesso!")
+                        st.success("✅ Atendimento e Instrutor atualizados com sucesso!")
                         st.rerun()
 
                 # Histórico Cronológico / Timeline
@@ -574,7 +585,7 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                 st.markdown(f"""
                     <div class="timeline-item">
                         <small style="color:#A0AAB8;"><b>Última Atualização:</b> {data_ct}</small><br>
-                        <span><b>Status:</b> {posto.get('Status_Contato', '-')} | <b>Treinandos:</b> {posto.get('Qtd_Funcionarios', 0)} | <b>Material:</b> {posto.get('Material_Em_Loja', '-')}</span><br>
+                        <span><b>Status:</b> {posto.get('Status_Contato', '-')} | <b>Treinandos:</b> {posto.get('Qtd_Funcionarios', 0)} | <b>Instrutor:</b> {posto.get('Instrutor_Sugerido', '-')}</span><br>
                         <span style="color:#D1D5DB;"><i>"{posto.get('Observacoes', 'Sem observações registradas.')}"</i></span>
                     </div>
                 """, unsafe_allow_html=True)
