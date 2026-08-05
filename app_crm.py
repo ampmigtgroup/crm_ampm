@@ -4,12 +4,12 @@ import os
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(
-    page_title="CRM Operacional AmPm — Treinamentos & Inteligência de Roteamento",
+    page_title="CRM Operacional AmPm — Base Unificada Completa",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# Estilização visual (Cores oficiais AmPm)
+# Estilização (Cores oficiais AmPm)
 st.markdown("""
     <style>
     .stButton>button {
@@ -19,210 +19,177 @@ st.markdown("""
         border-radius: 5px;
     }
     div[data-testid="stMetricValue"] {
-        font-size: 1.8rem;
+        font-size: 1.6rem;
+    }
+    .procv-card {
+        background-color: #1e222a;
+        padding: 15px;
+        border-radius: 8px;
+        border-left: 4px solid #e0a96d;
+        margin-bottom: 10px;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# --- CARREGAMENTO INTEGRAL DA BASE DE DADOS COMPLETA ---
+# --- CARREGAMENTO E PROCV INTEGRADO DA PLANILHA OFICIAL ---
 @st.cache_data
-def carregar_base_completa():
-    # Procura pelo arquivo CSV oficial na pasta raiz do projeto
-    caminho_csv = "base_atendimento.csv"
+def carregar_e_cruzar_base():
+    caminho_excel = "Base_Unificada_AmPm.xlsx"
     
-    if os.path.exists(caminho_csv):
-        df = pd.read_csv(caminho_csv)
+    if os.path.exists(caminho_excel):
+        xls = pd.ExcelFile(caminho_excel)
+        df_lojas = pd.read_excel(xls, sheet_name='Rede_de_Lojas')
+        df_fila = pd.read_excel(xls, sheet_name='Fila_CallCenter')
+        df_inaug = pd.read_excel(xls, sheet_name='Previsao_Inauguracao')
+        
+        # Padronização de chaves para o PROCV (PV Abadi)
+        df_lojas['PV Abadi'] = pd.to_numeric(df_lojas['PV Abadi'], errors='coerce')
+        df_fila['PV_Abadi'] = pd.to_numeric(df_fila['PV_Abadi'], errors='coerce')
+        df_inaug['PV ABADI'] = pd.to_numeric(df_inaug['PV ABADI'], errors='coerce')
+        
+        # PROCV 1: Cruzando Fila com Rede de Lojas Completa
+        df_base = pd.merge(
+            df_lojas,
+            df_fila[['PV_Abadi', 'Tipo_Necessidade', 'Data_Ultimo_Treinamento', 
+                     'Dias_desde_Ultimo_Treinamento', 'Instrutor_Sugerido', 
+                     'Semana_Sugerida', 'Status_Contato', 'Observacoes']],
+            left_on='PV Abadi',
+            right_on='PV_Abadi',
+            how='left'
+        )
+        
+        # PROCV 2: Cruzando com Previsão de Inauguração
+        df_base = pd.merge(
+            df_base,
+            df_inaug[['PV ABADI', 'Previsão Inauguração', 'Pipeline']],
+            left_on='PV Abadi',
+            right_on='PV ABADI',
+            how='left'
+        )
+        
+        # Preenchimento de padrões para colunas PROCV não encontradas
+        df_base['Status_Contato'] = df_base['Status_Contato'].fillna('A Contatar')
+        df_base['Tipo_Necessidade'] = df_base['Tipo_Necessidade'].fillna('Sem Pendência Identificada')
+        df_base['Instrutor_Sugerido'] = df_base['Instrutor_Sugerido'].fillna('Pendente de Alocação')
+        
+        return df_base
     else:
-        # Fallback de segurança para garantir a execução caso o arquivo ainda não esteja na pasta
-        dados_base = [
-            {'id_atendimento': 1, 'pv_abadi': 621193, 'loja': 'Conveniencia Rodrigues E Companhia Ltda', 'municipio': 'Atalaia', 'uf': 'AL', 'tipo_necessidade': 'Retreinamento', 'instrutor_sugerido': 'Isabela Paim Ricardo', 'semana_sugerida': '19/04/2027 a 23/04/2027', 'status_contato': 'A Contatar', 'observacao': None},
-            {'id_atendimento': 2, 'pv_abadi': 621258, 'loja': 'New Star Com De Combs E Lubrifi Ltda', 'municipio': 'Maceio', 'uf': 'AL', 'tipo_necessidade': 'Retreinamento', 'instrutor_sugerido': 'Isabela Paim Ricardo', 'semana_sugerida': '05/04/2027 a 09/04/2027', 'status_contato': 'A Contatar', 'observacao': None},
-            {'id_atendimento': 3, 'pv_abadi': 621112, 'loja': 'Auto Posto Bariloche Eireli', 'municipio': 'Maceio', 'uf': 'AL', 'tipo_necessidade': 'Retreinamento', 'instrutor_sugerido': 'Isabela Paim Ricardo', 'semana_sugerida': '05/04/2027 a 09/04/2027', 'status_contato': 'A Contatar', 'observacao': None},
-            {'id_atendimento': 4, 'pv_abadi': 709048, 'loja': 'Beluma Comercio De Combustiveis Ltda', 'municipio': 'Maceio', 'uf': 'AL', 'tipo_necessidade': 'Retreinamento', 'instrutor_sugerido': 'Isabela Paim Ricardo', 'semana_sugerida': '12/04/2027 a 16/04/2027', 'status_contato': 'A Contatar', 'observacao': None},
-            {'id_atendimento': 5, 'pv_abadi': 665493, 'loja': 'Pratagy Frances Ltda', 'municipio': 'Marechal Deodoro', 'uf': 'AL', 'tipo_necessidade': 'Retreinamento', 'instrutor_sugerido': 'Carla Fernandes Dionizio', 'semana_sugerida': '22/03/2027 a 26/03/2027', 'status_contato': 'A Contatar', 'observacao': None},
-            {'id_atendimento': 6, 'pv_abadi': 724183, 'loja': 'POSTO SANTA RITA', 'municipio': 'Rio Largo', 'uf': 'AL', 'tipo_necessidade': 'Treinamento Nova Loja (Implantação)', 'instrutor_sugerido': 'Isabela Paim Ricardo', 'semana_sugerida': '12/04/2027 a 16/04/2027', 'status_contato': 'A Contatar', 'observacao': None},
-            {'id_atendimento': 7, 'pv_abadi': 702900, 'loja': 'TULEMON COMERCIO', 'municipio': 'Rio Largo', 'uf': 'AL', 'tipo_necessidade': 'Treinamento Nova Loja (Implantação)', 'instrutor_sugerido': 'Isabela Paim Ricardo', 'semana_sugerida': '19/04/2027 a 23/04/2027', 'status_contato': 'A Contatar', 'observacao': None},
-            {'id_atendimento': 8, 'pv_abadi': 654251, 'loja': 'POSTO ALEXA LTDA', 'municipio': 'Sao Sebastiao', 'uf': 'AL', 'tipo_necessidade': 'Treinamento Nova Loja (Implantação)', 'instrutor_sugerido': 'Isabela Paim Ricardo', 'semana_sugerida': '15/03/2027 a 19/03/2027', 'status_contato': 'A Contatar', 'observacao': None},
-            {'id_atendimento': 9, 'pv_abadi': 646306, 'loja': 'Auto Posto Sabalanga Ltda - Me', 'municipio': 'Vicosa', 'uf': 'AL', 'tipo_necessidade': 'Retreinamento', 'instrutor_sugerido': 'Carla Fernandes Dionizio', 'semana_sugerida': '22/03/2027 a 26/03/2027', 'status_contato': 'A Contatar', 'observacao': None},
-            {'id_atendimento': 10, 'pv_abadi': 684108, 'loja': 'Mucuripe Varejo Ltda', 'municipio': 'Manaus', 'uf': 'AM', 'tipo_necessidade': 'Retreinamento', 'instrutor_sugerido': 'Carla Fernandes Dionizio', 'semana_sugerida': '05/04/2027 a 09/04/2027', 'status_contato': 'A Contatar', 'observacao': None}
-        ]
-        df = pd.DataFrame(dados_base * 40).reset_index(drop=True)
-        df['id_atendimento'] = df.index + 1
+        st.error("⚠️ Arquivo 'Base_Unificada_AmPm.xlsx' não foi encontrado no servidor!")
+        return pd.DataFrame()
 
-    if 'status_contato' not in df.columns:
-        df['status_contato'] = 'A Contatar'
-    if 'observacao' not in df.columns:
-        df['observacao'] = None
+if 'df_unificado' not in st.session_state:
+    st.session_state['df_unificado'] = carregar_e_cruzar_base()
 
-    return df
-
-if 'df_fila' not in st.session_state:
-    st.session_state['df_fila'] = carregar_base_completa()
-
-df_fila = st.session_state['df_fila']
-
-# Extração da lista completa de instrutores
-lista_instrutores_unicos = sorted(
-    [str(x) for x in df_fila['instrutor_sugerido'].dropna().unique() if "Consultor" not in str(x)]
-)
-
-# --- MODAL DE ATENDIMENTO (EDIÇÃO DIRETA DA BASE) ---
-@st.dialog("📝 Registrar Contato / Atendimento")
-def abrir_modal_contato(loja_dados, lista_instrutores):
-    st.markdown(f"### PV: {loja_dados.get('pv_abadi')} — {loja_dados.get('loja')}")
-    st.caption(f"📍 Município: {loja_dados.get('municipio')} | UF: {loja_dados.get('uf')}")
-    
-    with st.form("form_registro_crm"):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            nome_contato = st.text_input("Nome do Decisor / Contato", value=str(loja_dados.get("nome_contato", "") if pd.notna(loja_dados.get("nome_contato")) else ""))
-            telefone = st.text_input("Telefone / WhatsApp", value=str(loja_dados.get("telefone", "") if pd.notna(loja_dados.get("telefone")) else ""))
-            
-            opcoes_status = ["A Contatar", "Interessado - Aguardando confirmação", "Agendado", "Recusou", "Sem Resposta", "Loja Inativa"]
-            status_atual = loja_dados.get("status_contato", "A Contatar")
-            idx_status = opcoes_status.index(status_atual) if status_atual in opcoes_status else 0
-            
-            status = st.selectbox("Status da Abordagem", opcoes_status, index=idx_status)
-            
-        with col2:
-            instrutor_def = loja_dados.get("instrutor_sugerido", "")
-            idx_inst = lista_instrutores.index(instrutor_def) if instrutor_def in lista_instrutores else 0
-            instrutor_alocado = st.selectbox("Instrutor Alocado", options=lista_instrutores, index=idx_inst)
-            data_agendamento = st.date_input("Data Prevista para Treinamento")
-            
-        obs = st.text_area("Observações do Atendimento", value=str(loja_dados.get("observacao", "") if pd.notna(loja_dados.get("observacao")) else ""))
-        
-        salvar = st.form_submit_button("💾 Salvar e Atualizar Base")
-        if salvar:
-            idx = df_fila[df_fila['pv_abadi'] == loja_dados['pv_abadi']].index
-            if not idx.empty:
-                df_fila.loc[idx[0], 'status_contato'] = status
-                df_fila.loc[idx[0], 'observacao'] = obs
-                df_fila.loc[idx[0], 'instrutor_sugerido'] = instrutor_alocado
-                st.session_state['df_fila'] = df_fila
-            st.success("Registro atualizado com sucesso na base!")
-            st.rerun()
+df_base = st.session_state['df_unificado']
 
 # --- TÍTULO PRINCIPAL ---
-st.title("⛽ CRM Operacional AmPm — Base Unificada Completa")
+st.title("⛽ CRM Operacional AmPm — Inteligência PROCV em Tempo Real")
 
-# --- CARDS DE MÉTRICAS DA BASE COMPLETA ---
-c1, c2, c3, c4, c5 = st.columns(5)
-c1.metric("Total da Base", len(df_fila))
-c2.metric("A Contatar", len(df_fila[df_fila['status_contato'] == 'A Contatar']))
-c3.metric("Contatados", len(df_fila[df_fila['status_contato'].isin(['Interessado - Aguardando confirmação', 'Sem Resposta'])]))
-c4.metric("Confirmados", len(df_fila[df_fila['status_contato'] == 'Agendado']))
-c5.metric("Concluídos", len(df_fila[df_fila['status_contato'] == 'Concluído']))
+if not df_base.empty:
+    # --- MÉTRICAS GERAIS DERAVIDAS DO PROCV ---
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Rede Total de Lojas", len(df_base))
+    c2.metric("Fila Prevista CallCenter", len(df_base[df_base['Tipo_Necessidade'] != 'Sem Pendência Identificada']))
+    c3.metric("A Contatar", len(df_base[df_base['Status_Contato'] == 'A Contatar']))
+    c4.metric("Agendados / Confirmados", len(df_base[df_base['Status_Contato'] == 'Agendado']))
+    c5.metric("Previsão Inaugurações", len(df_base[df_base['Previsão Inauguração'].notna()]))
 
-st.write("")
+    st.write("")
 
-# --- PAINEL DE BUSCA E FILTRAGEM TIPO EXCEL ---
-f1, f2, f3, f4 = st.columns([2, 1, 1, 1])
-with f1:
-    busca = st.text_input("🔍 PROCV Rápido (PV Abadi ou Nome do Posto):", "")
-with f2:
-    status_filtro = st.selectbox("Status:", ["Todos"] + sorted([str(x) for x in df_fila['status_contato'].dropna().unique()]))
-with f3:
-    uf_filtro = st.selectbox("UF:", ["Todos"] + sorted([str(x) for x in df_fila['uf'].dropna().unique()]))
-with f4:
-    qtd_exibir = st.number_input("Linhas visíveis:", min_value=10, max_value=max(10, len(df_fila)), value=min(50, len(df_fila)), step=10)
-
-# Filtragem em Tempo Real (Equivalente ao Filtro do Excel)
-df_filtrado = df_fila.copy()
-if busca:
-    df_filtrado = df_filtrado[
-        df_filtrado['loja'].astype(str).str.contains(busca, case=False, na=False) | 
-        df_filtrado['pv_abadi'].astype(str).str.contains(busca, na=False)
-    ]
-if status_filtro != "Todos":
-    df_filtrado = df_filtrado[df_filtrado['status_contato'] == status_filtro]
-if uf_filtro != "Todos":
-    df_filtrado = df_filtrado[df_filtrado['uf'] == uf_filtro]
-
-# Limita a exibição da tela mantendo o total na memória
-df_exibicao = df_filtrado.head(qtd_exibir)
-
-# --- ABAS DO SISTEMA ---
-aba_fila, aba_menor_custo, aba_historico, aba_cadastro, aba_exportar = st.tabs([
-    "📋 Fila Interativa Completa", 
-    "📍 Menor Custo (Instrutores)",
-    "📊 Histórico & Custos",
-    "➕ Novo Cadastro Manual", 
-    "📥 Exportar Base Completa"
-])
-
-# --- ABA 1: TABELA REATIVA COM PROCV AUTOMÁTICO AO CLICAR ---
-with aba_fila:
-    st.subheader(f"Exibindo {len(df_exibicao)} de {len(df_filtrado)} registros filtrados (Total Base: {len(df_fila)})")
-    st.caption("👇 **Clique sobre qualquer linha da tabela para fazer a busca automática (PROCV) das informações do posto:**")
+    # --- BARRA DE PROCV RÁPIDO E FILTROS MULTICOLUNAS ---
+    st.subheader("🔍 PROCV Multicoluna em Tempo Real")
+    col_busca, col_uf, col_tipo, col_status = st.columns([2, 1, 1, 1])
     
-    # Tabela com escuta de evento de clique em tempo real
+    with col_busca:
+        termo_busca = st.text_input("Digite PV Abadi, Nome da Loja ou Cidade:", "")
+    with col_uf:
+        ufs_unicas = ["Todos"] + sorted([str(x) for x in df_base['UF'].dropna().unique()])
+        filtro_uf = st.selectbox("UF:", ufs_unicas)
+    with col_tipo:
+        tipos_unicos = ["Todos"] + sorted([str(x) for x in df_base['Tipo_Necessidade'].dropna().unique()])
+        filtro_tipo = st.selectbox("Necessidade:", tipos_unicos)
+    with col_status:
+        status_unicos = ["Todos"] + sorted([str(x) for x in df_base['Status_Contato'].dropna().unique()])
+        filtro_status = st.selectbox("Status Contato:", status_unicos)
+
+    # Execução das regras do PROCV nos filtros
+    df_filtrado = df_base.copy()
+    
+    if termo_busca:
+        df_filtrado = df_filtrado[
+            df_filtrado['Razão Social'].astype(str).str.contains(termo_busca, case=False, na=False) |
+            df_filtrado['PV Abadi'].astype(str).str.contains(termo_busca, na=False) |
+            df_filtrado['Municipio'].astype(str).str.contains(termo_busca, case=False, na=False)
+        ]
+        
+    if filtro_uf != "Todos":
+        df_filtrado = df_filtrado[df_filtrado['UF'] == filtro_uf]
+        
+    if filtro_tipo != "Todos":
+        df_filtrado = df_filtrado[df_filtrado['Tipo_Necessidade'] == filtro_tipo]
+        
+    if filtro_status != "Todos":
+        df_filtrado = df_filtrado[df_filtrado['Status_Contato'] == filtro_status]
+
+    # --- TABELA INTERATIVA DE SELEÇÃO PROCV ---
+    st.markdown(f"**Resultado do PROCV:** {len(df_filtrado)} postos encontrados")
+    
+    colunas_exibicao = [
+        'PV Abadi', 'Razão Social', 'Municipio', 'UF', 
+        'Status Loja', 'Tipo_Necessidade', 'Instrutor_Sugerido', 
+        'Semana_Sugerida', 'Status_Contato'
+    ]
+    
     event = st.dataframe(
-        df_exibicao,
+        df_filtrado[colunas_exibicao],
         use_container_width=True,
         hide_index=True,
         selection_mode="single-row",
         on_select="rerun"
     )
-    
+
     selected_rows = event.selection.get("rows", [])
-    
+
     st.divider()
-    
-    # PROCV AUTOMÁTICO DA LINHA SELECIONADA
+
+    # --- CARD DE DETALHES DO PROCV (TODAS AS COLUNAS CRUZADAS) ---
     if selected_rows:
-        index_selecionado = selected_rows[0]
-        posto_selecionado = df_exibicao.iloc[index_selecionado].to_dict()
+        idx = selected_rows[0]
+        posto = df_filtrado.iloc[idx].to_dict()
+
+        st.subheader(f"📋 Painel PROCV Completo — PV: {posto['PV Abadi']} | {posto['Razão Social']}")
         
-        # PROCV buscando o registro original na base por PV ABADI
-        pv_id = posto_selecionado['pv_abadi']
-        registro_completo = df_fila[df_fila['pv_abadi'] == pv_id].iloc[0].to_dict()
+        col_p1, col_p2, col_p3 = st.columns(3)
         
-        st.subheader(f"📍 Detalhes do Posto Selecionado (PV: {registro_completo['pv_abadi']})")
-        col_a, col_b, col_c = st.columns([2, 2, 1])
-        
-        with col_a:
-            st.markdown(f"**Loja:** {registro_completo['loja']}")
-            st.markdown(f"**Município / UF:** {registro_completo['municipio']} - {registro_completo['uf']}")
-            st.markdown(f"**Status Atual:** {registro_completo['status_contato']}")
-            
-        with col_b:
-            st.markdown(f"**Tipo de Necessidade:** {registro_completo['tipo_necessidade']}")
-            st.markdown(f"**Instrutor Sugerido:** {registro_completo['instrutor_sugerido']}")
-            st.markdown(f"**Semana Sugerida:** {registro_completo['semana_sugerida']}")
-            
-        with col_c:
-            st.write("")
-            if st.button("📝 Atualizar Registro", use_container_width=True):
-                abrir_modal_contato(registro_completo, lista_instrutores_unicos)
+        with col_p1:
+            st.markdown("<div class='procv-card'>", unsafe_allow_html=True)
+            st.markdown("### 🏪 Cadastro de Loja (Rede)")
+            st.markdown(f"**Status Loja:** {posto.get('Status Loja', '-')}")
+            st.markdown(f"**Endereço:** {posto.get('Endereço', '-')}")
+            st.markdown(f"**Município/UF:** {posto.get('Municipio', '-')}/{posto.get('UF', '-')}")
+            st.markdown(f"**CEP:** {posto.get('CEP', '-')}")
+            st.markdown(f"**Modelo de Loja:** {posto.get('Modelo Loja Gerencial', '-')}")
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        with col_p2:
+            st.markdown("<div class='procv-card'>", unsafe_allow_html=True)
+            st.markdown("### 👔 Franquia & Gestão")
+            st.markdown(f"**Gerência de Franquia (GF):** {posto.get('GF', '-')}")
+            st.markdown(f"**Consultor de Franquia (CF):** {posto.get('CF', '-')}")
+            st.markdown(f"**Previsão Inauguração:** {posto.get('Previsão Inauguração', 'N/A')}")
+            st.markdown(f"**Pipeline:** {posto.get('Pipeline', 'N/A')}")
+            st.markdown(f"**Coordenadas GPS:** {posto.get('Latitude', '-')}, {posto.get('Longitude', '-')}")
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        with col_p3:
+            st.markdown("<div class='procv-card'>", unsafe_allow_html=True)
+            st.markdown("### 📞 Fila do Call Center & Treinamentos")
+            st.markdown(f"**Tipo de Necessidade:** {posto.get('Tipo_Necessidade', '-')}")
+            st.markdown(f"**Instrutor Sugerido:** {posto.get('Instrutor_Sugerido', '-')}")
+            st.markdown(f"**Semana Sugerida:** {posto.get('Semana_Sugerida', '-')}")
+            st.markdown(f"**Status do Contato:** {posto.get('Status_Contato', '-')}")
+            st.markdown(f"**Último Treinamento:** {posto.get('Data_Ultimo_Treinamento', 'Sem Registro')}")
+            st.markdown("</div>", unsafe_allow_html=True)
+
     else:
-        st.info("💡 Selecione uma linha na tabela acima para carregar o painel interativo.")
-
-# --- ABA 2: QUADRO DE INSTRUTORES CONSOLIDADO DA BASE INTEIRA ---
-with aba_menor_custo:
-    st.subheader("📍 Cobertura Completa de Instrutores por UF")
-    
-    df_instrutores_quadro = df_fila[['instrutor_sugerido', 'uf']].dropna().drop_duplicates()
-    df_instrutores_quadro = df_instrutores_quadro[
-        ~df_instrutores_quadro['instrutor_sugerido'].astype(str).str.contains('Consultor', case=False, na=False)
-    ]
-    
-    df_consolidado = df_instrutores_quadro.groupby('instrutor_sugerido')['uf'].apply(lambda x: ', '.join(sorted(x.unique()))).reset_index()
-    df_consolidado.columns = ['Nome do Instrutor', 'Estados de Atuação Atendidos']
-    
-    st.dataframe(df_consolidado, use_container_width=True, hide_index=True)
-
-# --- DEMAIS ABAS ---
-with aba_historico:
-    st.subheader("📊 Histórico de Atendimentos Realizados")
-    st.dataframe(df_fila[df_fila['status_contato'] != 'A Contatar'], use_container_width=True, hide_index=True)
-
-with aba_cadastro:
-    st.subheader("➕ Novo Cadastro Manual na Base")
-    st.info("Utilize para cadastrar um novo posto manualmente na base ativa.")
-
-with aba_exportar:
-    st.subheader("📥 Exportar Base de Dados")
-    csv_completo = df_fila.to_csv(index=False).encode('utf-8')
-    st.download_button("📥 Baixar Toda a Base Atualizada (CSV)", data=csv_completo, file_name="base_completa_crm_ampm.csv", mime="text/csv")
+        st.info("💡 Clique em qualquer linha da tabela acima para disparar o PROCV em todas as colunas.")
