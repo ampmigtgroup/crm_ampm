@@ -37,44 +37,48 @@ def carregar_e_cruzar_base():
     caminho_excel = "Base_Unificada_AmPm.xlsx"
     
     if os.path.exists(caminho_excel):
-        xls = pd.ExcelFile(caminho_excel)
-        df_lojas = pd.read_excel(xls, sheet_name='Rede_de_Lojas')
-        df_fila = pd.read_excel(xls, sheet_name='Fila_CallCenter')
-        df_inaug = pd.read_excel(xls, sheet_name='Previsao_Inauguracao')
-        
-        # Padronização de chaves para o PROCV (PV Abadi)
-        df_lojas['PV Abadi'] = pd.to_numeric(df_lojas['PV Abadi'], errors='coerce')
-        df_fila['PV_Abadi'] = pd.to_numeric(df_fila['PV_Abadi'], errors='coerce')
-        df_inaug['PV ABADI'] = pd.to_numeric(df_inaug['PV ABADI'], errors='coerce')
-        
-        # PROCV 1: Cruzando Fila com Rede de Lojas Completa
-        df_base = pd.merge(
-            df_lojas,
-            df_fila[['PV_Abadi', 'Tipo_Necessidade', 'Data_Ultimo_Treinamento', 
-                     'Dias_desde_Ultimo_Treinamento', 'Instrutor_Sugerido', 
-                     'Semana_Sugerida', 'Status_Contato', 'Observacoes']],
-            left_on='PV Abadi',
-            right_on='PV_Abadi',
-            how='left'
-        )
-        
-        # PROCV 2: Cruzando com Previsão de Inauguração
-        df_base = pd.merge(
-            df_base,
-            df_inaug[['PV ABADI', 'Previsão Inauguração', 'Pipeline']],
-            left_on='PV Abadi',
-            right_on='PV ABADI',
-            how='left'
-        )
-        
-        # Preenchimento de padrões para colunas PROCV não encontradas
-        df_base['Status_Contato'] = df_base['Status_Contato'].fillna('A Contatar')
-        df_base['Tipo_Necessidade'] = df_base['Tipo_Necessidade'].fillna('Sem Pendência Identificada')
-        df_base['Instrutor_Sugerido'] = df_base['Instrutor_Sugerido'].fillna('Pendente de Alocação')
-        
-        return df_base
+        try:
+            xls = pd.ExcelFile(caminho_excel, engine='openpyxl')
+            df_lojas = pd.read_excel(xls, sheet_name='Rede_de_Lojas')
+            df_fila = pd.read_excel(xls, sheet_name='Fila_CallCenter')
+            df_inaug = pd.read_excel(xls, sheet_name='Previsao_Inauguracao')
+            
+            # Padronização de chaves para o PROCV (PV Abadi)
+            df_lojas['PV Abadi'] = pd.to_numeric(df_lojas['PV Abadi'], errors='coerce')
+            df_fila['PV_Abadi'] = pd.to_numeric(df_fila['PV_Abadi'], errors='coerce')
+            df_inaug['PV ABADI'] = pd.to_numeric(df_inaug['PV ABADI'], errors='coerce')
+            
+            # PROCV 1: Cruzando Fila com Rede de Lojas Completa
+            df_base = pd.merge(
+                df_lojas,
+                df_fila[['PV_Abadi', 'Tipo_Necessidade', 'Data_Ultimo_Treinamento', 
+                         'Dias_desde_Ultimo_Treinamento', 'Instrutor_Sugerido', 
+                         'Semana_Sugerida', 'Status_Contato', 'Observacoes']],
+                left_on='PV Abadi',
+                right_on='PV_Abadi',
+                how='left'
+            )
+            
+            # PROCV 2: Cruzando com Previsão de Inauguração
+            df_base = pd.merge(
+                df_base,
+                df_inaug[['PV ABADI', 'Previsão Inauguração', 'Pipeline']],
+                left_on='PV Abadi',
+                right_on='PV ABADI',
+                how='left'
+            )
+            
+            # Preenchimento de padrões para colunas PROCV não encontradas
+            df_base['Status_Contato'] = df_base['Status_Contato'].fillna('A Contatar')
+            df_base['Tipo_Necessidade'] = df_base['Tipo_Necessidade'].fillna('Sem Pendência Identificada')
+            df_base['Instrutor_Sugerido'] = df_base['Instrutor_Sugerido'].fillna('Pendente de Alocação')
+            
+            return df_base
+        except Exception as e:
+            st.error(f"Erro ao ler planilha Excel: {e}")
+            return pd.DataFrame()
     else:
-        st.error("⚠️ Arquivo 'Base_Unificada_AmPm.xlsx' não foi encontrado no servidor!")
+        st.warning("⚠️ Planilha 'Base_Unificada_AmPm.xlsx' não localizada no repositório. Realize o 'git add -f Base_Unificada_AmPm.xlsx'.")
         return pd.DataFrame()
 
 if 'df_unificado' not in st.session_state:
