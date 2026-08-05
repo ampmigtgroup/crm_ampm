@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 from datetime import datetime
+import pydeck as pdk
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(
@@ -240,7 +241,7 @@ elif modulo == "🔍 PROCV & Gestão de Lojas":
                 st.markdown("</div>", unsafe_allow_html=True)
 
 # ==========================================
-# MÓDULO 3: MENOR CUSTO & GEODESLOCAMENTO (TOP 3) + MINI MAPA
+# MÓDULO 3: MENOR CUSTO & GEODESLOCAMENTO (TOP 3) + MAPA COM ROTA
 # ==========================================
 elif modulo == "📍 Menor Custo & Geodeslocamento (Top 3)":
     st.title("📍 Otimizador de Deslocamento & Rotas — Top 3 Instrutores")
@@ -287,7 +288,7 @@ elif modulo == "📍 Menor Custo & Geodeslocamento (Top 3)":
             
             st.divider()
             
-            # --- MINI MAPA DE VISUALIZAÇÃO DE VIAGEM DO INSTRUTOR ---
+            # --- MINI MAPA DE VISUALIZAÇÃO DE VIAGEM DO INSTRUTOR COM LINHA DE ROTA ---
             st.subheader("🗺️ Mini Mapa de Viagem do Instrutor")
             
             col_selecao, col_mapa = st.columns([1, 2])
@@ -314,21 +315,67 @@ elif modulo == "📍 Menor Custo & Geodeslocamento (Top 3)":
                 """)
                 
             with col_mapa:
-                # Conversão explícita para garantir floats válidos
                 lat_loja = pd.to_numeric(dados_rota.get('Lat_Loja'), errors='coerce')
                 lon_loja = pd.to_numeric(dados_rota.get('Lon_Loja'), errors='coerce')
                 lat_inst = pd.to_numeric(dados_rota.get('Lat_Instrutor'), errors='coerce')
                 lon_inst = pd.to_numeric(dados_rota.get('Lon_Instrutor'), errors='coerce')
                 
                 if pd.notna(lat_loja) and pd.notna(lon_loja) and pd.notna(lat_inst) and pd.notna(lon_inst):
-                    df_mini_mapa = pd.DataFrame({
-                        'lat': [float(lat_inst), float(lat_loja)],
-                        'lon': [float(lon_inst), float(lon_loja)]
-                    })
-                    st.map(df_mini_mapa, zoom=5, use_container_width=True)
-                    st.caption(f"🗺️ **Trajeto:** Partida de {dados_rota['Cidade_Instrutor']} até o Posto {dados_rota['Razao_Social']} ({dados_rota['Municipio_Loja']}).")
+                    # 1. Camada da Linha da Rota (PyDeck LineLayer)
+                    linha_rota = [{
+                        'start_lon': float(lon_inst),
+                        'start_lat': float(lat_inst),
+                        'end_lon': float(lon_loja),
+                        'end_lat': float(lat_loja)
+                    }]
+                    
+                    layer_linha = pdk.Layer(
+                        "LineLayer",
+                        linha_rota,
+                        get_source_position=["start_lon", "start_lat"],
+                        get_target_position=["end_lon", "end_lat"],
+                        get_color=[224, 169, 109, 255],  # Cor AmPm Dourado
+                        get_width=6,
+                    )
+                    
+                    # 2. Camada de Pontos (Origem e Destino)
+                    pontos = [
+                        {"lon": float(lon_inst), "lat": float(lat_inst), "nome": f"Origem: {dados_rota['Cidade_Instrutor']}", "color": [46, 125, 50]},
+                        {"lon": float(lon_loja), "lat": float(lat_loja), "nome": f"Destino: {dados_rota['Razao_Social']}", "color": [211, 47, 47]}
+                    ]
+                    
+                    layer_pontos = pdk.Layer(
+                        "ScatterplotLayer",
+                        pontos,
+                        get_position=["lon", "lat"],
+                        get_color="color",
+                        get_radius=12000,
+                        pickable=True
+                    )
+                    
+                    # Centralização dinâmica do mapa
+                    lat_centro = (float(lat_inst) + float(lat_loja)) / 2
+                    lon_centro = (float(lon_inst) + float(lon_loja)) / 2
+                    
+                    view_state = pdk.ViewState(
+                        latitude=lat_centro,
+                        longitude=lon_centro,
+                        zoom=5,
+                        pitch=0
+                    )
+                    
+                    st.pydeck_chart(
+                        pdk.Deck(
+                            layers=[layer_linha, layer_pontos],
+                            initial_view_state=view_state,
+                            tooltip={"text": "{nome}"}
+                        ),
+                        use_container_width=True
+                    )
+                    
+                    st.caption(f"🗺️ **Rota em linha reta**: Conectando {dados_rota['Cidade_Instrutor']} ➔ {dados_rota['Municipio_Loja']} ({dados_rota['Razao_Social']}).")
                 else:
-                    st.warning("⚠️ Coordenadas geográficas indisponíveis na base para este posto/instrutor.")
+                    st.warning("⚠️ Coordenadas geográficas indisponíveis para este trajeto.")
 
             st.divider()
             st.markdown("### 📊 Tabela de Comparação Logística")
