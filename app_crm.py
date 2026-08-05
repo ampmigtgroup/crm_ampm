@@ -178,27 +178,27 @@ def gerar_pdf_ordem_servico(dados):
     # Corpo
     pdf.set_text_color(0, 0, 0)
     pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 8, f"PV ABADI: {dados.get('PV Abadi')} - {dados.get('Razao Social')}", ln=True)
+    pdf.cell(0, 8, f"PV ABADI: {dados.get('PV Abadi', '')} - {dados.get('Razão Social', '')}", ln=True)
     pdf.set_font("Arial", '', 10)
-    pdf.cell(0, 6, f"Endereco: {dados.get('Endereco')} - {dados.get('Municipio')}/{dados.get('UF')}", ln=True)
-    pdf.cell(0, 6, f"Consultor Responsavel: {dados.get('CF')}", ln=True)
+    pdf.cell(0, 6, f"Endereco: {dados.get('Endereço', '')} - {dados.get('Municipio', '')}/{dados.get('UF', '')}", ln=True)
+    pdf.cell(0, 6, f"Consultor Responsavel: {dados.get('CF', '')}", ln=True)
     pdf.ln(5)
     
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 8, "DETALHES DO AGENDAMENTO", ln=True)
     pdf.set_font("Arial", '', 10)
-    pdf.cell(0, 6, f"Status do Atendimento: {dados.get('Status_Contato')}", ln=True)
-    pdf.cell(0, 6, f"Data do Agendamento: {dados.get('Data_Agendada')}", ln=True)
-    pdf.cell(0, 6, f"Instrutor Designado: {dados.get('Instrutor_Sugerido')}", ln=True)
-    pdf.cell(0, 6, f"Qtd. de Treinandos: {dados.get('Qtd_Funcionarios')}", ln=True)
-    pdf.cell(0, 6, f"Material em Loja: {dados.get('Material_Em_Loja')}", ln=True)
+    pdf.cell(0, 6, f"Status do Atendimento: {dados.get('Status_Contato', '')}", ln=True)
+    pdf.cell(0, 6, f"Data do Agendamento: {dados.get('Data_Agendada', '')}", ln=True)
+    pdf.cell(0, 6, f"Instrutor Designado: {dados.get('Instrutor_Sugerido', '')}", ln=True)
+    pdf.cell(0, 6, f"Qtd. de Treinandos: {dados.get('Qtd_Funcionarios', '')}", ln=True)
+    pdf.cell(0, 6, f"Material em Loja: {dados.get('Material_Em_Loja', '')}", ln=True)
     pdf.ln(5)
     
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 8, "CONTATO NA LOJA & OBSERVACOES", ln=True)
     pdf.set_font("Arial", '', 10)
-    pdf.cell(0, 6, f"Contato: {dados.get('Nome_Contato')} ({dados.get('Telefone_Contato')})", ln=True)
-    pdf.multi_cell(0, 6, f"Observacoes: {dados.get('Observacoes')}")
+    pdf.cell(0, 6, f"Contato: {dados.get('Nome_Contato', '')} ({dados.get('Telefone_Contato', '')})", ln=True)
+    pdf.multi_cell(0, 6, f"Observacoes: {dados.get('Observacoes', '')}")
     pdf.ln(15)
     
     # Assinaturas
@@ -288,7 +288,7 @@ with st.sidebar:
         "📌 **Módulos do Sistema:**",
         [
             "📊 Dashboard Executivo & SLAs", 
-            "📋 Pipeline Kanban", 
+            "📋 Pipeline AmPm", 
             "🔍 PROCV & Filtros Avançados", 
             "📍 Calculadora & Otimizador de Custos", 
             "📞 Call Center & Timeline WhatsApp", 
@@ -355,7 +355,7 @@ if modulo == "📊 Dashboard Executivo & SLAs":
                 </div>
             """, unsafe_allow_html=True)
         with c4:
-            inaug = len(df_base[df_base['Previsão Inauguração'].notna()])
+            inaug = len(df_base[df_base['Previsão Inauguração'].notna()]) if 'Previsão Inauguração' in df_base.columns else 0
             st.markdown(f"""
                 <div class="kpi-card" style="border-left-color: #0288D1;">
                     <div class="kpi-header"><span class="kpi-title">Inaugurações</span><span>🚀</span></div>
@@ -387,8 +387,11 @@ if modulo == "📊 Dashboard Executivo & SLAs":
                     <b>🚀 Previsão de Inauguração sem Treinamento Agendado</b>
                 </div>
             """, unsafe_allow_html=True)
-            inaug_sem_ag = df_base[df_base['Previsão Inauguração'].notna() & (df_base['Status_Contato'] != 'Agendado')]
-            st.dataframe(inaug_sem_ag[['PV Abadi', 'Razão Social', 'UF', 'Previsão Inauguração']].head(4), use_container_width=True, hide_index=True)
+            if 'Previsão Inauguração' in df_base.columns:
+                inaug_sem_ag = df_base[df_base['Previsão Inauguração'].notna() & (df_base['Status_Contato'] != 'Agendado')]
+                st.dataframe(inaug_sem_ag[['PV Abadi', 'Razão Social', 'UF', 'Previsão Inauguração']].head(4), use_container_width=True, hide_index=True)
+            else:
+                st.info("Sem previsões registradas.")
 
         st.divider()
         
@@ -411,9 +414,9 @@ if modulo == "📊 Dashboard Executivo & SLAs":
             st.plotly_chart(fig_pie, use_container_width=True)
 
 # ==========================================
-# MÓDULO 2: PIPELINE KANBAN INTERATIVO
+# MÓDULO 2: PIPELINE AMPM (KANBAN)
 # ==========================================
-elif modulo == "📋 Pipeline Kanban":
+elif modulo == "📋 Pipeline AmPm":
     st.subheader("📋 Pipeline Operacional de Treinamentos")
     st.caption("Gerencie o fluxo de atendimento da rede navegando entre os estágios de contato.")
     
@@ -435,8 +438,8 @@ elif modulo == "📋 Pipeline Kanban":
             
             for _, item in df_status.head(6).iterrows():
                 with st.expander(f"📍 PV {item['PV Abadi']} | {str(item['Razão Social'])[:14]}..."):
-                    st.write(f"**Cidade:** {item['Municipio']}/{item['UF']}")
-                    st.write(f"**Necessidade:** {item['Tipo_Necessidade']}")
+                    st.write(f"**Cidade:** {item.get('Municipio', '-')}/{item.get('UF', '-')}")
+                    st.write(f"**Necessidade:** {item.get('Tipo_Necessidade', '-')}")
                     st.write(f"**Treinandos:** {item.get('Qtd_Funcionarios', 0)} pessoas")
                     st.write(f"**Instrutor:** {item.get('Instrutor_Sugerido', 'Pendente')}")
                     
@@ -478,8 +481,9 @@ elif modulo == "🔍 PROCV & Filtros Avançados":
             
         st.caption("👇 *Clique em uma linha para abrir a Ficha Detalhada PROCV:*")
         
+        cols_mostrar = [c for c in ['PV Abadi', 'Razão Social', 'Municipio', 'UF', 'Status Loja', 'Tipo_Necessidade', 'Status_Contato'] if c in df_view.columns]
         evento = st.dataframe(
-            df_view[['PV Abadi', 'Razão Social', 'Municipio', 'UF', 'Status Loja', 'Tipo_Necessidade', 'Status_Contato']],
+            df_view[cols_mostrar],
             use_container_width=True, hide_index=True, selection_mode="single-row", on_select="rerun"
         )
         
@@ -487,7 +491,7 @@ elif modulo == "🔍 PROCV & Filtros Avançados":
         if linhas:
             p = df_view.iloc[linhas[0]].to_dict()
             st.divider()
-            st.markdown(f"### 📋 Ficha de Detalhes PROCV — **PV {p['PV Abadi']} | {p['Razão Social']}**")
+            st.markdown(f"### 📋 Ficha de Detalhes PROCV — **PV {p.get('PV Abadi', '')} | {p.get('Razão Social', '')}**")
             
             k1, k2, k3 = st.columns(3)
             with k1:
@@ -608,20 +612,21 @@ elif modulo == "📍 Calculadora & Otimizador de Custos":
                 custo_total = c_desloc + c_aereo + c_hospedagem
                 custos_calculados.append(custo_total)
 
-                with cols[idx]:
-                    st.markdown(f"""
-                        <div class="top-instructor-card">
-                            <h4 style="margin:0 0 8px 0; color:#E27B00;">#{row['Ranking_Proximidade']}º {row['Instrutor_Sugerido']}</h4>
-                            <p style="margin:2px 0;">🏙️ <b>Origem:</b> {row['Cidade_Instrutor']}/{row['UF_Instrutor']}</p>
-                            <p style="margin:2px 0;">📏 <b>Distância:</b> <code>{dist} km</code></p>
-                            <p style="margin:2px 0;">✈️ <b>Modal:</b> {modal}</p>
-                            <hr style="border-color:#2D333F; margin:8px 0;">
-                            <p style="margin:2px 0; font-size:0.85rem;">• Deslocamento: R$ {c_desloc:.2f}</p>
-                            <p style="margin:2px 0; font-size:0.85rem;">• Passagem Aérea: R$ {c_aereo:.2f}</p>
-                            <p style="margin:2px 0; font-size:0.85rem;">• Diárias ({dias}d): R$ {c_hospedagem:.2f}</p>
-                            <h3 style="color:#4CAF50; margin:10px 0 0 0;">Total: R$ {custo_total:.2f}</h3>
-                        </div>
-                    """, unsafe_allow_html=True)
+                if idx < len(cols):
+                    with cols[idx]:
+                        st.markdown(f"""
+                            <div class="top-instructor-card">
+                                <h4 style="margin:0 0 8px 0; color:#E27B00;">#{row['Ranking_Proximidade']}º {row['Instrutor_Sugerido']}</h4>
+                                <p style="margin:2px 0;">🏙️ <b>Origem:</b> {row.get('Cidade_Instrutor', '')}/{row.get('UF_Instrutor', '')}</p>
+                                <p style="margin:2px 0;">📏 <b>Distância:</b> <code>{dist} km</code></p>
+                                <p style="margin:2px 0;">✈️ <b>Modal:</b> {modal}</p>
+                                <hr style="border-color:#2D333F; margin:8px 0;">
+                                <p style="margin:2px 0; font-size:0.85rem;">• Deslocamento: R$ {c_desloc:.2f}</p>
+                                <p style="margin:2px 0; font-size:0.85rem;">• Passagem Aérea: R$ {c_aereo:.2f}</p>
+                                <p style="margin:2px 0; font-size:0.85rem;">• Diárias ({dias}d): R$ {c_hospedagem:.2f}</p>
+                                <h3 style="color:#4CAF50; margin:10px 0 0 0;">Total: R$ {custo_total:.2f}</h3>
+                            </div>
+                        """, unsafe_allow_html=True)
 
             if len(custos_calculados) >= 2:
                 economia = custos_calculados[1] - custos_calculados[0]
@@ -688,7 +693,7 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
 
                 if tel_limpo:
                     link_wa = f"https://wa.me/55{tel_limpo}?text={msg_txt.replace(' ', '%20')}"
-                    st.markdown(f"👉 **[Enviar esta mensagem via WhatsApp Direct]( {link_wa} )**")
+                    st.markdown(f"👉 **[Enviar esta mensagem via WhatsApp Direct]({link_wa})**")
                 
                 st.divider()
 
@@ -710,103 +715,84 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                     except ValueError:
                         data_inicial = date.today()
 
-                # Form de Atendimento
-                with st.form("form_callcenter_editavel"):
-                    st.markdown("#### ✍️ Registros Rápidos da Ligação")
+                # Form de Atendimento Finalizado
+                with st.form(key=f"form_callcenter_{pv_alvo}"):
+                    st.markdown("#### 📝 Registrar Interação / Atualizar Agendamento")
+                    c_f1, c_f2 = st.columns(2)
                     
-                    col_f1, col_f2 = st.columns(2)
-                    with col_f1:
-                        nome_c = st.text_input("👤 Nome do Responsável na Loja:", value=str(posto.get('Nome_Contato', '')))
-                        tel_c = st.text_input("📞 Telefone de Contato:", value=str(posto.get('Telefone_Contato', '')))
-                        qtd_func = st.number_input("👥 Qtd. de Funcionários para Treinar:", value=int(posto.get('Qtd_Funcionarios', 0)), min_value=0, step=1)
-                        instrutor_escolhido = st.selectbox("👨‍🏫 Instrutor Designado:", lista_instrutores, index=idx_instrutor)
-                        
-                    with col_f2:
-                        novo_st = st.selectbox(
-                            "🔄 Status do Atendimento:", 
-                            ["A Contatar", "Em Negociação", "Agendado", "Treinamento Realizado", "Recusado"],
-                            index=["A Contatar", "Em Negociação", "Agendado", "Treinamento Realizado", "Recusado"].index(posto.get('Status_Contato', 'A Contatar'))
-                        )
-                        mat_loja = st.selectbox("📦 Possui Material/Apostilas na Loja?", ["Não Informado", "Sim", "Não"], index=["Não Informado", "Sim", "Não"].index(posto.get('Material_Em_Loja', 'Não Informado')))
-                        data_ag = st.date_input("📅 Data Agendada (Calendário):", value=data_inicial, format="DD/MM/YYYY")
-                        
-                    obs = st.text_area("💬 Observações e Alinhamentos:", value=str(posto.get('Observacoes', '')), height=80)
+                    status_opcoes = ["A Contatar", "Em Negociação", "Agendado", "Treinamento Realizado", "Recusado"]
+                    status_atual = posto.get('Status_Contato', 'A Contatar')
+                    idx_status = status_opcoes.index(status_atual) if status_atual in status_opcoes else 0
                     
-                    if st.form_submit_button("💾 Salvar Registro do Atendimento"):
+                    novo_status = c_f1.selectbox("Status do Atendimento:", status_opcoes, index=idx_status)
+                    nova_data = c_f2.date_input("Data Prevista / Agendada:", value=data_inicial)
+                    
+                    c_f3, c_f4 = st.columns(2)
+                    novo_instrutor = c_f3.selectbox("Instrutor Designado:", lista_instrutores, index=idx_instrutor)
+                    qtd_treinandos = c_f4.number_input("Qtd. de Treinandos:", min_value=0, max_value=50, value=int(posto.get('Qtd_Funcionarios', 0)))
+                    
+                    c_f5, c_f6 = st.columns(2)
+                    nome_contato = c_f5.text_input("Nome do Contato na Loja:", value=str(posto.get('Nome_Contato', '')))
+                    material_loja = c_f6.selectbox("Material/Apostilas em Loja?", ["Não Informado", "Sim", "Não", "Em Trânsito"])
+                    
+                    obs_atendimento = st.text_area("Observações da Chamada:", value=str(posto.get('Observacoes', '')))
+                    
+                    btn_salvar = st.form_submit_button("💾 Salvar Registros do Atendimento")
+                    
+                    if btn_salvar:
                         mask = st.session_state['df_base']['PV Abadi'] == pv_alvo
-                        st.session_state['df_base'].loc[mask, 'Nome_Contato'] = nome_c
-                        st.session_state['df_base'].loc[mask, 'Telefone_Contato'] = tel_c
-                        st.session_state['df_base'].loc[mask, 'Qtd_Funcionarios'] = qtd_func
-                        st.session_state['df_base'].loc[mask, 'Instrutor_Sugerido'] = instrutor_escolhido
-                        st.session_state['df_base'].loc[mask, 'Material_Em_Loja'] = mat_loja
-                        st.session_state['df_base'].loc[mask, 'Data_Agendada'] = data_ag.strftime("%d/%m/%Y")
-                        st.session_state['df_base'].loc[mask, 'Status_Contato'] = novo_st
-                        st.session_state['df_base'].loc[mask, 'Observacoes'] = obs
-                        st.session_state['df_base'].loc[mask, 'Data_do_Contato'] = datetime.today().strftime('%d/%m/%Y %H:%M')
-                        
-                        st.success("✅ Atendimento registrado com sucesso!")
+                        st.session_state['df_base'].loc[mask, 'Status_Contato'] = novo_status
+                        st.session_state['df_base'].loc[mask, 'Data_Agendada'] = nova_data.strftime("%d/%m/%Y")
+                        st.session_state['df_base'].loc[mask, 'Instrutor_Sugerido'] = novo_instrutor
+                        st.session_state['df_base'].loc[mask, 'Qtd_Funcionarios'] = qtd_treinandos
+                        st.session_state['df_base'].loc[mask, 'Nome_Contato'] = nome_contato
+                        st.session_state['df_base'].loc[mask, 'Material_Em_Loja'] = material_loja
+                        st.session_state['df_base'].loc[mask, 'Observacoes'] = obs_atendimento
+                        st.success("✅ Dados do atendimento registrados com sucesso!")
                         st.rerun()
-
-                # GERADOR DE PDF DA FICHA
-                pdf_bytes = gerar_pdf_ordem_servico({
-                    'PV Abadi': posto.get('PV Abadi'),
-                    'Razao Social': posto.get('Razão Social'),
-                    'Endereco': posto.get('Endereço'),
-                    'Municipio': posto.get('Municipio'),
-                    'UF': posto.get('UF'),
-                    'CF': posto.get('CF'),
-                    'Status_Contato': posto.get('Status_Contato'),
-                    'Data_Agendada': posto.get('Data_Agendada'),
-                    'Instrutor_Sugerido': posto.get('Instrutor_Sugerido'),
-                    'Qtd_Funcionarios': posto.get('Qtd_Funcionarios'),
-                    'Material_Em_Loja': posto.get('Material_Em_Loja'),
-                    'Nome_Contato': posto.get('Nome_Contato'),
-                    'Telefone_Contato': posto.get('Telefone_Contato'),
-                    'Observacoes': posto.get('Observacoes')
-                })
-                
-                st.download_button(
-                    label="🖨️ Baixar Ordem de Serviço / Ficha (PDF)",
-                    data=pdf_bytes,
-                    file_name=f"OS_Treinamento_PV_{posto['PV Abadi']}.pdf",
-                    mime="application/pdf"
-                )
 
 # ==========================================
 # MÓDULO 6: EQUIPE DE INSTRUTORES
 # ==========================================
 elif modulo == "👔 Equipe de Instrutores":
+    st.subheader("👔 Gestão da Equipe de Instrutores")
+    st.caption("Visão geral da disponibilidade, distribuição geográfica e alocações da equipe.")
+    
     if not df_instrutores.empty:
-        st.subheader("👔 Instrutores Credenciados na Rede")
-        st.dataframe(df_instrutores[['NOME_COMPLETO', 'STATUS', 'TELEFONE', 'EMAIL', 'Cidade', 'UF']], use_container_width=True, hide_index=True)
+        st.dataframe(df_instrutores, use_container_width=True, hide_index=True)
+    else:
+        st.info("Nenhuma base de instrutores carregada.")
 
 # ==========================================
-# MÓDULO 7: RELATÓRIOS & EXPORTAÇÃO COMPLETA
+# MÓDULO 7: RELATÓRIOS, IMPORTAÇÃO & PDF
 # ==========================================
 elif modulo == "📂 Relatórios, Importação & PDF":
-    st.subheader("📂 Central de Exportação de Dados e Relatórios")
-    st.caption("Faça o download dos relatórios consolidados no formato de sua preferência.")
+    st.subheader("📂 Emissão de Documentos & Exportação")
+    st.caption("Gere Ordens de Serviço em PDF e exporte a base operacional tratada.")
     
-    col_exp1, col_exp2 = st.columns(2)
-    
-    csv_buffer = df_base.to_csv(index=False).encode('utf-8')
-    with col_exp1:
+    if not df_base.empty:
+        pv_emissao = st.selectbox("Selecione o PV para Gerar Ordem de Serviço (PDF):", df_base['PV Abadi'].unique())
+        dados_pv = df_base[df_base['PV Abadi'] == pv_emissao].iloc[0].to_dict()
+        
+        pdf_bytes = gerar_pdf_ordem_servico(dados_pv)
         st.download_button(
-            label="📄 Baixar Base Completa (CSV)",
-            data=csv_buffer,
-            file_name=f"Base_CRM_AmPm_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-            mime="text/csv"
+            label="📄 Baixar Ordem de Serviço (PDF)",
+            data=pdf_bytes,
+            file_name=f"Ordem_Servico_PV_{pv_emissao}.pdf",
+            mime="application/pdf"
         )
         
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df_base.to_excel(writer, sheet_name='Base_CRM_Atualizada', index=False)
-    excel_data = output.getvalue()
-    
-    with col_exp2:
+        st.divider()
+        st.markdown("#### 📊 Exportação de Dados Integrados")
+        
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+            df_base.to_excel(writer, index=False, sheet_name='Base_Atualizada')
+        
         st.download_button(
-            label="📊 Baixar Base Completa (Excel)",
-            data=excel_data,
-            file_name=f"Base_CRM_AmPm_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+            label="📥 Exportar Base Completa em Excel",
+            data=buffer.getvalue(),
+            file_name=f"Base_CRM_AmPm_{datetime.now().strftime('%Y%m%d')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
