@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import os
+from datetime import datetime
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(
@@ -35,6 +36,12 @@ st.markdown("""
         margin-bottom: 8px;
         border-left: 4px solid #4CAF50;
     }
+    .form-box {
+        background-color: #1e222a;
+        padding: 20px;
+        border-radius: 10px;
+        border-top: 4px solid #e0a96d;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -62,7 +69,8 @@ def carregar_bases_integradas():
                 df_lojas,
                 df_fila[['PV_Abadi', 'Tipo_Necessidade', 'Data_Ultimo_Treinamento', 
                          'Dias_desde_Ultimo_Treinamento', 'Instrutor_Sugerido', 
-                         'Semana_Sugerida', 'Status_Contato', 'Observacoes']],
+                         'Semana_Sugerida', 'Telefone_Contato', 'Status_Contato', 
+                         'Data_do_Contato', 'Observacoes']],
                 left_on='PV Abadi', right_on='PV_Abadi', how='left'
             )
             
@@ -86,7 +94,16 @@ def carregar_bases_integradas():
         st.warning("⚠️ Arquivo 'Base_Unificada_AmPm.xlsx' não localizado.")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-df_base, df_instrutores, df_rec = carregar_bases_integradas()
+# Inicialização da base na Session State para manter as atualizações em memória
+if 'df_base' not in st.session_state:
+    b, i, r = carregar_bases_integradas()
+    st.session_state['df_base'] = b
+    st.session_state['df_instrutores'] = i
+    st.session_state['df_rec'] = r
+
+df_base = st.session_state['df_base']
+df_instrutores = st.session_state['df_instrutores']
+df_rec = st.session_state['df_rec']
 
 # --- MENU LATERAL DE NAVEGAÇÃO ---
 st.sidebar.title("⛽ Menu CRM AmPm")
@@ -96,7 +113,7 @@ modulo = st.sidebar.radio(
         "📊 Dashboard Executivo", 
         "🔍 PROCV & Gestão de Lojas", 
         "📍 Menor Custo & Geodeslocamento (Top 3)", 
-        "📞 Fila Call Center & Contatos", 
+        "📞 Fila Call Center & Registro de Contatos", 
         "👔 Gestão de Instrutores"
     ]
 )
@@ -195,7 +212,6 @@ elif modulo == "📍 Menor Custo & Geodeslocamento (Top 3)":
     st.markdown("Cruzamento geográfico de latitude/longitude para minimização do custo de passagem e hospedagem.")
     
     if not df_rec.empty:
-        # Seleção do Posto para análise logística
         postos_unicos = df_rec[['PV_ABADI', 'Razao_Social', 'Municipio_Loja', 'UF_Loja']].drop_duplicates()
         postos_unicos['label'] = postos_unicos['PV_ABADI'].astype(str) + " - " + postos_unicos['Razao_Social'] + " (" + postos_unicos['Municipio_Loja'] + "/" + postos_unicos['UF_Loja'] + ")"
         
@@ -233,17 +249,84 @@ elif modulo == "📍 Menor Custo & Geodeslocamento (Top 3)":
             )
 
 # ==========================================
-# MÓDULO 4: FILA CALL CENTER
+# MÓDULO 4: FILA CALL CENTER & REGISTRO DE CONTATO
 # ==========================================
-elif modulo == "📞 Fila Call Center & Contatos":
-    st.title("📞 Gestão da Fila do Call Center")
+elif modulo == "📞 Fila Call Center & Registro de Contatos":
+    st.title("📞 Fila de Atendimento do Call Center & Registro Pós-Contato")
+    st.markdown("Selecione um posto da fila para abrir a ficha de atendimento e salvar as informações do contato.")
+    
     if not df_base.empty:
         df_fila_view = df_base[df_base['Tipo_Necessidade'] != 'Rede Ativa (Sem Pendência)'].copy()
-        st.dataframe(
-            df_fila_view[['PV Abadi', 'Razão Social', 'Municipio', 'UF', 'Tipo_Necessidade', 'Instrutor_Sugerido', 'Semana_Sugerida', 'Status_Contato']],
-            use_container_width=True,
-            hide_index=True
-        )
+        
+        col1_tabela, col2_form = st.columns([1.8, 1.2])
+        
+        with col1_tabela:
+            st.subheader("📋 Lojas Pendentes / Agendadas")
+            cols_exibicao = ['PV Abadi', 'Razão Social', 'Municipio', 'UF', 'Tipo_Necessidade', 'Status_Contato']
+            
+            evento_call = st.dataframe(
+                df_fila_view[cols_exibicao],
+                use_container_width=True,
+                hide_index=True,
+                selection_mode="single-row",
+                on_select="rerun"
+            )
+            
+            selecionado = evento_call.selection.get("rows", [])
+            
+        with col2_form:
+            st.subheader("📝 Ficha de Atualização Pós-Contato")
+            
+            if selecionado:
+                idx_sel = selecionado[0]
+                posto = df_fila_view.iloc[idx_sel]
+                pv_alvo = posto['PV Abadi']
+                
+                with st.form(key="form_registro_callcenter"):
+                    st.markdown(f"<div class='form-box'>", unsafe_allow_html=True)
+                    st.markdown(f"### ⛽ PV {posto['PV Abadi']} — {posto['Razão Social']}")
+                    st.markdown(f"**Cidade/UF:** {posto['Municipio']}/{posto['UF']}")
+                    st.markdown(f"**Necessidade Identificada:** {posto['Tipo_Necessidade']}")
+                    
+                    st.divider()
+                    
+                    novo_status = st.selectbox(
+                        "Novo Status do Contato:",
+                        ["A Contatar", "Em Negociação", "Agendado", "Treinamento Realizado", "Recusado / Indisponível"],
+                        index=["A Contatar", "Em Negociação", "Agendado", "Treinamento Realizado", "Recusado / Indisponível"].index(posto.get('Status_Contato', 'A Contatar')) if posto.get('Status_Contato') in ["A Contatar", "Em Negociação", "Agendado", "Treinamento Realizado", "Recusado / Indisponível"] else 0
+                    )
+                    
+                    lista_instrutores = ["Pendente de Alocação"]
+                    if not df_instrutores.empty and 'NOME_COMPLETO' in df_instrutores.columns:
+                        lista_instrutores += sorted(df_instrutores['NOME_COMPLETO'].dropna().unique().tolist())
+                        
+                    novo_instrutor = st.selectbox(
+                        "Instrutor Confirmado/Sugerido:",
+                        lista_instrutores,
+                        index=lista_instrutores.index(posto.get('Instrutor_Sugerido')) if posto.get('Instrutor_Sugerido') in lista_instrutores else 0
+                    )
+                    
+                    semana_agendada = st.text_input("Semana Agendada (Ex: Sem 35):", value=str(posto.get('Semana_Sugerida', '') if pd.notna(posto.get('Semana_Sugerida')) else ''))
+                    telefone_contato = st.text_input("Telefone de Contato / Responsável:", value=str(posto.get('Telefone_Contato', '') if pd.notna(posto.get('Telefone_Contato')) else ''))
+                    observacoes_contato = st.text_area("Observações do Atendimento:", value=str(posto.get('Observacoes', '') if pd.notna(posto.get('Observacoes')) else ''))
+                    
+                    btn_salvar = st.form_submit_button("💾 Salvar Atendimento Pós-Contato")
+                    st.markdown("</div>", unsafe_allow_html=True)
+                    
+                    if btn_salvar:
+                        # Atualiza no DataFrame mantido na sessão
+                        mask = st.session_state['df_base']['PV Abadi'] == pv_alvo
+                        st.session_state['df_base'].loc[mask, 'Status_Contato'] = novo_status
+                        st.session_state['df_base'].loc[mask, 'Instrutor_Sugerido'] = novo_instrutor
+                        st.session_state['df_base'].loc[mask, 'Semana_Sugerida'] = semana_agendada
+                        st.session_state['df_base'].loc[mask, 'Telefone_Contato'] = telefone_contato
+                        st.session_state['df_base'].loc[mask, 'Observacoes'] = observacoes_contato
+                        st.session_state['df_base'].loc[mask, 'Data_do_Contato'] = datetime.today().strftime('%d/%m/%Y %H:%M')
+                        
+                        st.success(f"✅ Atendimento do PV {pv_alvo} atualizado com sucesso!")
+                        st.rerun()
+            else:
+                st.info("👈 Selecione uma linha na tabela ao lado para preencher as informações após o contato.")
 
 # ==========================================
 # MÓDULO 5: GESTÃO DE INSTRUTORES
@@ -252,4 +335,3 @@ elif modulo == "👔 Gestão de Instrutores":
     st.title("👔 Relação de Instrutores")
     if not df_instrutores.empty:
         st.dataframe(df_instrutores[['NOME_COMPLETO', 'STATUS', 'TELEFONE', 'EMAIL', 'Cidade', 'UF']], use_container_width=True, hide_index=True)
-
