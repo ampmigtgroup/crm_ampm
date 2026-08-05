@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import os
-from datetime import datetime
+from datetime import datetime, date
 import pydeck as pdk
 import io
 
@@ -206,7 +206,7 @@ def carregar_bases_integradas():
             df_base['Nome_Contato'] = ""
             df_base['Qtd_Funcionarios'] = 0
             df_base['Material_Em_Loja'] = "Não Informado"
-            df_base['Data_Agendada'] = ""
+            df_base['Data_Agendada'] = None
             
             return df_base, df_instrutores, df_rec
         except Exception as e:
@@ -482,7 +482,7 @@ elif modulo == "📍 Calculadora & Otimizador de Custos":
                 st.success(f"💡 **Economia Eficiente:** Optar pelo **1º Instrutor Recomendado** garante uma economia estimada de **R$ {economia:.2f}** nesta operação.")
 
 # ==========================================
-# MÓDULO 5: CALL CENTER & TIMELINE WHATSAPP (INSTRUTOR EDITÁVEL)
+# MÓDULO 5: CALL CENTER & TIMELINE WHATSAPP
 # ==========================================
 elif modulo == "📞 Call Center & Timeline WhatsApp":
     if not df_base.empty:
@@ -506,22 +506,21 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                 
                 st.markdown(f"### 📝 Ficha de Atendimento — **PV {posto['PV Abadi']}**")
                 
-                # --- PAINEL DE INFORMAÇÕES AUTOMÁTICAS DA LOJA (PROCV INTEGRADO) ---
+                # --- PAINEL DE CONTEXTO DO POSTO (SEM O INSTRUTOR AUTOMÁTICO PARA NÃO CONFUNDIR) ---
                 st.markdown(f"""
                     <div class="procv-card">
-                        <h4>🏪 Contexto do Posto (Preenchimento Automático)</h4>
+                        <h4>🏪 Contexto do Posto (Consulta Rápida)</h4>
                         <div style="display: flex; justify-content: space-between; flex-wrap: wrap;">
                             <div style="flex: 1; min-width: 200px;">
                                 <p>🏬 <b>Razão Social:</b> {posto.get('Razão Social', '-')}</p>
                                 <p>📍 <b>Cidade/UF:</b> {posto.get('Municipio', '-')}/{posto.get('UF', '-')}</p>
                                 <p>🏠 <b>Endereço:</b> {posto.get('Endereço', '-')}</p>
-                                <p>👔 <b>Consultor (CF):</b> {posto.get('CF', '-')}</p>
                             </div>
                             <div style="flex: 1; min-width: 200px;">
+                                <p>👔 <b>Consultor (CF):</b> {posto.get('CF', '-')}</p>
                                 <p>🎯 <b>Necessidade:</b> <span class="badge-info">{posto.get('Tipo_Necessidade', '-')}</span></p>
                                 <p>⏱️ <b>Dias sem Treinamento:</b> {posto.get('Dias_desde_Ultimo_Treinamento', 'N/A')}</p>
                                 <p>📅 <b>Inauguração Prevista:</b> {posto.get('Previsão Inauguração', 'N/A')}</p>
-                                <p>💡 <b>Sugestão Logística:</b> {posto.get('Instrutor_Sugerido', 'Pendente')}</p>
                             </div>
                         </div>
                     </div>
@@ -533,7 +532,7 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                     link_wa = f"https://wa.me/55{tel_limpo}?text={msg.replace(' ', '%20')}"
                     st.markdown(f"📲 **[Clique aqui para chamar no WhatsApp Direct]( {link_wa} )**")
 
-                # Lista para seleção do Instrutor
+                # Lista de instrutores para o selectbox do operador
                 lista_instrutores = ["Pendente de Alocação"]
                 if not df_instrutores.empty and 'NOME_COMPLETO' in df_instrutores.columns:
                     lista_instrutores += sorted(df_instrutores['NOME_COMPLETO'].dropna().unique().tolist())
@@ -541,16 +540,30 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                 instrutor_atual = str(posto.get('Instrutor_Sugerido', 'Pendente de Alocação'))
                 idx_instrutor = lista_instrutores.index(instrutor_atual) if instrutor_atual in lista_instrutores else 0
 
-                # --- FORMULÁRIO DO ATENDENTE (AGORA COM INSTRUTOR MANUALLY EDITÁVEL) ---
+                # Tratamento da data agendada inicial
+                val_data_agendada = posto.get('Data_Agendada')
+                data_inicial = date.today()
+                if isinstance(val_data_agendada, (date, datetime)):
+                    data_inicial = val_data_agendada
+                elif isinstance(val_data_agendada, str) and val_data_agendada:
+                    try:
+                        data_inicial = datetime.strptime(val_data_agendada, "%Y-%m-%d").date()
+                    except ValueError:
+                        try:
+                            data_inicial = datetime.strptime(val_data_agendada, "%d/%m/%Y").date()
+                        except ValueError:
+                            data_inicial = date.today()
+
+                # --- REGISTROS RÁPIDOS DA LIGAÇÃO ---
                 with st.form("form_callcenter_editavel"):
-                    st.markdown("#### ✍️ Registros do Atendimento")
+                    st.markdown("#### ✍️ Registros Rápidos da Ligação")
                     
                     col_f1, col_f2 = st.columns(2)
                     with col_f1:
                         nome_c = st.text_input("👤 Nome do Responsável na Loja:", value=str(posto.get('Nome_Contato', '')))
                         tel_c = st.text_input("📞 Telefone de Contato:", value=str(posto.get('Telefone_Contato', '')))
                         qtd_func = st.number_input("👥 Qtd. de Funcionários para Treinar:", value=int(posto.get('Qtd_Funcionarios', 0)), min_value=0, step=1)
-                        instrutor_escolhido = st.selectbox("👨‍🏫 Instrutor Selecionado / Alocado:", lista_instrutores, index=idx_instrutor)
+                        instrutor_escolhido = st.selectbox("👨‍🏫 Instrutor Designado:", lista_instrutores, index=idx_instrutor)
                         
                     with col_f2:
                         novo_st = st.selectbox(
@@ -559,7 +572,7 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                             index=["A Contatar", "Em Negociação", "Agendado", "Treinamento Realizado", "Recusado"].index(posto.get('Status_Contato', 'A Contatar'))
                         )
                         mat_loja = st.selectbox("📦 Possui Material/Apostilas na Loja?", ["Não Informado", "Sim", "Não"], index=["Não Informado", "Sim", "Não"].index(posto.get('Material_Em_Loja', 'Não Informado')))
-                        data_ag = st.text_input("📅 Data Agendada (se houver):", value=str(posto.get('Data_Agendada', '')))
+                        data_ag = st.date_input("📅 Data Agendada (Calendário):", value=data_inicial, format="DD/MM/YYYY")
                         
                     obs = st.text_area("💬 Observações e Alinhamentos:", value=str(posto.get('Observacoes', '')), height=80)
                     
@@ -570,22 +583,23 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                         st.session_state['df_base'].loc[mask, 'Qtd_Funcionarios'] = qtd_func
                         st.session_state['df_base'].loc[mask, 'Instrutor_Sugerido'] = instrutor_escolhido
                         st.session_state['df_base'].loc[mask, 'Material_Em_Loja'] = mat_loja
-                        st.session_state['df_base'].loc[mask, 'Data_Agendada'] = data_ag
+                        st.session_state['df_base'].loc[mask, 'Data_Agendada'] = data_ag.strftime("%d/%m/%Y")
                         st.session_state['df_base'].loc[mask, 'Status_Contato'] = novo_st
                         st.session_state['df_base'].loc[mask, 'Observacoes'] = obs
                         st.session_state['df_base'].loc[mask, 'Data_do_Contato'] = datetime.today().strftime('%d/%m/%Y %H:%M')
                         
-                        st.success("✅ Atendimento e Instrutor atualizados com sucesso!")
+                        st.success("✅ Atendimento registrado e data formatada com sucesso!")
                         st.rerun()
 
                 # Histórico Cronológico / Timeline
                 st.divider()
                 st.markdown("#### ⏱️ Histórico de Interações")
                 data_ct = posto.get('Data_do_Contato', 'Sem registro')
+                data_agendada_str = posto.get('Data_Agendada', 'Não agendado')
                 st.markdown(f"""
                     <div class="timeline-item">
                         <small style="color:#A0AAB8;"><b>Última Atualização:</b> {data_ct}</small><br>
-                        <span><b>Status:</b> {posto.get('Status_Contato', '-')} | <b>Treinandos:</b> {posto.get('Qtd_Funcionarios', 0)} | <b>Instrutor:</b> {posto.get('Instrutor_Sugerido', '-')}</span><br>
+                        <span><b>Status:</b> {posto.get('Status_Contato', '-')} | <b>Data Agendada:</b> {data_agendada_str} | <b>Instrutor:</b> {posto.get('Instrutor_Sugerido', '-')}</span><br>
                         <span style="color:#D1D5DB;"><i>"{posto.get('Observacoes', 'Sem observações registradas.')}"</i></span>
                     </div>
                 """, unsafe_allow_html=True)
