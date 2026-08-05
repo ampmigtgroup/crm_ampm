@@ -314,21 +314,21 @@ elif modulo == "📍 Menor Custo & Geodeslocamento (Top 3)":
                 """)
                 
             with col_mapa:
-                lat_loja = dados_rota.get('Lat_Loja')
-                lon_loja = dados_rota.get('Lon_Loja')
-                lat_inst = dados_rota.get('Lat_Instrutor')
-                lon_inst = dados_rota.get('Lon_Instrutor')
+                # Conversão explícita para garantir floats válidos
+                lat_loja = pd.to_numeric(dados_rota.get('Lat_Loja'), errors='coerce')
+                lon_loja = pd.to_numeric(dados_rota.get('Lon_Loja'), errors='coerce')
+                lat_inst = pd.to_numeric(dados_rota.get('Lat_Instrutor'), errors='coerce')
+                lon_inst = pd.to_numeric(dados_rota.get('Lon_Instrutor'), errors='coerce')
                 
                 if pd.notna(lat_loja) and pd.notna(lon_loja) and pd.notna(lat_inst) and pd.notna(lon_inst):
                     df_mini_mapa = pd.DataFrame({
-                        'lat': [lat_inst, lat_loja],
-                        'lon': [lon_inst, lon_loja]
+                        'lat': [float(lat_inst), float(lat_loja)],
+                        'lon': [float(lon_inst), float(lon_loja)]
                     })
-                    
                     st.map(df_mini_mapa, zoom=5, use_container_width=True)
-                    st.caption(f"🗺️ **Mini Mapa de Trajeto**: Partida de {dados_rota['Cidade_Instrutor']} até o Posto {dados_rota['Razao_Social']} ({dados_rota['Municipio_Loja']}).")
+                    st.caption(f"🗺️ **Trajeto:** Partida de {dados_rota['Cidade_Instrutor']} até o Posto {dados_rota['Razao_Social']} ({dados_rota['Municipio_Loja']}).")
                 else:
-                    st.warning("⚠️ Coordenadas geográficas indisponíveis para este trajeto.")
+                    st.warning("⚠️ Coordenadas geográficas indisponíveis na base para este posto/instrutor.")
 
             st.divider()
             st.markdown("### 📊 Tabela de Comparação Logística")
