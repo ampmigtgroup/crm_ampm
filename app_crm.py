@@ -102,53 +102,6 @@ def carregar_dados_mock():
     return pd.DataFrame(lojas), pd.DataFrame(instrutores)
 
 # ==========================================
-# GERADOR DE RELATÓRIO PDF (FPDF)
-# ==========================================
-class PDFReport(FPDF):
-    def header(self):
-        self.set_fill_color(30, 34, 45)
-        self.rect(0, 0, 210, 25, 'F')
-        self.set_font('Arial', 'B', 15)
-        self.set_text_color(255, 152, 0)
-        self.cell(0, 10, 'CRM Operacional AmPm - Ficha de Treinamento', 0, 1, 'C')
-        self.ln(5)
-
-    def footer(self):
-        self.set_y(-15)
-        self.set_font('Arial', 'I', 8)
-        self.set_text_color(128, 128, 128)
-        self.cell(0, 10, f'Página {self.page_no()}', 0, 0, 'C')
-
-def gerar_pdf_ficha(posto_info, instrutor_info, custo_total):
-    pdf = PDFReport()
-    pdf.add_page()
-    pdf.set_font("Arial", size=11)
-    
-    pdf.set_font("Arial", 'B', 14)
-    pdf.cell(200, 10, txt="1. Dados do Posto Alvo", ln=True)
-    pdf.set_font("Arial", size=11)
-    pdf.cell(200, 8, txt=f"PV ABADI: {posto_info['PV Abadi']}", ln=True)
-    pdf.cell(200, 8, txt=f"Razao Social: {posto_info['Razão Social']}", ln=True)
-    pdf.cell(200, 8, txt=f"Localizacao: {posto_info['Municipio']} / {posto_info['UF']}", ln=True)
-    pdf.cell(200, 8, txt=f"Consultor de Negocios: {posto_info['Consultor Negócios']}", ln=True)
-    
-    pdf.ln(5)
-    pdf.set_font("Arial", 'B', 14)
-    pdf.cell(200, 10, txt="2. Alocacao Logistica do Instrutor", ln=True)
-    pdf.set_font("Arial", size=11)
-    pdf.cell(200, 8, txt=f"Instrutor Selecionado: {instrutor_info['Instrutor_Sugerido']}", ln=True)
-    pdf.cell(200, 8, txt=f"Base Origem: {instrutor_info['Cidade_Instrutor']} / {instrutor_info['UF_Instrutor']}", ln=True)
-    pdf.cell(200, 8, txt=f"Distancia em Linha Reta: {instrutor_info['Distancia_km_linha_reta']:.1f} km", ln=True)
-    
-    pdf.ln(5)
-    pdf.set_font("Arial", 'B', 14)
-    pdf.cell(200, 10, txt="3. Estimativa de Custos Logisticos", ln=True)
-    pdf.set_font("Arial", size=11)
-    pdf.cell(200, 8, txt=f"Custo Total Estimado de Deslocamento/Diarias: R$ {custo_total:.2f}", ln=True)
-    
-    return pdf.output(dest='S').encode('latin-1', errors='replace')
-
-# ==========================================
 # CARREGAMENTO E PROCESSAMENTO DE DADOS
 # ==========================================
 st.sidebar.title("⛽ CRM AmPm")
@@ -231,7 +184,7 @@ modulo = st.sidebar.radio(
         "📍 Calculadora & Otimizador de Custos",
         "📞 Call Center & Timeline WhatsApp",
         "👥 Equipe de Instrutores",
-        "📂 Relatórios, Importação & PDF"
+        "📂 Relatórios & Exportação de Dados"
     ]
 )
 
@@ -516,26 +469,30 @@ elif modulo == "👥 Equipe de Instrutores":
     st.dataframe(df_instrutores, use_container_width=True)
 
 # ==========================================
-# MÓDULO 7: RELATÓRIOS, IMPORTAÇÃO & PDF
+# MÓDULO 7: RELATÓRIOS & EXPORTAÇÃO DE DADOS
 # ==========================================
-elif modulo == "📂 Relatórios, Importação & PDF":
-    st.subheader("📂 Emissão de Fichas e Exportação de Relatórios")
-    st.caption("Gere arquivos PDF oficiais da Ficha de Atendimento para impressão e envio ao Consultor.")
+elif modulo == "📂 Relatórios & Exportação de Dados":
+    st.subheader("📂 Exportação de Dados Operacionais")
+    st.caption("Gere arquivos no formato CSV/Excel com as análises completas para uso externo.")
     
     if not df_rec.empty:
-        p_sel_pdf = st.selectbox("Selecione o Posto para Gerar a Ficha em PDF:", df_rec['PV_ABADI'].unique())
-        top_pdf = df_rec[df_rec['PV_ABADI'] == p_sel_pdf].sort_values(by='Ranking_Proximidade').iloc[0]
-        p_info = df_base[df_base['PV Abadi'] == p_sel_pdf].iloc[0] if 'PV Abadi' in df_base.columns else top_pdf
+        col_exp1, col_exp2 = st.columns(2)
         
-        dist_pdf = top_pdf['Distancia_km_linha_reta']
-        custo_pdf = (dist_pdf * 2 * 2.10) + (3 * 280) if dist_pdf <= 300 else 1400 + 150 + (3 * 280)
-        
-        pdf_bytes = gerar_pdf_ficha(p_info, top_pdf, custo_pdf)
-        
-        st.download_button(
-            label="📄 Baixar Ficha Operacional de Treinamento (PDF)",
-            data=pdf_bytes,
-            file_name=f"Ficha_Treinamento_PV_{p_sel_pdf}.pdf",
-            mime="application/pdf",
+        csv_rec = df_rec.to_csv(index=False).encode('utf-8')
+        col_exp1.download_button(
+            label="📥 Baixar Recomendação de Instrutores (CSV)",
+            data=csv_rec,
+            file_name="matriz_recomendacao_ampm.csv",
+            mime="text/csv",
             use_container_width=True
         )
+        
+        csv_base = df_base.to_csv(index=False).encode('utf-8')
+        col_exp2.download_button(
+            label="📥 Baixar Base Geral de Postos (CSV)",
+            data=csv_base,
+            file_name="base_geral_postos_ampm.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+
