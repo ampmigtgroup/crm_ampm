@@ -154,7 +154,6 @@ def gerar_pdf_ficha(posto_info, instrutor_info, custo_total):
 st.sidebar.title("⛽ CRM AmPm")
 st.sidebar.caption("Plataforma Integrada de Operações")
 
-# Upload de Arquivos Customizados
 file_upload = st.sidebar.file_uploader("Suba uma nova planilha (Excel/CSV):", type=['xlsx', 'csv'])
 
 df_mock_lojas, df_mock_inst = carregar_dados_mock()
@@ -174,7 +173,7 @@ else:
 
 df_instrutores = df_mock_inst
 
-# Processamento do PROCV Geográfico / Haversine (Recomendação)
+# Processamento do PROCV Geográfico / Haversine
 lista_recomendacoes = []
 
 for _, loja in df_base.iterrows():
@@ -198,7 +197,6 @@ for _, loja in df_base.iterrows():
                 'Distancia_km_linha_reta': d
             })
         
-        # Ordenar e pegar os top 3 mais próximos
         distancias_df = pd.DataFrame(distancias).sort_values(by='Distancia_km_linha_reta')
         
         for rank, (_, row_inst) in enumerate(distancias_df.head(3).iterrows(), 1):
@@ -238,7 +236,7 @@ modulo = st.sidebar.radio(
 )
 
 st.sidebar.divider()
-st.sidebar.markdown(f"🟢 **Status:** Operacional")
+st.sidebar.markdown("🟢 **Status:** Operacional")
 st.sidebar.markdown(f"🏪 **Rede:** {len(df_base)} Unidades")
 
 # ==========================================
@@ -328,14 +326,13 @@ elif modulo == "🔍 PROCV & Filtros Avançados":
     st.dataframe(df_filtered, use_container_width=True)
 
 # ==========================================
-# MÓDULO 4: CALCULADORA, LOGÍSTICA & MAPA INTERATIVO AVANÇADO
+# MÓDULO 4: CALCULADORA & OTIMIZADOR DE CUSTOS
 # ==========================================
 elif modulo == "📍 Calculadora & Otimizador de Custos":
     st.subheader("📍 Centro Operacional de Logística e Rotas Avançadas")
     st.caption("Análise de rotas, clusterização de postos por proximidade e otimização de custos de deslocamento.")
     
     if not df_rec.empty:
-        # Abas de Visão Logística
         aba_rota, aba_rede = st.tabs(["🛣️ Análise de Rota Individual", "🌐 Mapa Geral da Rede & Circuitos"])
         
         postos_unicos = df_rec[['PV_ABADI', 'Razao_Social', 'Municipio_Loja', 'UF_Loja']].drop_duplicates()
@@ -348,27 +345,19 @@ elif modulo == "📍 Calculadora & Otimizador de Custos":
             top_3 = df_rec[df_rec['PV_ABADI'] == pv_sel].sort_values(by='Ranking_Proximidade').head(3)
             
             if not top_3.empty:
-                # --- MONTAGEM DO MAPA PLOTLY PREMIUM (CARTO-DARKMATTER: NATIVO E SEM API KEY) ---
                 fig_mapa = go.Figure()
-                
-                # 1. Adiciona o Posto Alvo (Destaque Laranja/Vermelho)
                 loja_info = top_3.iloc[0]
                 lat_loja = loja_info['Lat_Loja']
                 lon_loja = loja_info['Lon_Loja']
                 
                 fig_mapa.add_trace(go.Scattermapbox(
-                    lat=[lat_loja],
-                    lon=[lon_loja],
-                    mode='markers+text',
-                    marker=dict(size=18, color='#FF5252', symbol='gas-station'),
-                    text=[f"PV {pv_sel}"],
-                    textposition="top center",
-                    name="Posto AmPm Alvo",
-                    hoverinfo='text',
+                    lat=[lat_loja], lon=[lon_loja], mode='markers+text',
+                    marker=dict(size=18, color='#FF5252'),
+                    text=[f"PV {pv_sel}"], textposition="top center",
+                    name="Posto AmPm Alvo", hoverinfo='text',
                     hovertext=f"<b>⛽ POSTO ALVO</b><br>PV: {pv_sel}<br>Razão: {loja_info['Razao_Social']}<br>Cidade: {loja_info['Municipio_Loja']}/{loja_info['UF_Loja']}"
                 ))
                 
-                # 2. Adiciona os Instrutores Recomendados e Desenha as Linhas de Rota
                 cores_inst = ['#4CAF50', '#81C784', '#A5D6A7']
                 
                 for idx, (_, row) in enumerate(top_3.iterrows()):
@@ -378,51 +367,35 @@ elif modulo == "📍 Calculadora & Otimizador de Custos":
                     nome_inst = row['Instrutor_Sugerido']
                     rank = row['Ranking_Proximidade']
                     
-                    # Linha de Conexão (Rota)
                     fig_mapa.add_trace(go.Scattermapbox(
-                        lat=[lat_loja, lat_inst],
-                        lon=[lon_loja, lon_inst],
-                        mode='lines',
+                        lat=[lat_loja, lat_inst], lon=[lon_loja, lon_inst], mode='lines',
                         line=dict(width=3 if rank == 1 else 1.5, color=cores_inst[idx]),
-                        name=f"Rota #{rank} ({dist_km:.0f} km)",
-                        hoverinfo='text',
+                        name=f"Rota #{rank} ({dist_km:.0f} km)", hoverinfo='text',
                         hovertext=f"<b>Trajeto #{rank}:</b> {dist_km:.1f} km"
                     ))
                     
-                    # Ponto do Instrutor
                     fig_mapa.add_trace(go.Scattermapbox(
-                        lat=[lat_inst],
-                        lon=[lon_inst],
-                        mode='markers+text',
+                        lat=[lat_inst], lon=[lon_inst], mode='markers+text',
                         marker=dict(size=14 if rank == 1 else 10, color=cores_inst[idx]),
-                        text=[f"#{rank} {nome_inst.split()[0]}"],
-                        textposition="bottom center",
-                        name=f"#{rank} {nome_inst}",
-                        hoverinfo='text',
+                        text=[f"#{rank} {nome_inst.split()[0]}"], textposition="bottom center",
+                        name=f"#{rank} {nome_inst}", hoverinfo='text',
                         hovertext=f"<b>👨‍🏫 INSTRUTOR #{rank}</b><br>{nome_inst}<br>Origem: {row['Cidade_Instrutor']}/{row['UF_Instrutor']}<br>Distância: {dist_km:.1f} km"
                     ))
                 
-                # Configurações do Layout Cartográfico Dark
                 fig_mapa.update_layout(
                     mapbox=dict(
-                        style="carto-darkmatter", # Estilo Dark moderno nativo sem necessidade de token
+                        style="carto-darkmatter",
                         center=dict(lat=lat_loja, lon=lon_loja),
                         zoom=6.5
                     ),
-                    margin=dict(l=0, r=0, t=30, b=0),
-                    height=520,
-                    paper_bgcolor='rgba(0,0,0,0)',
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    legend=dict(
-                        yanchor="top", y=0.98, xanchor="left", x=0.01,
-                        bgcolor="rgba(20, 23, 29, 0.85)", font=dict(color="white")
-                    )
+                    margin=dict(l=0, r=0, t=30, b=0), height=520,
+                    paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                    legend=dict(yanchor="top", y=0.98, xanchor="left", x=0.01, bgcolor="rgba(20, 23, 29, 0.85)", font=dict(color="white"))
                 )
                 
                 st.markdown("#### 🗺️ Diagrama de Rotas e Proximidade Logística")
                 st.plotly_chart(fig_mapa, use_container_width=True)
                 
-                # --- CALCULADORA DE CUSTOS DETALHADA ---
                 st.divider()
                 st.markdown("#### 💰 Estimador de Custos de Viagem e Alocação")
                 
@@ -475,51 +448,36 @@ elif modulo == "📍 Calculadora & Otimizador de Custos":
                     economia = custos_calculados[1] - custos_calculados[0]
                     st.success(f"💡 **Decisão Inteligente de Logística:** Alocar a **1ª Opção ({top_3.iloc[0]['Instrutor_Sugerido']})** gera uma **economia imediata de R$ {economia:.2f}** frente à segunda alternativa.")
 
-        # --- ABA 2: MAPA GERAL DE CIRCUITOS (CLUSTERIZAÇÃO NACIONAL) ---
         with aba_rede:
             st.markdown("#### 🌐 Distribuição Geográfica Global (Rede AmPm & Instrutores)")
             st.caption("Identifique densidade de lojas por estado e agrupe visitas em circuitos regionais.")
             
             fig_global = go.Figure()
             
-            # Lojas
             if 'Latitude' in df_base.columns and 'Longitude' in df_base.columns:
                 df_lojas_geo = df_base.dropna(subset=['Latitude', 'Longitude'])
                 fig_global.add_trace(go.Scattermapbox(
-                    lat=df_lojas_geo['Latitude'],
-                    lon=df_lojas_geo['Longitude'],
-                    mode='markers',
-                    marker=dict(size=7, color='#E27B00', opacity=0.7),
-                    name="Postos AmPm",
-                    hoverinfo='text',
-                    hovertext=df_lojas_geo['PV Abadi'].astype(str) + " - " + df_lojas_geo['Razão Social'] + "<br>" + df_lojas_geo['Municipio'] + "/" + df_lojas_geo['UF']
+                    lat=df_lojas_geo['Latitude'], lon=df_lojas_geo['Longitude'], mode='markers',
+                    marker=dict(size=7, color='#E27B00', opacity=0.7), name="Postos AmPm",
+                    hoverinfo='text', hovertext=df_lojas_geo['PV Abadi'].astype(str) + " - " + df_lojas_geo['Razão Social'] + "<br>" + df_lojas_geo['Municipio'] + "/" + df_lojas_geo['UF']
                 ))
             
-            # Instrutores
             if not df_instrutores.empty and 'Latitude' in df_instrutores.columns:
                 df_inst_geo = df_instrutores.dropna(subset=['Latitude', 'Longitude'])
                 fig_global.add_trace(go.Scattermapbox(
-                    lat=df_inst_geo['Latitude'],
-                    lon=df_inst_geo['Longitude'],
-                    mode='markers+text',
+                    lat=df_inst_geo['Latitude'], lon=df_inst_geo['Longitude'], mode='markers+text',
                     marker=dict(size=14, color='#4CAF50'),
-                    text=df_inst_geo['NOME_COMPLETO'].str.split().str[0],
-                    textposition="bottom center",
-                    name="Base Instrutores",
-                    hoverinfo='text',
+                    text=df_inst_geo['NOME_COMPLETO'].str.split().str[0], textposition="bottom center",
+                    name="Base Instrutores", hoverinfo='text',
                     hovertext="<b>👨‍🏫 Instrutor:</b> " + df_inst_geo['NOME_COMPLETO'] + "<br>" + df_inst_geo['Cidade'] + "/" + df_inst_geo['UF']
                 ))
                 
             fig_global.update_layout(
                 mapbox=dict(
-                    style="carto-darkmatter",
-                    center=dict(lat=-14.2350, lon=-51.9253), # Centro do Brasil
-                    zoom=3.8
+                    style="carto-darkmatter", center=dict(lat=-14.2350, lon=-51.9253), zoom=3.8
                 ),
-                margin=dict(l=0, r=0, t=10, b=0),
-                height=550,
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
+                margin=dict(l=0, r=0, t=10, b=0), height=550,
+                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
                 legend=dict(bgcolor="rgba(20, 23, 29, 0.85)", font=dict(color="white"))
             )
             
@@ -555,7 +513,6 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
 elif modulo == "👥 Equipe de Instrutores":
     st.subheader("👥 Quadro de Capilaridade dos Instrutores")
     st.caption("Bases operacionais e áreas de cobertura dos instrutores cadastrados.")
-    
     st.dataframe(df_instrutores, use_container_width=True)
 
 # ==========================================
@@ -570,7 +527,6 @@ elif modulo == "📂 Relatórios, Importação & PDF":
         top_pdf = df_rec[df_rec['PV_ABADI'] == p_sel_pdf].sort_values(by='Ranking_Proximidade').iloc[0]
         p_info = df_base[df_base['PV Abadi'] == p_sel_pdf].iloc[0] if 'PV Abadi' in df_base.columns else top_pdf
         
-        # Cálculo básico para o PDF
         dist_pdf = top_pdf['Distancia_km_linha_reta']
         custo_pdf = (dist_pdf * 2 * 2.10) + (3 * 280) if dist_pdf <= 300 else 1400 + 150 + (3 * 280)
         
@@ -583,4 +539,3 @@ elif modulo == "📂 Relatórios, Importação & PDF":
             mime="application/pdf",
             use_container_width=True
         )
-
