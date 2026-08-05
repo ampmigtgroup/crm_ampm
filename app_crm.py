@@ -43,7 +43,7 @@ st.markdown("""
         opacity: 0.95;
     }
 
-    /* KPI Cards com Indicadores */
+    /* KPI Cards */
     .kpi-card {
         background-color: #1E222A;
         border-radius: 12px;
@@ -51,10 +51,6 @@ st.markdown("""
         border: 1px solid #2D333F;
         border-left: 6px solid #E27B00;
         box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-        transition: transform 0.2s ease;
-    }
-    .kpi-card:hover {
-        transform: translateY(-2px);
     }
     .kpi-header {
         display: flex;
@@ -94,20 +90,25 @@ st.markdown("""
         align-items: center;
     }
 
-    /* Cards de Informação PROCV e Instrutores */
+    /* Cards de Informação PROCV e Call Center */
     .procv-card {
         background-color: #1A1D24;
-        padding: 22px;
+        padding: 20px;
         border-radius: 12px;
         border: 1px solid #2D333F;
         border-top: 4px solid #E27B00;
-        height: 100%;
         box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+        margin-bottom: 15px;
     }
     .procv-card h4 {
         margin-top: 0;
-        margin-bottom: 14px;
+        margin-bottom: 12px;
         color: #FF9800;
+        font-size: 1rem;
+    }
+    .procv-card p {
+        margin: 4px 0;
+        font-size: 0.9rem;
     }
     
     .top-instructor-card {
@@ -127,24 +128,15 @@ st.markdown("""
         position: relative;
     }
 
-    /* Badges Logísticos */
-    .badge-aereo {
-        background: rgba(2, 136, 209, 0.15);
-        color: #29B6F6;
-        border: 1px solid #0288D1;
-        padding: 4px 10px;
-        border-radius: 20px;
+    /* Badges */
+    .badge-info {
+        background: rgba(226, 123, 0, 0.15);
+        color: #FF9800;
+        border: 1px solid #E27B00;
+        padding: 3px 8px;
+        border-radius: 6px;
         font-weight: 600;
-        font-size: 0.8rem;
-    }
-    .badge-terrestre {
-        background: rgba(56, 142, 60, 0.15);
-        color: #66BB6A;
-        border: 1px solid #388E3C;
-        padding: 4px 10px;
-        border-radius: 20px;
-        font-weight: 600;
-        font-size: 0.8rem;
+        font-size: 0.78rem;
     }
 
     /* Botão Customizado AmPm */
@@ -213,7 +205,8 @@ def carregar_bases_integradas():
             df_base['Instrutor_Sugerido'] = df_base['Instrutor_Sugerido'].fillna('Pendente de Alocação')
             df_base['Nome_Contato'] = ""
             df_base['Qtd_Funcionarios'] = 0
-            df_base['Material_Em_Loja'] = "N/A"
+            df_base['Material_Em_Loja'] = "Não Informado"
+            df_base['Data_Agendada'] = ""
             
             return df_base, df_instrutores, df_rec
         except Exception as e:
@@ -341,6 +334,7 @@ elif modulo == "📋 Pipeline Kanban":
                 with st.expander(f"📍 PV {item['PV Abadi']} | {str(item['Razão Social'])[:14]}..."):
                     st.write(f"**Cidade:** {item['Municipio']}/{item['UF']}")
                     st.write(f"**Necessidade:** {item['Tipo_Necessidade']}")
+                    st.write(f"**Treinandos:** {item.get('Qtd_Funcionarios', 0)} pessoas")
                     
                     mudar_status = st.selectbox(
                         "Alterar Status:",
@@ -486,33 +480,14 @@ elif modulo == "📍 Calculadora & Otimizador de Custos":
                 economia = custos_calculados[1] - custos_calculados[0]
                 st.success(f"💡 **Economia Eficiente:** Optar pelo **1º Instrutor Recomendado** garante uma economia estimada de **R$ {economia:.2f}** nesta operação.")
 
-            # Mapa Visual Pydeck
-            st.divider()
-            dados_rota = top_3.iloc[0]
-            lat_loja, lon_loja = pd.to_numeric(dados_rota.get('Lat_Loja')), pd.to_numeric(dados_rota.get('Lon_Loja'))
-            lat_inst, lon_inst = pd.to_numeric(dados_rota.get('Lat_Instrutor')), pd.to_numeric(dados_rota.get('Lon_Instrutor'))
-            
-            if pd.notna(lat_loja) and pd.notna(lat_inst):
-                linha_data = [{'start_lon': float(lon_inst), 'start_lat': float(lat_inst), 'end_lon': float(lon_loja), 'end_lat': float(lat_loja)}]
-                pontos_data = [
-                    {"lon": float(lon_inst), "lat": float(lat_inst), "nome": f"Origem: {dados_rota['Cidade_Instrutor']}", "color": [76, 175, 80]},
-                    {"lon": float(lon_loja), "lat": float(lat_loja), "nome": f"Destino: {dados_rota['Razao_Social']}", "color": [211, 47, 47]}
-                ]
-                
-                layer_line = pdk.Layer("LineLayer", linha_data, get_source_position=["start_lon", "start_lat"], get_target_position=["end_lon", "end_lat"], get_color=[226, 123, 0, 255], get_width=6)
-                layer_points = pdk.Layer("ScatterplotLayer", pontos_data, get_position=["lon", "lat"], get_color="color", get_radius=12000, pickable=True)
-                view_state = pdk.ViewState(latitude=(float(lat_inst) + float(lat_loja)) / 2, longitude=(float(lon_inst) + float(lon_loja)) / 2, zoom=5)
-                
-                st.pydeck_chart(pdk.Deck(layers=[layer_line, layer_points], initial_view_state=view_state, tooltip={"text": "{nome}"}), use_container_width=True)
-
 # ==========================================
-# MÓDULO 5: CALL CENTER & TIMELINE WHATSAPP
+# MÓDULO 5: CALL CENTER & TIMELINE WHATSAPP (ENRIQUECIDO)
 # ==========================================
 elif modulo == "📞 Call Center & Timeline WhatsApp":
     if not df_base.empty:
         df_fila_view = df_base[df_base['Tipo_Necessidade'] != 'Rede Ativa (Sem Pendência)'].copy()
         
-        c_left, c_right = st.columns([1.5, 1.5])
+        c_left, c_right = st.columns([1.2, 1.8])
         
         with c_left:
             st.subheader("📋 Fila de Atendimento")
@@ -528,23 +503,63 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                 pv_alvo = posto['PV Abadi']
                 tel_limpo = ''.join(filter(str.isdigit, str(posto.get('Telefone_Contato', ''))))
                 
-                st.markdown(f"### 📝 Ficha de Contato — PV {posto['PV Abadi']}")
+                st.markdown(f"### 📝 Ficha de Atendimento — **PV {posto['PV Abadi']}**")
                 
+                # --- PAINEL DE INFORMAÇÕES AUTOMÁTICAS DA LOJA (PROCV INTEGRADO) ---
+                st.markdown(f"""
+                    <div class="procv-card">
+                        <h4>🏪 Contexto do Posto (Preenchimento Automático)</h4>
+                        <div style="display: flex; justify-content: space-between; flex-wrap: wrap;">
+                            <div style="flex: 1; min-width: 200px;">
+                                <p>🏬 <b>Razão Social:</b> {posto.get('Razão Social', '-')}</p>
+                                <p>📍 <b>Cidade/UF:</b> {posto.get('Municipio', '-')}/{posto.get('UF', '-')}</p>
+                                <p>🏠 <b>Endereço:</b> {posto.get('Endereço', '-')}</p>
+                                <p>👔 <b>Consultor (CF):</b> {posto.get('CF', '-')}</p>
+                            </div>
+                            <div style="flex: 1; min-width: 200px;">
+                                <p>🎯 <b>Necessidade:</b> <span class="badge-info">{posto.get('Tipo_Necessidade', '-')}</span></p>
+                                <p>👨‍🏫 <b>Instrutor Sugerido:</b> {posto.get('Instrutor_Sugerido', '-')}</p>
+                                <p>⏱️ <b>Dias sem Treinamento:</b> {posto.get('Dias_desde_Ultimo_Treinamento', 'N/A')}</p>
+                                <p>📅 <b>Inauguração Prevista:</b> {posto.get('Previsão Inauguração', 'N/A')}</p>
+                            </div>
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+                # Botão Direto para WhatsApp Web
                 if tel_limpo:
-                    msg = f"Olá, equipe {posto['Razão Social']}! Aqui é da equipe de Treinamento AmPm."
+                    msg = f"Olá, equipe {posto['Razão Social']}! Aqui é da equipe de Capacitação AmPm. Gostaria de agendar o treinamento da loja."
                     link_wa = f"https://wa.me/55{tel_limpo}?text={msg.replace(' ', '%20')}"
-                    st.markdown(f"📲 **[Abrir conversa no WhatsApp Web/App]( {link_wa} )**")
+                    st.markdown(f"📲 **[Clique aqui para chamar no WhatsApp Direct]( {link_wa} )**")
 
-                with st.form("form_callcenter"):
-                    nome_c = st.text_input("👤 Nome Responsável:", value=str(posto.get('Nome_Contato', '')))
-                    tel_c = st.text_input("📞 Telefone:", value=str(posto.get('Telefone_Contato', '')))
-                    novo_st = st.selectbox("🔄 Status Atendimento:", ["A Contatar", "Em Negociação", "Agendado", "Treinamento Realizado", "Recusado"])
-                    obs = st.text_area("💬 Observações:", value=str(posto.get('Observacoes', '')))
+                # --- FORMULÁRIO RÁPIDO DO ATENDENTE ---
+                with st.form("form_callcenter_enriquecido"):
+                    st.markdown("#### ✍️ Registros Rápidos da Ligação")
                     
-                    if st.form_submit_button("💾 Salvar Registro de Atendimento"):
+                    col_f1, col_f2 = st.columns(2)
+                    with col_f1:
+                        nome_c = st.text_input("👤 Nome do Responsável na Loja:", value=str(posto.get('Nome_Contato', '')))
+                        tel_c = st.text_input("📞 Telefone de Contato:", value=str(posto.get('Telefone_Contato', '')))
+                        qtd_func = st.number_input("👥 Qtd. de Funcionários para Treinar:", value=int(posto.get('Qtd_Funcionarios', 0)), min_value=0, step=1)
+                        
+                    with col_f2:
+                        novo_st = st.selectbox(
+                            "🔄 Status do Atendimento:", 
+                            ["A Contatar", "Em Negociação", "Agendado", "Treinamento Realizado", "Recusado"],
+                            index=["A Contatar", "Em Negociação", "Agendado", "Treinamento Realizado", "Recusado"].index(posto.get('Status_Contato', 'A Contatar'))
+                        )
+                        mat_loja = st.selectbox("📦 Possui Material/Apostilas na Loja?", ["Não Informado", "Sim", "Não"], index=["Não Informado", "Sim", "Não"].index(posto.get('Material_Em_Loja', 'Não Informado')))
+                        data_ag = st.text_input("📅 Data Agendada (se houver):", value=str(posto.get('Data_Agendada', '')))
+                        
+                    obs = st.text_area("💬 Observações e Alinhamentos:", value=str(posto.get('Observacoes', '')), height=80)
+                    
+                    if st.form_submit_button("💾 Salvar Registro do Atendimento"):
                         mask = st.session_state['df_base']['PV Abadi'] == pv_alvo
                         st.session_state['df_base'].loc[mask, 'Nome_Contato'] = nome_c
                         st.session_state['df_base'].loc[mask, 'Telefone_Contato'] = tel_c
+                        st.session_state['df_base'].loc[mask, 'Qtd_Funcionarios'] = qtd_func
+                        st.session_state['df_base'].loc[mask, 'Material_Em_Loja'] = mat_loja
+                        st.session_state['df_base'].loc[mask, 'Data_Agendada'] = data_ag
                         st.session_state['df_base'].loc[mask, 'Status_Contato'] = novo_st
                         st.session_state['df_base'].loc[mask, 'Observacoes'] = obs
                         st.session_state['df_base'].loc[mask, 'Data_do_Contato'] = datetime.today().strftime('%d/%m/%Y %H:%M')
@@ -554,12 +569,12 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
 
                 # Histórico Cronológico / Timeline
                 st.divider()
-                st.markdown("#### ⏱️ Histórico Recente de Interações")
+                st.markdown("#### ⏱️ Histórico de Interações")
                 data_ct = posto.get('Data_do_Contato', 'Sem registro')
                 st.markdown(f"""
                     <div class="timeline-item">
-                        <small style="color:#A0AAB8;"><b>Data do Contato:</b> {data_ct}</small><br>
-                        <span><b>Status:</b> {posto.get('Status_Contato', '-')}</span><br>
+                        <small style="color:#A0AAB8;"><b>Última Atualização:</b> {data_ct}</small><br>
+                        <span><b>Status:</b> {posto.get('Status_Contato', '-')} | <b>Treinandos:</b> {posto.get('Qtd_Funcionarios', 0)} | <b>Material:</b> {posto.get('Material_Em_Loja', '-')}</span><br>
                         <span style="color:#D1D5DB;"><i>"{posto.get('Observacoes', 'Sem observações registradas.')}"</i></span>
                     </div>
                 """, unsafe_allow_html=True)
