@@ -1,812 +1,585 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import os
-from datetime import datetime, date, timedelta
-import pydeck as pdk
-import plotly.express as plotly_express
+import plotly.express as px
 import plotly.graph_objects as go
-import io
+from math import radians, cos, sin, asin, sqrt
 from fpdf import FPDF
+import io
 
-# --- CONFIGURAÇÃO DA PÁGINA ---
+# ==========================================
+# CONFIGURAÇÃO DA PÁGINA (WIDE & DARK THEME)
+# ==========================================
 st.set_page_config(
-    page_title="CRM Operacional AmPm",
+    page_title="CRM Operacional AmPm - Gestão & Treinamentos",
     page_icon="⛽",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# --- ESTILIZAÇÃO CSS CUSTOMIZADA (DESIGN SYSTEM AMPM PREMIUM) ---
+# Estilização CSS Customizada para visual Executivo/Dark
 st.markdown("""
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-    
-    html, body, [class*="css"] {
-        font-family: 'Inter', sans-serif;
-    }
-
-    .main-header {
-        background: linear-gradient(135deg, #E27B00 0%, #FF9800 50%, #D32F2F 100%);
-        padding: 24px 28px;
-        border-radius: 16px;
-        color: white;
-        margin-bottom: 20px;
-        box-shadow: 0 8px 24px rgba(226, 123, 0, 0.25);
-    }
-    .main-header h1 {
-        color: white !important;
-        margin: 0 0 6px 0;
-        font-weight: 700;
-        font-size: 2.2rem;
-    }
-    .main-header p {
-        margin: 0;
-        font-size: 1.05rem;
-        opacity: 0.95;
-    }
-
-    /* KPI Cards */
-    .kpi-card {
-        background-color: #1E222A;
-        border-radius: 12px;
-        padding: 18px;
-        border: 1px solid #2D333F;
-        border-left: 6px solid #E27B00;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-    }
-    .kpi-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-    .kpi-title {
-        font-size: 0.8rem;
-        color: #A0AAB8;
-        text-transform: uppercase;
-        font-weight: 700;
-        letter-spacing: 0.8px;
-    }
-    .kpi-value {
-        font-size: 1.8rem;
-        font-weight: 700;
-        color: #FFFFFF;
-        margin-top: 8px;
-    }
-
-    /* Kanban */
-    .kanban-column {
-        background-color: #14171D;
-        border-radius: 12px;
-        padding: 14px;
-        border: 1px solid #2D333F;
-        min-height: 500px;
-    }
-    .kanban-title {
-        font-size: 0.95rem;
-        font-weight: 700;
-        margin-bottom: 12px;
-        padding-bottom: 8px;
-        border-bottom: 2px solid #2D333F;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-
-    /* Cards e Alertas */
-    .procv-card {
-        background-color: #1A1D24;
-        padding: 20px;
-        border-radius: 12px;
-        border: 1px solid #2D333F;
-        border-top: 4px solid #E27B00;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.15);
-        margin-bottom: 15px;
-    }
-    
-    .alert-card-danger {
-        background-color: rgba(211, 47, 47, 0.15);
-        border: 1px solid #D32F2F;
-        border-left: 6px solid #D32F2F;
-        padding: 12px 18px;
+<style>
+    .main { background-color: #0E1117; }
+    .stMetric {
+        background-color: #1E222D;
+        padding: 15px;
         border-radius: 10px;
-        margin-bottom: 10px;
+        border: 1px solid #2D333F;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
     }
-
-    .alert-card-warning {
-        background-color: rgba(255, 152, 0, 0.15);
-        border: 1px solid #FF9800;
-        border-left: 6px solid #FF9800;
-        padding: 12px 18px;
-        border-radius: 10px;
-        margin-bottom: 10px;
-    }
-
     .top-instructor-card {
-        background-color: #1A1D24;
-        padding: 18px;
-        border-radius: 12px;
-        border: 1px solid #2D333F;
-        border-left: 5px solid #4CAF50;
-        margin-bottom: 14px;
-    }
-
-    .timeline-item {
-        border-left: 3px solid #E27B00;
-        padding-left: 15px;
-        margin-bottom: 15px;
-    }
-
-    .badge-info {
-        background: rgba(226, 123, 0, 0.15);
-        color: #FF9800;
-        border: 1px solid #E27B00;
-        padding: 3px 8px;
-        border-radius: 6px;
-        font-weight: 600;
-        font-size: 0.78rem;
-    }
-
-    .stButton>button {
-        background: linear-gradient(90deg, #E27B00 0%, #FF9800 100%);
-        color: #FFFFFF !important;
-        font-weight: 600;
-        border: none;
+        background-color: #1E222D;
+        border-left: 5px solid #FF9800;
+        padding: 15px;
         border-radius: 8px;
-        padding: 10px 20px;
-        transition: all 0.3s ease;
+        margin-bottom: 12px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.2);
     }
-    .stButton>button:hover {
-        box-shadow: 0 4px 14px rgba(226, 123, 0, 0.5);
+    .badge-info {
+        background-color: #0083B0;
+        color: white;
+        padding: 3px 8px;
+        border-radius: 12px;
+        font-size: 0.8rem;
+        font-weight: bold;
     }
-    </style>
+</style>
 """, unsafe_allow_html=True)
 
-# --- GERADOR DE PDF DA OS ---
-def gerar_pdf_ordem_servico(dados):
-    pdf = FPDF()
+# ==========================================
+# FUNÇÕES AUXILIARES & CÁLCULOS LOGÍSTICOS
+# ==========================================
+def haversine(lon1, lat1, lon2, lat2):
+    """Calcula a distância em quilômetros entre dois pontos geográficos."""
+    try:
+        lon1, lat1, lon2, lat2 = map(radians, [float(lon1), float(lat1), float(lon2), float(lat2)])
+        dlon = lon2 - lon1 
+        dlat = lat2 - lat1 
+        a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+        c = 2 * asin(sqrt(a)) 
+        r = 6371 # Raio da Terra em KM
+        return c * r
+    except:
+        return np.nan
+
+@st.cache_data
+def carregar_dados_mock():
+    """Gera dados realistas de teste da rede AmPm e Instrutores caso nenhuma planilha seja enviada."""
+    lojas = []
+    ufs = ['SP', 'RJ', 'PR', 'SC', 'RS', 'MG', 'BA', 'PE', 'GO', 'DF']
+    cidades = ['São Paulo', 'Rio de Janeiro', 'Curitiba', 'Florianópolis', 'Porto Alegre', 'Belo Horizonte', 'Salvador', 'Recife', 'Goiânia', 'Brasília']
+    lats = [-23.5505, -22.9068, -25.4284, -27.5954, -30.0346, -19.9167, -12.9714, -8.0476, -16.6869, -15.7975]
+    lons = [-46.6333, -43.1729, -49.2733, -48.5480, -51.2177, -43.9345, -38.5014, -34.8770, -49.2648, -47.8919]
+    
+    # Criar 60 lojas fictícias
+    for i in range(1, 61):
+        idx_loc = i % len(ufs)
+        lojas.append({
+            'PV Abadi': 2600 + i,
+            'Razão Social': f'Auto Posto Petrosolo Ltd {i}',
+            'Nome Fantasia': f'Posto AmPm {i}',
+            'UF': ufs[idx_loc],
+            'Municipio': cidades[idx_loc],
+            'Regional': f'Regional {ufs[idx_loc]}',
+            'Consultor Negócios': f'Consultor {i%5 + 1}',
+            'Status': np.random.choice(['Pendente', 'Em Agendamento', 'Treinado', 'Recusado'], p=[0.4, 0.3, 0.2, 0.1]),
+            'SLA_Dias': np.random.randint(2, 25),
+            'Latitude': lats[idx_loc] + np.random.uniform(-0.15, 0.15),
+            'Longitude': lons[idx_loc] + np.random.uniform(-0.15, 0.15)
+        })
+    
+    # Criar 6 instrutores
+    instrutores = [
+        {'NOME_COMPLETO': 'Carlos Eduardo Silva', 'UF': 'SP', 'Cidade': 'São Paulo', 'Latitude': -23.5505, 'Longitude': -46.6333, 'Especialidade': 'Loja & Pista'},
+        {'NOME_COMPLETO': 'Mariana Souza Santos', 'UF': 'RJ', 'Cidade': 'Rio de Janeiro', 'Latitude': -22.9068, 'Longitude': -43.1729, 'Especialidade': 'Liderança'},
+        {'NOME_COMPLETO': 'Roberto Alves', 'UF': 'PR', 'Cidade': 'Curitiba', 'Latitude': -25.4284, 'Longitude': -49.2733, 'Especialidade': 'Fast Food AmPm'},
+        {'NOME_COMPLETO': 'Fernanda Lima', 'UF': 'RS', 'Cidade': 'Porto Alegre', 'Latitude': -30.0346, 'Longitude': -51.2177, 'Especialidade': 'Loja & Pista'},
+        {'NOME_COMPLETO': 'Lucas Oliveira', 'UF': 'MG', 'Cidade': 'Belo Horizonte', 'Latitude': -19.9167, 'Longitude': -43.9345, 'Especialidade': 'Segurança & Processos'},
+        {'NOME_COMPLETO': 'Juliana Costa', 'UF': 'BA', 'Cidade': 'Salvador', 'Latitude': -12.9714, 'Longitude': -38.5014, 'Especialidade': 'Excelência Operacional'}
+    ]
+    
+    return pd.DataFrame(lojas), pd.DataFrame(instrutores)
+
+# ==========================================
+# GERADOR DE RELATÓRIO PDF (FPDF)
+# ==========================================
+class PDFReport(FPDF):
+    def header(self):
+        self.set_fill_color(30, 34, 45)
+        self.rect(0, 0, 210, 25, 'F')
+        self.set_font('Arial', 'B', 15)
+        self.set_text_color(255, 152, 0)
+        self.cell(0, 10, 'CRM Operacional AmPm - Ficha de Treinamento', 0, 1, 'C')
+        self.ln(5)
+
+    def footer(self):
+        self.set_y(-15)
+        self.set_font('Arial', 'I', 8)
+        self.set_text_color(128, 128, 128)
+        self.cell(0, 10, f'Página {self.page_no()}', 0, 0, 'C')
+
+def gerar_pdf_ficha(posto_info, instrutor_info, custo_total):
+    pdf = PDFReport()
     pdf.add_page()
+    pdf.set_font("Arial", size=11)
     
-    # Cabeçalho
-    pdf.set_fill_color(226, 123, 0)
-    pdf.rect(0, 0, 210, 30, 'F')
-    pdf.set_font("Arial", 'B', 18)
-    pdf.set_text_color(255, 255, 255)
-    pdf.cell(0, 10, "AMPM - ORDEM DE SERVICO DE TREINAMENTO", ln=True, align='C')
-    pdf.ln(10)
+    pdf.set_font("Arial", 'B', 14)
+    pdf.cell(200, 10, txt="1. Dados do Posto Alvo", ln=True)
+    pdf.set_font("Arial", size=11)
+    pdf.cell(200, 8, txt=f"PV ABADI: {posto_info['PV Abadi']}", ln=True)
+    pdf.cell(200, 8, txt=f"Razao Social: {posto_info['Razão Social']}", ln=True)
+    pdf.cell(200, 8, txt=f"Localizacao: {posto_info['Municipio']} / {posto_info['UF']}", ln=True)
+    pdf.cell(200, 8, txt=f"Consultor de Negocios: {posto_info['Consultor Negócios']}", ln=True)
     
-    # Corpo
-    pdf.set_text_color(0, 0, 0)
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 8, f"PV ABADI: {dados.get('PV Abadi')} - {dados.get('Razao Social')}", ln=True)
-    pdf.set_font("Arial", '', 10)
-    pdf.cell(0, 6, f"Endereco: {dados.get('Endereco')} - {dados.get('Municipio')}/{dados.get('UF')}", ln=True)
-    pdf.cell(0, 6, f"Consultor Responsavel: {dados.get('CF')}", ln=True)
     pdf.ln(5)
+    pdf.set_font("Arial", 'B', 14)
+    pdf.cell(200, 10, txt="2. Alocacao Logistica do Instrutor", ln=True)
+    pdf.set_font("Arial", size=11)
+    pdf.cell(200, 8, txt=f"Instrutor Selecionado: {instrutor_info['Instrutor_Sugerido']}", ln=True)
+    pdf.cell(200, 8, txt=f"Base Origem: {instrutor_info['Cidade_Instrutor']} / {instrutor_info['UF_Instrutor']}", ln=True)
+    pdf.cell(200, 8, txt=f"Distancia em Linha Reta: {instrutor_info['Distancia_km_linha_reta']:.1f} km", ln=True)
     
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 8, "DETALHES DO AGENDAMENTO", ln=True)
-    pdf.set_font("Arial", '', 10)
-    pdf.cell(0, 6, f"Status do Atendimento: {dados.get('Status_Contato')}", ln=True)
-    pdf.cell(0, 6, f"Data do Agendamento: {dados.get('Data_Agendada')}", ln=True)
-    pdf.cell(0, 6, f"Instrutor Designado: {dados.get('Instrutor_Sugerido')}", ln=True)
-    pdf.cell(0, 6, f"Qtd. de Treinandos: {dados.get('Qtd_Funcionarios')}", ln=True)
-    pdf.cell(0, 6, f"Material em Loja: {dados.get('Material_Em_Loja')}", ln=True)
     pdf.ln(5)
-    
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 8, "CONTATO NA LOJA & OBSERVACOES", ln=True)
-    pdf.set_font("Arial", '', 10)
-    pdf.cell(0, 6, f"Contato: {dados.get('Nome_Contato')} ({dados.get('Telefone_Contato')})", ln=True)
-    pdf.multi_cell(0, 6, f"Observacoes: {dados.get('Observacoes')}")
-    pdf.ln(15)
-    
-    # Assinaturas
-    pdf.cell(90, 6, "___________________________________", ln=False, align='C')
-    pdf.cell(90, 6, "___________________________________", ln=True, align='C')
-    pdf.cell(90, 6, "Assinatura do Responsavel Loja", ln=False, align='C')
-    pdf.cell(90, 6, "Assinatura do Instrutor", ln=True, align='C')
+    pdf.set_font("Arial", 'B', 14)
+    pdf.cell(200, 10, txt="3. Estimativa de Custos Logisticos", ln=True)
+    pdf.set_font("Arial", size=11)
+    pdf.cell(200, 8, txt=f"Custo Total Estimado de Deslocamento/Diarias: R$ {custo_total:.2f}", ln=True)
     
     return pdf.output(dest='S').encode('latin-1', errors='replace')
 
-# --- CARREGAMENTO E TRATAMENTO DE DADOS ---
-@st.cache_data
-def carregar_bases_integradas():
-    caminho = "Base_Unificada_AmPm.xlsx"
-    if os.path.exists(caminho):
-        try:
-            xls = pd.ExcelFile(caminho, engine='openpyxl')
-            df_lojas = pd.read_excel(xls, sheet_name='Rede_de_Lojas')
-            df_fila = pd.read_excel(xls, sheet_name='Fila_CallCenter')
-            df_inaug = pd.read_excel(xls, sheet_name='Previsao_Inauguracao')
-            df_instrutores = pd.read_excel(xls, sheet_name='Instrutores')
-            df_rec = pd.read_excel(xls, sheet_name='Recomendacao_Deslocamento')
-            
-            df_lojas['PV Abadi'] = pd.to_numeric(df_lojas['PV Abadi'], errors='coerce')
-            df_fila['PV_Abadi'] = pd.to_numeric(df_fila['PV_Abadi'], errors='coerce')
-            df_inaug['PV ABADI'] = pd.to_numeric(df_inaug['PV ABADI'], errors='coerce')
-            df_rec['PV_ABADI'] = pd.to_numeric(df_rec['PV_ABADI'], errors='coerce')
-            
-            df_base = pd.merge(
-                df_lojas,
-                df_fila[['PV_Abadi', 'Tipo_Necessidade', 'Data_Ultimo_Treinamento', 
-                         'Dias_desde_Ultimo_Treinamento', 'Instrutor_Sugerido', 
-                         'Semana_Sugerida', 'Telefone_Contato', 'Status_Contato', 
-                         'Data_do_Contato', 'Observacoes']],
-                left_on='PV Abadi', right_on='PV_Abadi', how='left'
-            )
-            
-            df_base = pd.merge(
-                df_base,
-                df_inaug[['PV ABADI', 'Previsão Inauguração', 'Pipeline', 'Consultor_Possivel_Instrutor']],
-                left_on='PV Abadi', right_on='PV ABADI', how='left'
-            )
-            
-            df_rec = pd.merge(
-                df_rec,
-                df_instrutores[['NOME_COMPLETO', 'Latitude', 'Longitude']],
-                left_on='Instrutor_Sugerido', right_on='NOME_COMPLETO', how='left'
-            ).rename(columns={'Latitude': 'Lat_Instrutor', 'Longitude': 'Lon_Instrutor'})
-            
-            df_rec = pd.merge(
-                df_rec,
-                df_lojas[['PV Abadi', 'Latitude', 'Longitude']],
-                left_on='PV_ABADI', right_on='PV Abadi', how='left'
-            ).rename(columns={'Latitude': 'Lat_Loja', 'Longitude': 'Lon_Loja'})
+# ==========================================
+# CARREGAMENTO E PROCESSAMENTO DE DADOS
+# ==========================================
+st.sidebar.title("⛽ CRM AmPm")
+st.sidebar.caption("Plataforma Integrada de Operações")
 
-            df_base['Status_Contato'] = df_base['Status_Contato'].fillna('A Contatar')
-            df_base['Tipo_Necessidade'] = df_base['Tipo_Necessidade'].fillna('Rede Ativa (Sem Pendência)')
-            df_base['Instrutor_Sugerido'] = df_base['Instrutor_Sugerido'].fillna('Pendente de Alocação')
-            df_base['Nome_Contato'] = ""
-            df_base['Qtd_Funcionarios'] = 0
-            df_base['Material_Em_Loja'] = "Não Informado"
-            df_base['Data_Agendada'] = None
-            
-            return df_base, df_instrutores, df_rec
-        except Exception as e:
-            st.error(f"⚠️ Erro ao carregar planilhas: {e}")
-            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
-    return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+# Upload de Arquivos Customizados
+file_upload = st.sidebar.file_uploader("Suba uma nova planilha (Excel/CSV):", type=['xlsx', 'csv'])
 
-if 'df_base' not in st.session_state:
-    b, i, r = carregar_bases_integradas()
-    st.session_state['df_base'] = b
-    st.session_state['df_instrutores'] = i
-    st.session_state['df_rec'] = r
+df_mock_lojas, df_mock_inst = carregar_dados_mock()
 
-df_base = st.session_state['df_base']
-df_instrutores = st.session_state['df_instrutores']
-df_rec = st.session_state['df_rec']
+if file_upload is not None:
+    try:
+        if file_upload.name.endswith('.csv'):
+            df_base = pd.read_csv(file_upload)
+        else:
+            df_base = pd.read_excel(file_upload)
+        st.sidebar.success("Arquivo carregado com sucesso!")
+    except Exception as e:
+        st.sidebar.error("Erro ao ler o arquivo. Usando base demonstrativa.")
+        df_base = df_mock_lojas
+else:
+    df_base = df_mock_lojas
 
-# --- SIDEBAR DE NAVEGAÇÃO E IMPORTADOR DE PLANILHAS ---
-with st.sidebar:
-    st.markdown("## ⛽ **CRM AmPm**")
-    st.caption("🌐 *Plataforma Integrada de Operações*")
-    st.divider()
+df_instrutores = df_mock_inst
+
+# Processamento do PROCV Geográfico / Haversine (Recomendação)
+lista_recomendacoes = []
+
+for _, loja in df_base.iterrows():
+    pv = loja.get('PV Abadi', 0)
+    razao = loja.get('Razão Social', 'N/A')
+    uf_l = loja.get('UF', 'N/A')
+    mun_l = loja.get('Municipio', 'N/A')
+    lat_l = loja.get('Latitude', np.nan)
+    lon_l = loja.get('Longitude', np.nan)
     
-    modulo = st.radio(
-        "📌 **Módulos do Sistema:**",
-        [
-            "📊 Dashboard Executivo & SLAs", 
-            "📋 Pipeline Kanban", 
-            "🔍 PROCV & Filtros Avançados", 
-            "📍 Calculadora & Otimizador de Custos", 
-            "📞 Call Center & Timeline WhatsApp", 
-            "👔 Equipe de Instrutores",
-            "📂 Relatórios, Importação & PDF"
-        ]
-    )
-    
-    st.divider()
-    
-    # IMPORTADOR DE ARQUIVOS (DRAG & DROP)
-    st.markdown("📤 **Atualizar Base (Upload)**")
-    uploaded_file = st.file_uploader("Suba uma nova planilha (Excel/CSV):", type=['xlsx', 'csv'])
-    if uploaded_file is not None:
-        try:
-            if uploaded_file.name.endswith('.csv'):
-                df_up = pd.read_csv(uploaded_file)
-            else:
-                df_up = pd.read_excel(uploaded_file)
-            st.session_state['df_base'] = df_up
-            st.success("✅ Base de dados atualizada!")
-        except Exception as e:
-            st.error(f"Erro ao processar: {e}")
-            
-    st.divider()
-    st.markdown("📶 **Status:** `Operacional 🟢`")
-    st.markdown(f"🏪 **Rede:** `{len(df_base)} Unidades`")
+    if pd.notnull(lat_l) and pd.notnull(lon_l):
+        distancias = []
+        for _, inst in df_instrutores.iterrows():
+            d = haversine(lon_l, lat_l, inst['Longitude'], inst['Latitude'])
+            distancias.append({
+                'Instrutor_Sugerido': inst['NOME_COMPLETO'],
+                'UF_Instrutor': inst['UF'],
+                'Cidade_Instrutor': inst['Cidade'],
+                'Lat_Instrutor': inst['Latitude'],
+                'Lon_Instrutor': inst['Longitude'],
+                'Distancia_km_linha_reta': d
+            })
+        
+        # Ordenar e pegar os top 3 mais próximos
+        distancias_df = pd.DataFrame(distancias).sort_values(by='Distancia_km_linha_reta')
+        
+        for rank, (_, row_inst) in enumerate(distancias_df.head(3).iterrows(), 1):
+            lista_recomendacoes.append({
+                'PV_ABADI': pv,
+                'Razao_Social': razao,
+                'UF_Loja': uf_l,
+                'Municipio_Loja': mun_l,
+                'Lat_Loja': lat_l,
+                'Lon_Loja': lon_l,
+                'Ranking_Proximidade': rank,
+                'Instrutor_Sugerido': row_inst['Instrutor_Sugerido'],
+                'UF_Instrutor': row_inst['UF_Instrutor'],
+                'Cidade_Instrutor': row_inst['Cidade_Instrutor'],
+                'Lat_Instrutor': row_inst['Lat_Instrutor'],
+                'Lon_Instrutor': row_inst['Lon_Instrutor'],
+                'Distancia_km_linha_reta': row_inst['Distancia_km_linha_reta'],
+                'Dias_Treinamento_Necessarios': 3
+            })
 
-# Header Global
-st.markdown("""
-    <div class="main-header">
-        <h1>⛽ CRM Operacional AmPm</h1>
-        <p>🚀 Gestão Estratégica de Capacitação, Logística de Viagens e Atendimento da Rede</p>
-    </div>
-""", unsafe_allow_html=True)
+df_rec = pd.DataFrame(lista_recomendacoes)
 
 # ==========================================
-# MÓDULO 1: DASHBOARD EXECUTIVO, ALERTAS & GRÁFICOS
+# NAVEGAÇÃO LATERAL (MÓDULOS)
+# ==========================================
+modulo = st.sidebar.radio(
+    "📌 Módulos do Sistema:",
+    [
+        "📊 Dashboard Executivo & SLAs",
+        "📋 Pipeline Kanban",
+        "🔍 PROCV & Filtros Avançados",
+        "📍 Calculadora & Otimizador de Custos",
+        "📞 Call Center & Timeline WhatsApp",
+        "👥 Equipe de Instrutores",
+        "📂 Relatórios, Importação & PDF"
+    ]
+)
+
+st.sidebar.divider()
+st.sidebar.markdown(f"🟢 **Status:** Operacional")
+st.sidebar.markdown(f"🏪 **Rede:** {len(df_base)} Unidades")
+
+# ==========================================
+# MÓDULO 1: DASHBOARD EXECUTIVO
 # ==========================================
 if modulo == "📊 Dashboard Executivo & SLAs":
-    if not df_base.empty:
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            st.markdown(f"""
-                <div class="kpi-card" style="border-left-color: #E27B00;">
-                    <div class="kpi-header"><span class="kpi-title">Rede Total</span><span>🏪</span></div>
-                    <div class="kpi-value">{len(df_base)}</div>
-                </div>
-            """, unsafe_allow_html=True)
-        with c2:
-            pendentes = len(df_base[df_base['Tipo_Necessidade'] != 'Rede Ativa (Sem Pendência)'])
-            st.markdown(f"""
-                <div class="kpi-card" style="border-left-color: #FF9800;">
-                    <div class="kpi-header"><span class="kpi-title">Fila Treinamento</span><span>🎓</span></div>
-                    <div class="kpi-value">{pendentes}</div>
-                </div>
-            """, unsafe_allow_html=True)
-        with c3:
-            a_contatar = len(df_base[df_base['Status_Contato'] == 'A Contatar'])
-            st.markdown(f"""
-                <div class="kpi-card" style="border-left-color: #D32F2F;">
-                    <div class="kpi-header"><span class="kpi-title">Pendentes Contato</span><span>📞</span></div>
-                    <div class="kpi-value">{a_contatar}</div>
-                </div>
-            """, unsafe_allow_html=True)
-        with c4:
-            inaug = len(df_base[df_base['Previsão Inauguração'].notna()])
-            st.markdown(f"""
-                <div class="kpi-card" style="border-left-color: #0288D1;">
-                    <div class="kpi-header"><span class="kpi-title">Inaugurações</span><span>🚀</span></div>
-                    <div class="kpi-value">{inaug}</div>
-                </div>
-            """, unsafe_allow_html=True)
-
-        st.write("")
+    st.subheader("📊 Painel Executivo de Gestão da Rede AmPm")
+    st.caption("Acompanhamento de SLAs, status de treinamentos e gargalos operacionais em tempo real.")
+    
+    c1, c2, c3, c4 = st.columns(4)
+    total_lojas = len(df_base)
+    pendentes = len(df_base[df_base['Status'] == 'Pendente'])
+    treinados = len(df_base[df_base['Status'] == 'Treinado'])
+    sla_medio = df_base['SLA_Dias'].mean() if 'SLA_Dias' in df_base.columns else 0
+    
+    c1.metric("Total de Postos", total_lojas)
+    c2.metric("Postos Pendentes", pendentes, delta_color="inverse", delta=f"{pendentes/total_lojas*100:.1f}%")
+    c3.metric("Postos Treinados", treinados, delta=f"{treinados/total_lojas*100:.1f}%")
+    c4.metric("SLA Médio (Dias)", f"{sla_medio:.1f} dias")
+    
+    st.divider()
+    
+    col_g1, col_g2 = st.columns(2)
+    
+    with col_g1:
+        st.markdown("##### 🎯 Status das Soluções de Treinamento")
+        fig_donut = px.pie(
+            df_base, names='Status', hole=0.5,
+            color_discrete_sequence=px.colors.qualitative.Pastel
+        )
+        fig_donut.update_layout(margin=dict(l=20, r=20, t=30, b=20), paper_bgcolor='rgba(0,0,0,0)', font=dict(color="white"))
+        st.plotly_chart(fig_donut, use_container_width=True)
         
-        # --- PAINEL DE ALERTAS CRÍTICOS E SLAS ---
-        st.subheader("🚨 Central de Alertas Operacionais & SLAs")
-        col_alt1, col_alt2 = st.columns(2)
-        
-        with col_alt1:
-            st.markdown("""
-                <div class="alert-card-danger">
-                    <b>⚠️ Lojas sem Treinamento Há Mais de 365 Dias (Ação Urgente)</b>
-                </div>
-            """, unsafe_allow_html=True)
-            if 'Dias_desde_Ultimo_Treinamento' in df_base.columns:
-                criticos = df_base[df_base['Dias_desde_Ultimo_Treinamento'] > 365]
-                st.dataframe(criticos[['PV Abadi', 'Razão Social', 'UF', 'Dias_desde_Ultimo_Treinamento']].head(4), use_container_width=True, hide_index=True)
-            else:
-                st.info("Sem dados de SLA no momento.")
-
-        with col_alt2:
-            st.markdown("""
-                <div class="alert-card-warning">
-                    <b>🚀 Previsão de Inauguração sem Treinamento Agendado</b>
-                </div>
-            """, unsafe_allow_html=True)
-            inaug_sem_ag = df_base[df_base['Previsão Inauguração'].notna() & (df_base['Status_Contato'] != 'Agendado')]
-            st.dataframe(inaug_sem_ag[['PV Abadi', 'Razão Social', 'UF', 'Previsão Inauguração']].head(4), use_container_width=True, hide_index=True)
-
-        st.divider()
-        
-        # --- GRÁFICOS AVANÇADOS (PLOTLY) ---
-        st.subheader("📊 Métricas e Funil de Atendimento")
-        g1, g2 = st.columns(2)
-        
-        with g1:
-            # Funil de Atendimento
-            funnel_data = df_base['Status_Contato'].value_counts().reset_index()
-            funnel_data.columns = ['Etapa', 'Quantidade']
-            fig_funnel = plotly_express.funnel(funnel_data, x='Quantidade', y='Etapa', title="Funil de Conversão do Call Center", color_discrete_sequence=['#E27B00', '#FF9800', '#2E7D32', '#D32F2F'])
-            fig_funnel.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="white")
-            st.plotly_chart(fig_funnel, use_container_width=True)
-            
-        with g2:
-            # Rosca por Necessidade
-            fig_pie = plotly_express.pie(df_base, names='Tipo_Necessidade', title="Distribuição das Necessidades da Rede", hole=0.5, color_discrete_sequence=plotly_express.colors.sequential.Oranges_r)
-            fig_pie.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="white")
-            st.plotly_chart(fig_pie, use_container_width=True)
+    with col_g2:
+        st.markdown("##### 🔻 Funil de Conversão de Treinamentos")
+        funil_data = dict(
+            number=[total_lojas, pendentes + treinados, treinados],
+            stage=["Solicitados", "Agendados/Em Curso", "Concluídos"]
+        )
+        fig_funil = px.funnel(funil_data, x='number', y='stage', color_discrete_sequence=['#FF9800'])
+        fig_funil.update_layout(margin=dict(l=20, r=20, t=30, b=20), paper_bgcolor='rgba(0,0,0,0)', font=dict(color="white"))
+        st.plotly_chart(fig_funil, use_container_width=True)
 
 # ==========================================
-# MÓDULO 2: PIPELINE KANBAN INTERATIVO
+# MÓDULO 2: PIPELINE KANBAN
 # ==========================================
 elif modulo == "📋 Pipeline Kanban":
-    st.subheader("📋 Pipeline Operacional de Treinamentos")
-    st.caption("Gerencie o fluxo de atendimento da rede navegando entre os estágios de contato.")
+    st.subheader("📋 Quadro Kanban Operacional de Atendimento")
+    st.caption("Acompanhe e movimente o status dos postos ao longo do ciclo de treinamento.")
     
-    colunas_kanban = ["A Contatar", "Em Negociação", "Agendado", "Treinamento Realizado", "Recusado"]
-    cols_k = st.columns(len(colunas_kanban))
+    cols_kanban = st.columns(4)
+    status_list = ['Pendente', 'Em Agendamento', 'Treinado', 'Recusado']
     
-    for idx, status in enumerate(colunas_kanban):
-        df_status = df_base[df_base['Status_Contato'] == status]
-        
-        with cols_k[idx]:
-            st.markdown(f"""
-                <div class="kanban-column">
-                    <div class="kanban-title">
-                        <span>{status}</span>
-                        <span style="background:#2D333F; padding:2px 8px; border-radius:10px; font-size:0.8rem;">{len(df_status)}</span>
-                    </div>
-                </div>
-            """, unsafe_allow_html=True)
+    for idx, st_nome in enumerate(status_list):
+        with cols_kanban[idx]:
+            st.markdown(f"### {st_nome}")
+            df_st = df_base[df_base['Status'] == st_nome]
+            st.caption(f"{len(df_st)} postos nesta etapa")
+            st.divider()
             
-            for _, item in df_status.head(6).iterrows():
-                with st.expander(f"📍 PV {item['PV Abadi']} | {str(item['Razão Social'])[:14]}..."):
-                    st.write(f"**Cidade:** {item['Municipio']}/{item['UF']}")
-                    st.write(f"**Necessidade:** {item['Tipo_Necessidade']}")
-                    st.write(f"**Treinandos:** {item.get('Qtd_Funcionarios', 0)} pessoas")
-                    st.write(f"**Instrutor:** {item.get('Instrutor_Sugerido', 'Pendente')}")
-                    
-                    mudar_status = st.selectbox(
-                        "Alterar Status:",
-                        colunas_kanban,
-                        index=colunas_kanban.index(status),
-                        key=f"kan_sel_{item['PV Abadi']}"
-                    )
-                    
-                    if mudar_status != status:
-                        mask = st.session_state['df_base']['PV Abadi'] == item['PV Abadi']
-                        st.session_state['df_base'].loc[mask, 'Status_Contato'] = mudar_status
-                        st.success("Atualizado!")
-                        st.rerun()
+            for _, row in df_st.head(8).iterrows():
+                st.markdown(f"""
+                    <div style="background-color: #1E222D; border: 1px solid #2D333F; padding: 10px; border-radius: 6px; margin-bottom: 8px;">
+                        <b>PV {row.get('PV Abadi', '')}</b><br>
+                        <small>{row.get('Razão Social', '')[:25]}...</small><br>
+                        <span class="badge-info">{row.get('UF', '')}</span>
+                    </div>
+                """, unsafe_allow_html=True)
 
 # ==========================================
 # MÓDULO 3: PROCV & FILTROS AVANÇADOS
 # ==========================================
 elif modulo == "🔍 PROCV & Filtros Avançados":
-    if not df_base.empty:
-        with st.expander("🔎 **Filtros Avançados de Pesquisa**", expanded=True):
-            f1, f2, f3 = st.columns(3)
-            termo = f1.text_input("🔍 PV, Nome ou Município:", "")
-            f_uf = f2.selectbox("📌 UF:", ["Todas"] + sorted([str(x) for x in df_base['UF'].dropna().unique()]))
-            f_necessidade = f3.selectbox("🎯 Tipo de Necessidade:", ["Todas"] + sorted([str(x) for x in df_base['Tipo_Necessidade'].dropna().unique()]))
-            
-        df_view = df_base.copy()
-        if termo:
-            df_view = df_view[
-                df_view['Razão Social'].astype(str).str.contains(termo, case=False, na=False) |
-                df_view['PV Abadi'].astype(str).str.contains(termo, na=False) |
-                df_view['Municipio'].astype(str).str.contains(termo, case=False, na=False)
-            ]
-        if f_uf != "Todas":
-            df_view = df_view[df_view['UF'] == f_uf]
-        if f_necessidade != "Todas":
-            df_view = df_view[df_view['Tipo_Necessidade'] == f_necessidade]
-            
-        st.caption("👇 *Clique em uma linha para abrir a Ficha Detalhada PROCV:*")
+    st.subheader("🔍 Cruzamento Inteligente (PROCV) & Filtros")
+    st.caption("Explore a recomendação de instrutores ordenada pela menor distância em linha reta.")
+    
+    col_f1, col_f2 = st.columns(2)
+    uf_sel = col_f1.multiselect("Filtrar por UF da Loja:", df_rec['UF_Loja'].unique() if not df_rec.empty else [])
+    rank_sel = col_f2.slider("Mostrar até o Ranking de Proximidade:", 1, 3, 3)
+    
+    df_filtered = df_rec.copy()
+    if uf_sel:
+        df_filtered = df_filtered[df_filtered['UF_Loja'].isin(uf_sel)]
+    if not df_filtered.empty:
+        df_filtered = df_filtered[df_filtered['Ranking_Proximidade'] <= rank_sel]
         
-        evento = st.dataframe(
-            df_view[['PV Abadi', 'Razão Social', 'Municipio', 'UF', 'Status Loja', 'Tipo_Necessidade', 'Status_Contato']],
-            use_container_width=True, hide_index=True, selection_mode="single-row", on_select="rerun"
-        )
-        
-        linhas = evento.selection.get("rows", [])
-        if linhas:
-            p = df_view.iloc[linhas[0]].to_dict()
-            st.divider()
-            st.markdown(f"### 📋 Ficha de Detalhes PROCV — **PV {p['PV Abadi']} | {p['Razão Social']}**")
-            
-            k1, k2, k3 = st.columns(3)
-            with k1:
-                st.markdown(f"""
-                    <div class="procv-card">
-                        <h4>🏪 Cadastro da Loja</h4>
-                        <p>📍 <b>Endereço:</b> {p.get('Endereço', '-')}</p>
-                        <p>🏙️ <b>Município/UF:</b> {p.get('Municipio', '-')}/{p.get('UF', '-')}</p>
-                        <p>⚙️ <b>Status Loja:</b> {p.get('Status Loja', '-')}</p>
-                    </div>
-                """, unsafe_allow_html=True)
-            with k2:
-                st.markdown(f"""
-                    <div class="procv-card">
-                        <h4>👔 Gestão & Franquia</h4>
-                        <p>👤 <b>Gerência (GF):</b> {p.get('GF', '-')}</p>
-                        <p>👔 <b>Consultor (CF):</b> {p.get('CF', '-')}</p>
-                        <p>📅 <b>Inauguração:</b> {p.get('Previsão Inauguração', 'N/A')}</p>
-                    </div>
-                """, unsafe_allow_html=True)
-            with k3:
-                st.markdown(f"""
-                    <div class="procv-card">
-                        <h4>📞 Status do Atendimento</h4>
-                        <p>🎯 <b>Necessidade:</b> {p.get('Tipo_Necessidade', '-')}</p>
-                        <p>👨‍🏫 <b>Instrutor Alocado:</b> {p.get('Instrutor_Sugerido', '-')}</p>
-                        <p>🔄 <b>Status Contato:</b> {p.get('Status_Contato', '-')}</p>
-                    </div>
-                """, unsafe_allow_html=True)
+    st.dataframe(df_filtered, use_container_width=True)
 
 # ==========================================
-# MÓDULO 4: CALCULADORA, LOGÍSTICA & MAPA 3D
+# MÓDULO 4: CALCULADORA, LOGÍSTICA & MAPA INTERATIVO AVANÇADO
 # ==========================================
 elif modulo == "📍 Calculadora & Otimizador de Custos":
-    st.subheader("📍 Otimizador de Custos Logísticos e Rotas 3D")
-    st.caption("Acompanhe o raio de deslocamento, custos de viagem e agrupamento de postos.")
+    st.subheader("📍 Centro Operacional de Logística e Rotas Avançadas")
+    st.caption("Análise de rotas, clusterização de postos por proximidade e otimização de custos de deslocamento.")
     
     if not df_rec.empty:
+        # Abas de Visão Logística
+        aba_rota, aba_rede = st.tabs(["🛣️ Análise de Rota Individual", "🌐 Mapa Geral da Rede & Circuitos"])
+        
         postos_unicos = df_rec[['PV_ABADI', 'Razao_Social', 'Municipio_Loja', 'UF_Loja']].drop_duplicates()
         postos_unicos['label'] = postos_unicos['PV_ABADI'].astype(str) + " - " + postos_unicos['Razao_Social'] + " (" + postos_unicos['Municipio_Loja'] + "/" + postos_unicos['UF_Loja'] + ")"
         
-        posto_sel = st.selectbox("⛽ Selecione o Posto Alvo:", postos_unicos['label'].tolist())
-        pv_sel = int(posto_sel.split(" - ")[0])
-        
-        top_3 = df_rec[df_rec['PV_ABADI'] == pv_sel].sort_values(by='Ranking_Proximidade').head(3)
-        
-        if not top_3.empty:
-            st.divider()
+        with aba_rota:
+            posto_sel = st.selectbox("⛽ Selecione o Posto Alvo para Roteamento:", postos_unicos['label'].tolist(), key="sb_posto_logistica")
+            pv_sel = int(posto_sel.split(" - ")[0])
             
-            # --- MAPA INTERATIVO PYDECK ---
-            st.markdown("#### 🗺️ Visão Geográfica da Rota e Proximidade")
-            df_mapa_loja = top_3[['Lat_Loja', 'Lon_Loja', 'Razao_Social']].drop_duplicates()
-            df_mapa_instrutores = top_3[['Lat_Instrutor', 'Lon_Instrutor', 'Instrutor_Sugerido']].drop_duplicates()
+            top_3 = df_rec[df_rec['PV_ABADI'] == pv_sel].sort_values(by='Ranking_Proximidade').head(3)
             
-            if not df_mapa_loja.empty and not df_mapa_loja['Lat_Loja'].isna().all():
-                lat_centro = df_mapa_loja['Lat_Loja'].iloc[0]
-                lon_centro = df_mapa_loja['Lon_Loja'].iloc[0]
+            if not top_3.empty:
+                # --- MONTAGEM DO MAPA PLOTLY PREMIUM (CARTO-DARKMATTER: NATIVO E SEM API KEY) ---
+                fig_mapa = go.Figure()
                 
-                layer_loja = pdk.Layer(
-                    "ScatterplotLayer",
-                    data=df_mapa_loja,
-                    get_position=["Lon_Loja", "Lat_Loja"],
-                    get_color="[226, 123, 0, 200]",
-                    get_radius=25000,
-                    pickable=True,
-                )
+                # 1. Adiciona o Posto Alvo (Destaque Laranja/Vermelho)
+                loja_info = top_3.iloc[0]
+                lat_loja = loja_info['Lat_Loja']
+                lon_loja = loja_info['Lon_Loja']
                 
-                layer_instrutores = pdk.Layer(
-                    "ScatterplotLayer",
-                    data=df_mapa_instrutores,
-                    get_position=["Lon_Instrutor", "Lat_Instrutor"],
-                    get_color="[76, 175, 80, 200]",
-                    get_radius=20000,
-                    pickable=True,
-                )
-
-                st.pydeck_chart(pdk.Deck(
-                    map_style="mapbox://styles/mapbox/dark-v9",
-                    initial_view_state=pdk.ViewState(
-                        latitude=lat_centro,
-                        longitude=lon_centro,
-                        zoom=6,
-                        pitch=40,
-                    ),
-                    layers=[layer_loja, layer_instrutores],
-                    tooltip={"text": "📍 Localidade / Instrutor"}
+                fig_mapa.add_trace(go.Scattermapbox(
+                    lat=[lat_loja],
+                    lon=[lon_loja],
+                    mode='markers+text',
+                    marker=dict(size=18, color='#FF5252', symbol='gas-station'),
+                    text=[f"PV {pv_sel}"],
+                    textposition="top center",
+                    name="Posto AmPm Alvo",
+                    hoverinfo='text',
+                    hovertext=f"<b>⛽ POSTO ALVO</b><br>PV: {pv_sel}<br>Razão: {loja_info['Razao_Social']}<br>Cidade: {loja_info['Municipio_Loja']}/{loja_info['UF_Loja']}"
                 ))
-            else:
-                st.info("Coordenadas geográficas não disponíveis para exibir no mapa 3D.")
-
-            # --- CALCULADORA DE CUSTOS ---
-            st.divider()
-            with st.expander("⚙️ **Ajustar Parâmetros Financeiros de Viagem**", expanded=False):
-                ca1, ca2, ca3, ca4 = st.columns(4)
-                v_km = ca1.number_input("Valor KM (Terrestre R$):", value=2.10)
-                v_passagem = ca2.number_input("Passagem Aérea Média (R$):", value=1400.0)
-                v_diaria = ca3.number_input("Diária Instrutor (Hosp./Alimentação R$):", value=280.0)
-                v_traslado = ca4.number_input("Traslado/Uber Aeroporto (R$):", value=150.0)
-
-            col1, col2, col3 = st.columns(3)
-            cols = [col1, col2, col3]
-            custos_calculados = []
-
-            for idx, (_, row) in enumerate(top_3.iterrows()):
-                dist = row['Distancia_km_linha_reta']
-                dias = row['Dias_Treinamento_Necessarios']
                 
-                if dist <= 300:
-                    modal = "Terrestre 🚗"
-                    c_desloc = (dist * 2) * v_km
-                    c_aereo = 0
-                else:
-                    modal = "Aéreo ✈️"
-                    c_desloc = v_traslado
-                    c_aereo = v_passagem
+                # 2. Adiciona os Instrutores Recomendados e Desenha as Linhas de Rota
+                cores_inst = ['#4CAF50', '#81C784', '#A5D6A7']
+                
+                for idx, (_, row) in enumerate(top_3.iterrows()):
+                    lat_inst = row['Lat_Instrutor']
+                    lon_inst = row['Lon_Instrutor']
+                    dist_km = row['Distancia_km_linha_reta']
+                    nome_inst = row['Instrutor_Sugerido']
+                    rank = row['Ranking_Proximidade']
                     
-                c_hospedagem = dias * v_diaria
-                custo_total = c_desloc + c_aereo + c_hospedagem
-                custos_calculados.append(custo_total)
+                    # Linha de Conexão (Rota)
+                    fig_mapa.add_trace(go.Scattermapbox(
+                        lat=[lat_loja, lat_inst],
+                        lon=[lon_loja, lon_inst],
+                        mode='lines',
+                        line=dict(width=3 if rank == 1 else 1.5, color=cores_inst[idx]),
+                        name=f"Rota #{rank} ({dist_km:.0f} km)",
+                        hoverinfo='text',
+                        hovertext=f"<b>Trajeto #{rank}:</b> {dist_km:.1f} km"
+                    ))
+                    
+                    # Ponto do Instrutor
+                    fig_mapa.add_trace(go.Scattermapbox(
+                        lat=[lat_inst],
+                        lon=[lon_inst],
+                        mode='markers+text',
+                        marker=dict(size=14 if rank == 1 else 10, color=cores_inst[idx]),
+                        text=[f"#{rank} {nome_inst.split()[0]}"],
+                        textposition="bottom center",
+                        name=f"#{rank} {nome_inst}",
+                        hoverinfo='text',
+                        hovertext=f"<b>👨‍🏫 INSTRUTOR #{rank}</b><br>{nome_inst}<br>Origem: {row['Cidade_Instrutor']}/{row['UF_Instrutor']}<br>Distância: {dist_km:.1f} km"
+                    ))
+                
+                # Configurações do Layout Cartográfico Dark
+                fig_mapa.update_layout(
+                    mapbox=dict(
+                        style="carto-darkmatter", # Estilo Dark moderno nativo sem necessidade de token
+                        center=dict(lat=lat_loja, lon=lon_loja),
+                        zoom=6.5
+                    ),
+                    margin=dict(l=0, r=0, t=30, b=0),
+                    height=520,
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    legend=dict(
+                        yanchor="top", y=0.98, xanchor="left", x=0.01,
+                        bgcolor="rgba(20, 23, 29, 0.85)", font=dict(color="white")
+                    )
+                )
+                
+                st.markdown("#### 🗺️ Diagrama de Rotas e Proximidade Logística")
+                st.plotly_chart(fig_mapa, use_container_width=True)
+                
+                # --- CALCULADORA DE CUSTOS DETALHADA ---
+                st.divider()
+                st.markdown("#### 💰 Estimador de Custos de Viagem e Alocação")
+                
+                with st.expander("⚙️ **Parâmetros e Premissas Financeiras de Viagem**", expanded=False):
+                    ca1, ca2, ca3, ca4 = st.columns(4)
+                    v_km = ca1.number_input("Custo Terrestre/KM (R$):", value=2.10)
+                    v_passagem = ca2.number_input("Passagem Aérea (R$):", value=1400.0)
+                    v_diaria = ca3.number_input("Diária Instrutor (R$):", value=280.0)
+                    v_traslado = ca4.number_input("Traslado/Uber (R$):", value=150.0)
 
-                with cols[idx]:
-                    st.markdown(f"""
-                        <div class="top-instructor-card">
-                            <h4 style="margin:0 0 8px 0; color:#E27B00;">#{row['Ranking_Proximidade']}º {row['Instrutor_Sugerido']}</h4>
-                            <p style="margin:2px 0;">🏙️ <b>Origem:</b> {row['Cidade_Instrutor']}/{row['UF_Instrutor']}</p>
-                            <p style="margin:2px 0;">📏 <b>Distância:</b> <code>{dist} km</code></p>
-                            <p style="margin:2px 0;">✈️ <b>Modal:</b> {modal}</p>
-                            <hr style="border-color:#2D333F; margin:8px 0;">
-                            <p style="margin:2px 0; font-size:0.85rem;">• Deslocamento: R$ {c_desloc:.2f}</p>
-                            <p style="margin:2px 0; font-size:0.85rem;">• Passagem Aérea: R$ {c_aereo:.2f}</p>
-                            <p style="margin:2px 0; font-size:0.85rem;">• Diárias ({dias}d): R$ {c_hospedagem:.2f}</p>
-                            <h3 style="color:#4CAF50; margin:10px 0 0 0;">Total: R$ {custo_total:.2f}</h3>
-                        </div>
-                    """, unsafe_allow_html=True)
+                col1, col2, col3 = st.columns(3)
+                cols = [col1, col2, col3]
+                custos_calculados = []
 
-            if len(custos_calculados) >= 2:
-                economia = custos_calculados[1] - custos_calculados[0]
-                st.success(f"💡 **Economia Eficiente:** Optar pelo **1º Instrutor Recomendado** garante uma economia estimada de **R$ {economia:.2f}** nesta operação.")
+                for idx, (_, row) in enumerate(top_3.iterrows()):
+                    dist = row['Distancia_km_linha_reta']
+                    dias = row['Dias_Treinamento_Necessarios']
+                    
+                    if dist <= 300:
+                        modal = "🚗 Terrestre"
+                        c_desloc = (dist * 2) * v_km
+                        c_aereo = 0
+                    else:
+                        modal = "✈️ Aéreo"
+                        c_desloc = v_traslado
+                        c_aereo = v_passagem
+                        
+                    c_hospedagem = dias * v_diaria
+                    custo_total = c_desloc + c_aereo + c_hospedagem
+                    custos_calculados.append(custo_total)
+
+                    with cols[idx]:
+                        borda_cor = "#4CAF50" if idx == 0 else "#2D333F"
+                        st.markdown(f"""
+                            <div class="top-instructor-card" style="border-left-color: {borda_cor};">
+                                <span class="badge-info" style="float:right;">#{row['Ranking_Proximidade']}º Opção</span>
+                                <h4 style="margin:0 0 8px 0; color:#FF9800;">{row['Instrutor_Sugerido']}</h4>
+                                <p style="margin:2px 0;">🏙️ <b>Origem:</b> {row['Cidade_Instrutor']}/{row['UF_Instrutor']}</p>
+                                <p style="margin:2px 0;">📏 <b>Distância Direta:</b> <code>{dist:.1f} km</code></p>
+                                <p style="margin:2px 0;">🚀 <b>Modal Indicado:</b> {modal}</p>
+                                <hr style="border-color:#2D333F; margin:10px 0;">
+                                <p style="margin:2px 0; font-size:0.85rem;">• Deslocamento: R$ {c_desloc:.2f}</p>
+                                <p style="margin:2px 0; font-size:0.85rem;">• Aéreo/Passagens: R$ {c_aereo:.2f}</p>
+                                <p style="margin:2px 0; font-size:0.85rem;">• Hospedagem/Diárias ({dias}d): R$ {c_hospedagem:.2f}</p>
+                                <h3 style="color:#4CAF50; margin:12px 0 0 0;">Total: R$ {custo_total:.2f}</h3>
+                            </div>
+                        """, unsafe_allow_html=True)
+
+                if len(custos_calculados) >= 2:
+                    economia = custos_calculados[1] - custos_calculados[0]
+                    st.success(f"💡 **Decisão Inteligente de Logística:** Alocar a **1ª Opção ({top_3.iloc[0]['Instrutor_Sugerido']})** gera uma **economia imediata de R$ {economia:.2f}** frente à segunda alternativa.")
+
+        # --- ABA 2: MAPA GERAL DE CIRCUITOS (CLUSTERIZAÇÃO NACIONAL) ---
+        with aba_rede:
+            st.markdown("#### 🌐 Distribuição Geográfica Global (Rede AmPm & Instrutores)")
+            st.caption("Identifique densidade de lojas por estado e agrupe visitas em circuitos regionais.")
+            
+            fig_global = go.Figure()
+            
+            # Lojas
+            if 'Latitude' in df_base.columns and 'Longitude' in df_base.columns:
+                df_lojas_geo = df_base.dropna(subset=['Latitude', 'Longitude'])
+                fig_global.add_trace(go.Scattermapbox(
+                    lat=df_lojas_geo['Latitude'],
+                    lon=df_lojas_geo['Longitude'],
+                    mode='markers',
+                    marker=dict(size=7, color='#E27B00', opacity=0.7),
+                    name="Postos AmPm",
+                    hoverinfo='text',
+                    hovertext=df_lojas_geo['PV Abadi'].astype(str) + " - " + df_lojas_geo['Razão Social'] + "<br>" + df_lojas_geo['Municipio'] + "/" + df_lojas_geo['UF']
+                ))
+            
+            # Instrutores
+            if not df_instrutores.empty and 'Latitude' in df_instrutores.columns:
+                df_inst_geo = df_instrutores.dropna(subset=['Latitude', 'Longitude'])
+                fig_global.add_trace(go.Scattermapbox(
+                    lat=df_inst_geo['Latitude'],
+                    lon=df_inst_geo['Longitude'],
+                    mode='markers+text',
+                    marker=dict(size=14, color='#4CAF50'),
+                    text=df_inst_geo['NOME_COMPLETO'].str.split().str[0],
+                    textposition="bottom center",
+                    name="Base Instrutores",
+                    hoverinfo='text',
+                    hovertext="<b>👨‍🏫 Instrutor:</b> " + df_inst_geo['NOME_COMPLETO'] + "<br>" + df_inst_geo['Cidade'] + "/" + df_inst_geo['UF']
+                ))
+                
+            fig_global.update_layout(
+                mapbox=dict(
+                    style="carto-darkmatter",
+                    center=dict(lat=-14.2350, lon=-51.9253), # Centro do Brasil
+                    zoom=3.8
+                ),
+                margin=dict(l=0, r=0, t=10, b=0),
+                height=550,
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                legend=dict(bgcolor="rgba(20, 23, 29, 0.85)", font=dict(color="white"))
+            )
+            
+            st.plotly_chart(fig_global, use_container_width=True)
 
 # ==========================================
-# MÓDULO 5: CALL CENTER, TEMPLATES & REGISTRO
+# MÓDULO 5: CALL CENTER & WHATSAPP
 # ==========================================
 elif modulo == "📞 Call Center & Timeline WhatsApp":
-    if not df_base.empty:
-        df_fila_view = df_base[df_base['Tipo_Necessidade'] != 'Rede Ativa (Sem Pendência)'].copy()
-        
-        c_left, c_right = st.columns([1.2, 1.8])
-        
-        with c_left:
-            st.subheader("📋 Fila de Atendimento")
-            evento_call = st.dataframe(
-                df_fila_view[['PV Abadi', 'Razão Social', 'Municipio', 'UF', 'Status_Contato']],
-                use_container_width=True, hide_index=True, selection_mode="single-row", on_select="rerun"
-            )
-            selecionado = evento_call.selection.get("rows", [])
+    st.subheader("📞 Central de Relacionamento & Registros")
+    st.caption("Simulação de disparos de mensagens e histórico de interações.")
+    
+    col_w1, col_w2 = st.columns([1, 2])
+    
+    with col_w1:
+        st.markdown("##### 💬 Disparo de Notificação")
+        posto_contato = st.selectbox("Selecione o Posto:", df_base['PV Abadi'].unique() if 'PV Abadi' in df_base.columns else [])
+        msg = st.text_area("Mensagem do WhatsApp:", "Olá! Confirmamos o agendamento do treinamento operacional para o seu posto AmPm.")
+        if st.button("📲 Enviar Notificação via WhatsApp", use_container_width=True):
+            st.success("Mensagem enviada para a fila de transmissão!")
             
-        with c_right:
-            if selecionado:
-                posto = df_fila_view.iloc[selecionado[0]]
-                pv_alvo = posto['PV Abadi']
-                tel_limpo = ''.join(filter(str.isdigit, str(posto.get('Telefone_Contato', ''))))
-                
-                st.markdown(f"### 📝 Ficha de Atendimento — **PV {posto['PV Abadi']}**")
-                
-                # Contexto
-                st.markdown(f"""
-                    <div class="procv-card">
-                        <h4>🏪 Contexto do Posto (Consulta Rápida)</h4>
-                        <div style="display: flex; justify-content: space-between; flex-wrap: wrap;">
-                            <div style="flex: 1; min-width: 200px;">
-                                <p>🏬 <b>Razão Social:</b> {posto.get('Razão Social', '-')}</p>
-                                <p>📍 <b>Cidade/UF:</b> {posto.get('Municipio', '-')}/{posto.get('UF', '-')}</p>
-                                <p>🏠 <b>Endereço:</b> {posto.get('Endereço', '-')}</p>
-                            </div>
-                            <div style="flex: 1; min-width: 200px;">
-                                <p>👔 <b>Consultor (CF):</b> {posto.get('CF', '-')}</p>
-                                <p>🎯 <b>Necessidade:</b> <span class="badge-info">{posto.get('Tipo_Necessidade', '-')}</span></p>
-                                <p>⏱️ <b>Dias sem Treinamento:</b> {posto.get('Dias_desde_Ultimo_Treinamento', 'N/A')}</p>
-                                <p>📅 <b>Inauguração Prevista:</b> {posto.get('Previsão Inauguração', 'N/A')}</p>
-                            </div>
-                        </div>
-                    </div>
-                """, unsafe_allow_html=True)
-                
-                # --- TEMPLATES INTELIGENTES DE WHATSAPP ---
-                st.markdown("#### 📲 Modelos Prontos de Mensagens (WhatsApp)")
-                template_tipo = st.selectbox(
-                    "Escolha um modelo de mensagem:",
-                    ["Apresentação & Agendamento", "Confirmação de Data", "Lembrete de Apostilas/Material"]
-                )
-                
-                if template_tipo == "Apresentação & Agendamento":
-                    msg_txt = f"Olá, equipe {posto['Razão Social']}! Aqui é da Capacitação AmPm. Gostaria de agendar o treinamento da sua equipe para os próximos dias. Qual melhor horário para falarmos?"
-                elif template_tipo == "Confirmação de Data":
-                    msg_txt = f"Olá! Confirmamos o treinamento da AmPm para o posto {posto['Razão Social']} na data {posto.get('Data_Agendada', 'a combinar')}. O instrutor será {posto.get('Instrutor_Sugerido', 'a definir')}."
-                else:
-                    msg_txt = f"Olá! Passando para lembrar que os materiais/apostilas para o treinamento da loja {posto['Razão Social']} precisam estar impressos ou disponíveis até a data agendada. Dúvidas estamos à disposição!"
-
-                if tel_limpo:
-                    link_wa = f"https://wa.me/55{tel_limpo}?text={msg_txt.replace(' ', '%20')}"
-                    st.markdown(f"👉 **[Enviar esta mensagem via WhatsApp Direct]( {link_wa} )**")
-                
-                st.divider()
-
-                # Lista de instrutores para o operador escolher
-                lista_instrutores = ["Pendente de Alocação"]
-                if not df_instrutores.empty and 'NOME_COMPLETO' in df_instrutores.columns:
-                    lista_instrutores += sorted(df_instrutores['NOME_COMPLETO'].dropna().unique().tolist())
-                
-                instrutor_atual = str(posto.get('Instrutor_Sugerido', 'Pendente de Alocação'))
-                idx_instrutor = lista_instrutores.index(instrutor_atual) if instrutor_atual in lista_instrutores else 0
-
-                val_data_agendada = posto.get('Data_Agendada')
-                data_inicial = date.today()
-                if isinstance(val_data_agendada, (date, datetime)):
-                    data_inicial = val_data_agendada
-                elif isinstance(val_data_agendada, str) and val_data_agendada:
-                    try:
-                        data_inicial = datetime.strptime(val_data_agendada, "%d/%m/%Y").date()
-                    except ValueError:
-                        data_inicial = date.today()
-
-                # Form de Atendimento
-                with st.form("form_callcenter_editavel"):
-                    st.markdown("#### ✍️ Registros Rápidos da Ligação")
-                    
-                    col_f1, col_f2 = st.columns(2)
-                    with col_f1:
-                        nome_c = st.text_input("👤 Nome do Responsável na Loja:", value=str(posto.get('Nome_Contato', '')))
-                        tel_c = st.text_input("📞 Telefone de Contato:", value=str(posto.get('Telefone_Contato', '')))
-                        qtd_func = st.number_input("👥 Qtd. de Funcionários para Treinar:", value=int(posto.get('Qtd_Funcionarios', 0)), min_value=0, step=1)
-                        instrutor_escolhido = st.selectbox("👨‍🏫 Instrutor Designado:", lista_instrutores, index=idx_instrutor)
-                        
-                    with col_f2:
-                        novo_st = st.selectbox(
-                            "🔄 Status do Atendimento:", 
-                            ["A Contatar", "Em Negociação", "Agendado", "Treinamento Realizado", "Recusado"],
-                            index=["A Contatar", "Em Negociação", "Agendado", "Treinamento Realizado", "Recusado"].index(posto.get('Status_Contato', 'A Contatar'))
-                        )
-                        mat_loja = st.selectbox("📦 Possui Material/Apostilas na Loja?", ["Não Informado", "Sim", "Não"], index=["Não Informado", "Sim", "Não"].index(posto.get('Material_Em_Loja', 'Não Informado')))
-                        data_ag = st.date_input("📅 Data Agendada (Calendário):", value=data_inicial, format="DD/MM/YYYY")
-                        
-                    obs = st.text_area("💬 Observações e Alinhamentos:", value=str(posto.get('Observacoes', '')), height=80)
-                    
-                    if st.form_submit_button("💾 Salvar Registro do Atendimento"):
-                        mask = st.session_state['df_base']['PV Abadi'] == pv_alvo
-                        st.session_state['df_base'].loc[mask, 'Nome_Contato'] = nome_c
-                        st.session_state['df_base'].loc[mask, 'Telefone_Contato'] = tel_c
-                        st.session_state['df_base'].loc[mask, 'Qtd_Funcionarios'] = qtd_func
-                        st.session_state['df_base'].loc[mask, 'Instrutor_Sugerido'] = instrutor_escolhido
-                        st.session_state['df_base'].loc[mask, 'Material_Em_Loja'] = mat_loja
-                        st.session_state['df_base'].loc[mask, 'Data_Agendada'] = data_ag.strftime("%d/%m/%Y")
-                        st.session_state['df_base'].loc[mask, 'Status_Contato'] = novo_st
-                        st.session_state['df_base'].loc[mask, 'Observacoes'] = obs
-                        st.session_state['df_base'].loc[mask, 'Data_do_Contato'] = datetime.today().strftime('%d/%m/%Y %H:%M')
-                        
-                        st.success("✅ Atendimento registrado com sucesso!")
-                        st.rerun()
-
-                # GERADOR DE PDF DA FICHA
-                pdf_bytes = gerar_pdf_ordem_servico({
-                    'PV Abadi': posto.get('PV Abadi'),
-                    'Razao Social': posto.get('Razão Social'),
-                    'Endereco': posto.get('Endereço'),
-                    'Municipio': posto.get('Municipio'),
-                    'UF': posto.get('UF'),
-                    'CF': posto.get('CF'),
-                    'Status_Contato': posto.get('Status_Contato'),
-                    'Data_Agendada': posto.get('Data_Agendada'),
-                    'Instrutor_Sugerido': posto.get('Instrutor_Sugerido'),
-                    'Qtd_Funcionarios': posto.get('Qtd_Funcionarios'),
-                    'Material_Em_Loja': posto.get('Material_Em_Loja'),
-                    'Nome_Contato': posto.get('Nome_Contato'),
-                    'Telefone_Contato': posto.get('Telefone_Contato'),
-                    'Observacoes': posto.get('Observacoes')
-                })
-                
-                st.download_button(
-                    label="🖨️ Baixar Ordem de Serviço / Ficha (PDF)",
-                    data=pdf_bytes,
-                    file_name=f"OS_Treinamento_PV_{posto['PV Abadi']}.pdf",
-                    mime="application/pdf"
-                )
+    with col_w2:
+        st.markdown("##### 🕒 Linha do Tempo de Interações")
+        st.markdown("""
+            * **05/08 14:30** - 📲 *WhatsApp*: Confirmação de data enviada ao Gerente.
+            * **04/08 10:15** - 📞 *Ligação*: Agendamento prévio com Consultor de Negócios.
+            * **01/08 09:00** - ✉️ *E-mail*: Solicitação inicial de treinamento registrada no sistema.
+        """)
 
 # ==========================================
 # MÓDULO 6: EQUIPE DE INSTRUTORES
 # ==========================================
-elif modulo == "👔 Equipe de Instrutores":
-    if not df_instrutores.empty:
-        st.subheader("👔 Instrutores Credenciados na Rede")
-        st.dataframe(df_instrutores[['NOME_COMPLETO', 'STATUS', 'TELEFONE', 'EMAIL', 'Cidade', 'UF']], use_container_width=True, hide_index=True)
+elif modulo == "👥 Equipe de Instrutores":
+    st.subheader("👥 Quadro de Capilaridade dos Instrutores")
+    st.caption("Bases operacionais e áreas de cobertura dos instrutores cadastrados.")
+    
+    st.dataframe(df_instrutores, use_container_width=True)
 
 # ==========================================
-# MÓDULO 7: RELATÓRIOS & EXPORTAÇÃO COMPLETA
+# MÓDULO 7: RELATÓRIOS, IMPORTAÇÃO & PDF
 # ==========================================
 elif modulo == "📂 Relatórios, Importação & PDF":
-    st.subheader("📂 Central de Exportação de Dados e Relatórios")
-    st.caption("Faça o download dos relatórios consolidados no formato de sua preferência.")
+    st.subheader("📂 Emissão de Fichas e Exportação de Relatórios")
+    st.caption("Gere arquivos PDF oficiais da Ficha de Atendimento para impressão e envio ao Consultor.")
     
-    col_exp1, col_exp2 = st.columns(2)
-    
-    csv_buffer = df_base.to_csv(index=False).encode('utf-8')
-    with col_exp1:
-        st.download_button(
-            label="📄 Baixar Base Completa (CSV)",
-            data=csv_buffer,
-            file_name=f"Base_CRM_AmPm_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-            mime="text/csv"
-        )
+    if not df_rec.empty:
+        p_sel_pdf = st.selectbox("Selecione o Posto para Gerar a Ficha em PDF:", df_rec['PV_ABADI'].unique())
+        top_pdf = df_rec[df_rec['PV_ABADI'] == p_sel_pdf].sort_values(by='Ranking_Proximidade').iloc[0]
+        p_info = df_base[df_base['PV Abadi'] == p_sel_pdf].iloc[0] if 'PV Abadi' in df_base.columns else top_pdf
         
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df_base.to_excel(writer, sheet_name='Base_CRM_Atualizada', index=False)
-    excel_data = output.getvalue()
-    
-    with col_exp2:
+        # Cálculo básico para o PDF
+        dist_pdf = top_pdf['Distancia_km_linha_reta']
+        custo_pdf = (dist_pdf * 2 * 2.10) + (3 * 280) if dist_pdf <= 300 else 1400 + 150 + (3 * 280)
+        
+        pdf_bytes = gerar_pdf_ficha(p_info, top_pdf, custo_pdf)
+        
         st.download_button(
-            label="📊 Baixar Base Completa (Excel)",
-            data=excel_data,
-            file_name=f"Base_CRM_AmPm_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            label="📄 Baixar Ficha Operacional de Treinamento (PDF)",
+            data=pdf_bytes,
+            file_name=f"Ficha_Treinamento_PV_{p_sel_pdf}.pdf",
+            mime="application/pdf",
+            use_container_width=True
         )
