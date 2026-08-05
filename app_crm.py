@@ -523,10 +523,10 @@ elif modulo == "🔍 PROCV & Filtros Avançados":
                 """, unsafe_allow_html=True)
 
 # ==========================================
-# MÓDULO 4: CALCULADORA, LOGÍSTICA & MAPA 3D
+# MÓDULO 4: CALCULADORA, LOGÍSTICA & MAPA (CORRIGIDO)
 # ==========================================
 elif modulo == "📍 Calculadora & Otimizador de Custos":
-    st.subheader("📍 Otimizador de Custos Logísticos e Rotas 3D")
+    st.subheader("📍 Otimizador de Custos Logísticos e Rotas")
     st.caption("Acompanhe o raio de deslocamento, custos de viagem e agrupamento de postos.")
     
     if not df_rec.empty:
@@ -541,46 +541,60 @@ elif modulo == "📍 Calculadora & Otimizador de Custos":
         if not top_3.empty:
             st.divider()
             
-            # --- MAPA INTERATIVO PYDECK ---
+            # --- MAPA INTERATIVO PYDECK (LIVRE DE TOKEN DE MAPBOX) ---
             st.markdown("#### 🗺️ Visão Geográfica da Rota e Proximidade")
-            df_mapa_loja = top_3[['Lat_Loja', 'Lon_Loja', 'Razao_Social']].drop_duplicates()
-            df_mapa_instrutores = top_3[['Lat_Instrutor', 'Lon_Instrutor', 'Instrutor_Sugerido']].drop_duplicates()
             
-            if not df_mapa_loja.empty and not df_mapa_loja['Lat_Loja'].isna().all():
-                lat_centro = df_mapa_loja['Lat_Loja'].iloc[0]
-                lon_centro = df_mapa_loja['Lon_Loja'].iloc[0]
+            # Tratamento rigoroso das coordenadas
+            df_mapa_loja = top_3[['Lat_Loja', 'Lon_Loja', 'Razao_Social']].drop_duplicates().copy()
+            df_mapa_instrutores = top_3[['Lat_Instrutor', 'Lon_Instrutor', 'Instrutor_Sugerido']].drop_duplicates().copy()
+
+            df_mapa_loja['Lat_Loja'] = pd.to_numeric(df_mapa_loja['Lat_Loja'], errors='coerce')
+            df_mapa_loja['Lon_Loja'] = pd.to_numeric(df_mapa_loja['Lon_Loja'], errors='coerce')
+            df_mapa_instrutores['Lat_Instrutor'] = pd.to_numeric(df_mapa_instrutores['Lat_Instrutor'], errors='coerce')
+            df_mapa_instrutores['Lon_Instrutor'] = pd.to_numeric(df_mapa_instrutores['Lon_Instrutor'], errors='coerce')
+
+            df_mapa_loja = df_mapa_loja.dropna(subset=['Lat_Loja', 'Lon_Loja'])
+            df_mapa_instrutores = df_mapa_instrutores.dropna(subset=['Lat_Instrutor', 'Lon_Instrutor'])
+
+            if not df_mapa_loja.empty:
+                lat_centro = float(df_mapa_loja['Lat_Loja'].iloc[0])
+                lon_centro = float(df_mapa_loja['Lon_Loja'].iloc[0])
                 
+                # Camada 1: Posto Alvo (Laranja AmPm)
                 layer_loja = pdk.Layer(
                     "ScatterplotLayer",
                     data=df_mapa_loja,
                     get_position=["Lon_Loja", "Lat_Loja"],
-                    get_color="[226, 123, 0, 200]",
-                    get_radius=25000,
+                    get_color="[226, 123, 0, 220]",
+                    get_radius=15000,
                     pickable=True,
                 )
                 
+                # Camada 2: Instrutores Sugeridos (Verde)
                 layer_instrutores = pdk.Layer(
                     "ScatterplotLayer",
                     data=df_mapa_instrutores,
                     get_position=["Lon_Instrutor", "Lat_Instrutor"],
-                    get_color="[76, 175, 80, 200]",
-                    get_radius=20000,
+                    get_color="[76, 175, 80, 220]",
+                    get_radius=12000,
                     pickable=True,
                 )
 
-                st.pydeck_chart(pdk.Deck(
-                    map_style="mapbox://styles/mapbox/dark-v9",
+                # Renderizador sem dependência de Token Mapbox
+                deck = pdk.Deck(
+                    map_style="carto-darkmatter",
                     initial_view_state=pdk.ViewState(
                         latitude=lat_centro,
                         longitude=lon_centro,
-                        zoom=6,
-                        pitch=40,
+                        zoom=7,
+                        pitch=30,
                     ),
                     layers=[layer_loja, layer_instrutores],
-                    tooltip={"text": "📍 Localidade / Instrutor"}
-                ))
+                    tooltip={"text": "📍 {Razao_Social}{Instrutor_Sugerido}"}
+                )
+                st.pydeck_chart(deck)
             else:
-                st.info("Coordenadas geográficas não disponíveis para exibir no mapa 3D.")
+                st.warning("⚠️ Coordenadas geográficas não encontradas ou inválidas para esta unidade. Verifique se as colunas Latitude e Longitude na planilha possuem valores numéricos válidos.")
 
             # --- CALCULADORA DE CUSTOS ---
             st.divider()
@@ -596,8 +610,8 @@ elif modulo == "📍 Calculadora & Otimizador de Custos":
             custos_calculados = []
 
             for idx, (_, row) in enumerate(top_3.iterrows()):
-                dist = row['Distancia_km_linha_reta']
-                dias = row['Dias_Treinamento_Necessarios']
+                dist = row.get('Distancia_km_linha_reta', 0)
+                dias = row.get('Dias_Treinamento_Necessarios', 1)
                 
                 if dist <= 300:
                     modal = "Terrestre 🚗"
@@ -616,7 +630,7 @@ elif modulo == "📍 Calculadora & Otimizador de Custos":
                     with cols[idx]:
                         st.markdown(f"""
                             <div class="top-instructor-card">
-                                <h4 style="margin:0 0 8px 0; color:#E27B00;">#{row['Ranking_Proximidade']}º {row['Instrutor_Sugerido']}</h4>
+                                <h4 style="margin:0 0 8px 0; color:#E27B00;">#{row.get('Ranking_Proximidade', idx+1)}º {row.get('Instrutor_Sugerido', 'Instrutor')}</h4>
                                 <p style="margin:2px 0;">🏙️ <b>Origem:</b> {row.get('Cidade_Instrutor', '')}/{row.get('UF_Instrutor', '')}</p>
                                 <p style="margin:2px 0;">📏 <b>Distância:</b> <code>{dist} km</code></p>
                                 <p style="margin:2px 0;">✈️ <b>Modal:</b> {modal}</p>
