@@ -1,9 +1,13 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import os
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import pydeck as pdk
+import plotly.express as plotly_express
+import plotly.graph_objects as go
 import io
+from fpdf import FPDF
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(
@@ -22,13 +26,12 @@ st.markdown("""
         font-family: 'Inter', sans-serif;
     }
 
-    /* Topbar Premium */
     .main-header {
         background: linear-gradient(135deg, #E27B00 0%, #FF9800 50%, #D32F2F 100%);
         padding: 24px 28px;
         border-radius: 16px;
         color: white;
-        margin-bottom: 25px;
+        margin-bottom: 20px;
         box-shadow: 0 8px 24px rgba(226, 123, 0, 0.25);
     }
     .main-header h1 {
@@ -47,7 +50,7 @@ st.markdown("""
     .kpi-card {
         background-color: #1E222A;
         border-radius: 12px;
-        padding: 20px;
+        padding: 18px;
         border: 1px solid #2D333F;
         border-left: 6px solid #E27B00;
         box-shadow: 0 4px 12px rgba(0,0,0,0.2);
@@ -71,7 +74,7 @@ st.markdown("""
         margin-top: 8px;
     }
 
-    /* Estilização do Kanban */
+    /* Kanban */
     .kanban-column {
         background-color: #14171D;
         border-radius: 12px;
@@ -90,7 +93,7 @@ st.markdown("""
         align-items: center;
     }
 
-    /* Cards de Informação PROCV e Call Center */
+    /* Cards e Alertas */
     .procv-card {
         background-color: #1A1D24;
         padding: 20px;
@@ -100,17 +103,25 @@ st.markdown("""
         box-shadow: 0 4px 10px rgba(0,0,0,0.15);
         margin-bottom: 15px;
     }
-    .procv-card h4 {
-        margin-top: 0;
-        margin-bottom: 12px;
-        color: #FF9800;
-        font-size: 1rem;
-    }
-    .procv-card p {
-        margin: 4px 0;
-        font-size: 0.9rem;
-    }
     
+    .alert-card-danger {
+        background-color: rgba(211, 47, 47, 0.15);
+        border: 1px solid #D32F2F;
+        border-left: 6px solid #D32F2F;
+        padding: 12px 18px;
+        border-radius: 10px;
+        margin-bottom: 10px;
+    }
+
+    .alert-card-warning {
+        background-color: rgba(255, 152, 0, 0.15);
+        border: 1px solid #FF9800;
+        border-left: 6px solid #FF9800;
+        padding: 12px 18px;
+        border-radius: 10px;
+        margin-bottom: 10px;
+    }
+
     .top-instructor-card {
         background-color: #1A1D24;
         padding: 18px;
@@ -120,15 +131,12 @@ st.markdown("""
         margin-bottom: 14px;
     }
 
-    /* Timeline de Atendimentos */
     .timeline-item {
         border-left: 3px solid #E27B00;
         padding-left: 15px;
         margin-bottom: 15px;
-        position: relative;
     }
 
-    /* Badges */
     .badge-info {
         background: rgba(226, 123, 0, 0.15);
         color: #FF9800;
@@ -139,14 +147,13 @@ st.markdown("""
         font-size: 0.78rem;
     }
 
-    /* Botão Customizado AmPm */
     .stButton>button {
         background: linear-gradient(90deg, #E27B00 0%, #FF9800 100%);
         color: #FFFFFF !important;
         font-weight: 600;
         border: none;
         border-radius: 8px;
-        padding: 10px 24px;
+        padding: 10px 20px;
         transition: all 0.3s ease;
     }
     .stButton>button:hover {
@@ -155,7 +162,54 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- CARREGAMENTO DE DADOS ---
+# --- GERADOR DE PDF DA OS ---
+def gerar_pdf_ordem_servico(dados):
+    pdf = FPDF()
+    pdf.add_page()
+    
+    # Cabeçalho
+    pdf.set_fill_color(226, 123, 0)
+    pdf.rect(0, 0, 210, 30, 'F')
+    pdf.set_font("Arial", 'B', 18)
+    pdf.set_text_color(255, 255, 255)
+    pdf.cell(0, 10, "AMPM - ORDEM DE SERVICO DE TREINAMENTO", ln=True, align='C')
+    pdf.ln(10)
+    
+    # Corpo
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 8, f"PV ABADI: {dados.get('PV Abadi')} - {dados.get('Razao Social')}", ln=True)
+    pdf.set_font("Arial", '', 10)
+    pdf.cell(0, 6, f"Endereco: {dados.get('Endereco')} - {dados.get('Municipio')}/{dados.get('UF')}", ln=True)
+    pdf.cell(0, 6, f"Consultor Responsavel: {dados.get('CF')}", ln=True)
+    pdf.ln(5)
+    
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 8, "DETALHES DO AGENDAMENTO", ln=True)
+    pdf.set_font("Arial", '', 10)
+    pdf.cell(0, 6, f"Status do Atendimento: {dados.get('Status_Contato')}", ln=True)
+    pdf.cell(0, 6, f"Data do Agendamento: {dados.get('Data_Agendada')}", ln=True)
+    pdf.cell(0, 6, f"Instrutor Designado: {dados.get('Instrutor_Sugerido')}", ln=True)
+    pdf.cell(0, 6, f"Qtd. de Treinandos: {dados.get('Qtd_Funcionarios')}", ln=True)
+    pdf.cell(0, 6, f"Material em Loja: {dados.get('Material_Em_Loja')}", ln=True)
+    pdf.ln(5)
+    
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 8, "CONTATO NA LOJA & OBSERVACOES", ln=True)
+    pdf.set_font("Arial", '', 10)
+    pdf.cell(0, 6, f"Contato: {dados.get('Nome_Contato')} ({dados.get('Telefone_Contato')})", ln=True)
+    pdf.multi_cell(0, 6, f"Observacoes: {dados.get('Observacoes')}")
+    pdf.ln(15)
+    
+    # Assinaturas
+    pdf.cell(90, 6, "___________________________________", ln=False, align='C')
+    pdf.cell(90, 6, "___________________________________", ln=True, align='C')
+    pdf.cell(90, 6, "Assinatura do Responsavel Loja", ln=False, align='C')
+    pdf.cell(90, 6, "Assinatura do Instrutor", ln=True, align='C')
+    
+    return pdf.output(dest='S').encode('latin-1', errors='replace')
+
+# --- CARREGAMENTO E TRATAMENTO DE DADOS ---
 @st.cache_data
 def carregar_bases_integradas():
     caminho = "Base_Unificada_AmPm.xlsx"
@@ -224,7 +278,7 @@ df_base = st.session_state['df_base']
 df_instrutores = st.session_state['df_instrutores']
 df_rec = st.session_state['df_rec']
 
-# --- SIDEBAR DE NAVEGAÇÃO ---
+# --- SIDEBAR DE NAVEGAÇÃO E IMPORTADOR DE PLANILHAS ---
 with st.sidebar:
     st.markdown("## ⛽ **CRM AmPm**")
     st.caption("🌐 *Plataforma Integrada de Operações*")
@@ -233,16 +287,32 @@ with st.sidebar:
     modulo = st.radio(
         "📌 **Módulos do Sistema:**",
         [
-            "📊 Dashboard Executivo", 
+            "📊 Dashboard Executivo & SLAs", 
             "📋 Pipeline Kanban", 
             "🔍 PROCV & Filtros Avançados", 
             "📍 Calculadora & Otimizador de Custos", 
             "📞 Call Center & Timeline WhatsApp", 
             "👔 Equipe de Instrutores",
-            "📂 Relatórios & Exportação"
+            "📂 Relatórios, Importação & PDF"
         ]
     )
     
+    st.divider()
+    
+    # IMPORTADOR DE ARQUIVOS (DRAG & DROP)
+    st.markdown("📤 **Atualizar Base (Upload)**")
+    uploaded_file = st.file_uploader("Suba uma nova planilha (Excel/CSV):", type=['xlsx', 'csv'])
+    if uploaded_file is not None:
+        try:
+            if uploaded_file.name.endswith('.csv'):
+                df_up = pd.read_csv(uploaded_file)
+            else:
+                df_up = pd.read_excel(uploaded_file)
+            st.session_state['df_base'] = df_up
+            st.success("✅ Base de dados atualizada!")
+        except Exception as e:
+            st.error(f"Erro ao processar: {e}")
+            
     st.divider()
     st.markdown("📶 **Status:** `Operacional 🟢`")
     st.markdown(f"🏪 **Rede:** `{len(df_base)} Unidades`")
@@ -256,12 +326,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# MÓDULO 1: DASHBOARD EXECUTIVO
+# MÓDULO 1: DASHBOARD EXECUTIVO, ALERTAS & GRÁFICOS
 # ==========================================
-if modulo == "📊 Dashboard Executivo":
+if modulo == "📊 Dashboard Executivo & SLAs":
     if not df_base.empty:
         c1, c2, c3, c4 = st.columns(4)
-        
         with c1:
             st.markdown(f"""
                 <div class="kpi-card" style="border-left-color: #E27B00;">
@@ -269,7 +338,6 @@ if modulo == "📊 Dashboard Executivo":
                     <div class="kpi-value">{len(df_base)}</div>
                 </div>
             """, unsafe_allow_html=True)
-            
         with c2:
             pendentes = len(df_base[df_base['Tipo_Necessidade'] != 'Rede Ativa (Sem Pendência)'])
             st.markdown(f"""
@@ -278,7 +346,6 @@ if modulo == "📊 Dashboard Executivo":
                     <div class="kpi-value">{pendentes}</div>
                 </div>
             """, unsafe_allow_html=True)
-            
         with c3:
             a_contatar = len(df_base[df_base['Status_Contato'] == 'A Contatar'])
             st.markdown(f"""
@@ -287,7 +354,6 @@ if modulo == "📊 Dashboard Executivo":
                     <div class="kpi-value">{a_contatar}</div>
                 </div>
             """, unsafe_allow_html=True)
-            
         with c4:
             inaug = len(df_base[df_base['Previsão Inauguração'].notna()])
             st.markdown(f"""
@@ -298,14 +364,51 @@ if modulo == "📊 Dashboard Executivo":
             """, unsafe_allow_html=True)
 
         st.write("")
+        
+        # --- PAINEL DE ALERTAS CRÍTICOS E SLAS ---
+        st.subheader("🚨 Central de Alertas Operacionais & SLAs")
+        col_alt1, col_alt2 = st.columns(2)
+        
+        with col_alt1:
+            st.markdown("""
+                <div class="alert-card-danger">
+                    <b>⚠️ Lojas sem Treinamento Há Mais de 365 Dias (Ação Urgente)</b>
+                </div>
+            """, unsafe_allow_html=True)
+            if 'Dias_desde_Ultimo_Treinamento' in df_base.columns:
+                criticos = df_base[df_base['Dias_desde_Ultimo_Treinamento'] > 365]
+                st.dataframe(criticos[['PV Abadi', 'Razão Social', 'UF', 'Dias_desde_Ultimo_Treinamento']].head(4), use_container_width=True, hide_index=True)
+            else:
+                st.info("Sem dados de SLA no momento.")
+
+        with col_alt2:
+            st.markdown("""
+                <div class="alert-card-warning">
+                    <b>🚀 Previsão de Inauguração sem Treinamento Agendado</b>
+                </div>
+            """, unsafe_allow_html=True)
+            inaug_sem_ag = df_base[df_base['Previsão Inauguração'].notna() & (df_base['Status_Contato'] != 'Agendado')]
+            st.dataframe(inaug_sem_ag[['PV Abadi', 'Razão Social', 'UF', 'Previsão Inauguração']].head(4), use_container_width=True, hide_index=True)
+
         st.divider()
-        col_A, col_B = st.columns(2)
-        with col_A:
-            st.subheader("🗺️ Concentração por Estado (UF)")
-            st.bar_chart(df_base['UF'].value_counts().head(10), color="#E27B00")
-        with col_B:
-            st.subheader("📊 Situação dos Contatos no Call Center")
-            st.bar_chart(df_base['Status_Contato'].value_counts(), color="#FF9800")
+        
+        # --- GRÁFICOS AVANÇADOS (PLOTLY) ---
+        st.subheader("📊 Métricas e Funil de Atendimento")
+        g1, g2 = st.columns(2)
+        
+        with g1:
+            # Funil de Atendimento
+            funnel_data = df_base['Status_Contato'].value_counts().reset_index()
+            funnel_data.columns = ['Etapa', 'Quantidade']
+            fig_funnel = plotly_express.funnel(funnel_data, x='Quantidade', y='Etapa', title="Funil de Conversão do Call Center", color_discrete_sequence=['#E27B00', '#FF9800', '#2E7D32', '#D32F2F'])
+            fig_funnel.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="white")
+            st.plotly_chart(fig_funnel, use_container_width=True)
+            
+        with g2:
+            # Rosca por Necessidade
+            fig_pie = plotly_express.pie(df_base, names='Tipo_Necessidade', title="Distribuição das Necessidades da Rede", hole=0.5, color_discrete_sequence=plotly_express.colors.sequential.Oranges_r)
+            fig_pie.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="white")
+            st.plotly_chart(fig_pie, use_container_width=True)
 
 # ==========================================
 # MÓDULO 2: PIPELINE KANBAN INTERATIVO
@@ -416,11 +519,11 @@ elif modulo == "🔍 PROCV & Filtros Avançados":
                 """, unsafe_allow_html=True)
 
 # ==========================================
-# MÓDULO 4: CALCULADORA & OTIMIZADOR DE CUSTOS
+# MÓDULO 4: CALCULADORA, LOGÍSTICA & MAPA 3D
 # ==========================================
 elif modulo == "📍 Calculadora & Otimizador de Custos":
-    st.subheader("📍 Análise Financeira e Otimização Logística")
-    st.caption("Cálculo detalhado de custos de viagens com indicador de economia por rota.")
+    st.subheader("📍 Otimizador de Custos Logísticos e Rotas 3D")
+    st.caption("Acompanhe o raio de deslocamento, custos de viagem e agrupamento de postos.")
     
     if not df_rec.empty:
         postos_unicos = df_rec[['PV_ABADI', 'Razao_Social', 'Municipio_Loja', 'UF_Loja']].drop_duplicates()
@@ -434,6 +537,49 @@ elif modulo == "📍 Calculadora & Otimizador de Custos":
         if not top_3.empty:
             st.divider()
             
+            # --- MAPA INTERATIVO PYDECK ---
+            st.markdown("#### 🗺️ Visão Geográfica da Rota e Proximidade")
+            df_mapa_loja = top_3[['Lat_Loja', 'Lon_Loja', 'Razao_Social']].drop_duplicates()
+            df_mapa_instrutores = top_3[['Lat_Instrutor', 'Lon_Instrutor', 'Instrutor_Sugerido']].drop_duplicates()
+            
+            if not df_mapa_loja.empty and not df_mapa_loja['Lat_Loja'].isna().all():
+                lat_centro = df_mapa_loja['Lat_Loja'].iloc[0]
+                lon_centro = df_mapa_loja['Lon_Loja'].iloc[0]
+                
+                layer_loja = pdk.Layer(
+                    "ScatterplotLayer",
+                    data=df_mapa_loja,
+                    get_position=["Lon_Loja", "Lat_Loja"],
+                    get_color="[226, 123, 0, 200]",
+                    get_radius=25000,
+                    pickable=True,
+                )
+                
+                layer_instrutores = pdk.Layer(
+                    "ScatterplotLayer",
+                    data=df_mapa_instrutores,
+                    get_position=["Lon_Instrutor", "Lat_Instrutor"],
+                    get_color="[76, 175, 80, 200]",
+                    get_radius=20000,
+                    pickable=True,
+                )
+
+                st.pydeck_chart(pdk.Deck(
+                    map_style="mapbox://styles/mapbox/dark-v9",
+                    initial_view_state=pdk.ViewState(
+                        latitude=lat_centro,
+                        longitude=lon_centro,
+                        zoom=6,
+                        pitch=40,
+                    ),
+                    layers=[layer_loja, layer_instrutores],
+                    tooltip={"text": "📍 Localidade / Instrutor"}
+                ))
+            else:
+                st.info("Coordenadas geográficas não disponíveis para exibir no mapa 3D.")
+
+            # --- CALCULADORA DE CUSTOS ---
+            st.divider()
             with st.expander("⚙️ **Ajustar Parâmetros Financeiros de Viagem**", expanded=False):
                 ca1, ca2, ca3, ca4 = st.columns(4)
                 v_km = ca1.number_input("Valor KM (Terrestre R$):", value=2.10)
@@ -482,7 +628,7 @@ elif modulo == "📍 Calculadora & Otimizador de Custos":
                 st.success(f"💡 **Economia Eficiente:** Optar pelo **1º Instrutor Recomendado** garante uma economia estimada de **R$ {economia:.2f}** nesta operação.")
 
 # ==========================================
-# MÓDULO 5: CALL CENTER & TIMELINE WHATSAPP
+# MÓDULO 5: CALL CENTER, TEMPLATES & REGISTRO
 # ==========================================
 elif modulo == "📞 Call Center & Timeline WhatsApp":
     if not df_base.empty:
@@ -506,7 +652,7 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                 
                 st.markdown(f"### 📝 Ficha de Atendimento — **PV {posto['PV Abadi']}**")
                 
-                # --- PAINEL DE CONTEXTO DO POSTO (SEM O INSTRUTOR AUTOMÁTICO PARA NÃO CONFUNDIR) ---
+                # Contexto
                 st.markdown(f"""
                     <div class="procv-card">
                         <h4>🏪 Contexto do Posto (Consulta Rápida)</h4>
@@ -526,13 +672,27 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                     </div>
                 """, unsafe_allow_html=True)
                 
-                # Botão Direto para WhatsApp Web
-                if tel_limpo:
-                    msg = f"Olá, equipe {posto['Razão Social']}! Aqui é da equipe de Capacitação AmPm. Gostaria de agendar o treinamento da loja."
-                    link_wa = f"https://wa.me/55{tel_limpo}?text={msg.replace(' ', '%20')}"
-                    st.markdown(f"📲 **[Clique aqui para chamar no WhatsApp Direct]( {link_wa} )**")
+                # --- TEMPLATES INTELIGENTES DE WHATSAPP ---
+                st.markdown("#### 📲 Modelos Prontos de Mensagens (WhatsApp)")
+                template_tipo = st.selectbox(
+                    "Escolha um modelo de mensagem:",
+                    ["Apresentação & Agendamento", "Confirmação de Data", "Lembrete de Apostilas/Material"]
+                )
+                
+                if template_tipo == "Apresentação & Agendamento":
+                    msg_txt = f"Olá, equipe {posto['Razão Social']}! Aqui é da Capacitação AmPm. Gostaria de agendar o treinamento da sua equipe para os próximos dias. Qual melhor horário para falarmos?"
+                elif template_tipo == "Confirmação de Data":
+                    msg_txt = f"Olá! Confirmamos o treinamento da AmPm para o posto {posto['Razão Social']} na data {posto.get('Data_Agendada', 'a combinar')}. O instrutor será {posto.get('Instrutor_Sugerido', 'a definir')}."
+                else:
+                    msg_txt = f"Olá! Passando para lembrar que os materiais/apostilas para o treinamento da loja {posto['Razão Social']} precisam estar impressos ou disponíveis até a data agendada. Dúvidas estamos à disposição!"
 
-                # Lista de instrutores para o selectbox do operador
+                if tel_limpo:
+                    link_wa = f"https://wa.me/55{tel_limpo}?text={msg_txt.replace(' ', '%20')}"
+                    st.markdown(f"👉 **[Enviar esta mensagem via WhatsApp Direct]( {link_wa} )**")
+                
+                st.divider()
+
+                # Lista de instrutores para o operador escolher
                 lista_instrutores = ["Pendente de Alocação"]
                 if not df_instrutores.empty and 'NOME_COMPLETO' in df_instrutores.columns:
                     lista_instrutores += sorted(df_instrutores['NOME_COMPLETO'].dropna().unique().tolist())
@@ -540,21 +700,17 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                 instrutor_atual = str(posto.get('Instrutor_Sugerido', 'Pendente de Alocação'))
                 idx_instrutor = lista_instrutores.index(instrutor_atual) if instrutor_atual in lista_instrutores else 0
 
-                # Tratamento da data agendada inicial
                 val_data_agendada = posto.get('Data_Agendada')
                 data_inicial = date.today()
                 if isinstance(val_data_agendada, (date, datetime)):
                     data_inicial = val_data_agendada
                 elif isinstance(val_data_agendada, str) and val_data_agendada:
                     try:
-                        data_inicial = datetime.strptime(val_data_agendada, "%Y-%m-%d").date()
+                        data_inicial = datetime.strptime(val_data_agendada, "%d/%m/%Y").date()
                     except ValueError:
-                        try:
-                            data_inicial = datetime.strptime(val_data_agendada, "%d/%m/%Y").date()
-                        except ValueError:
-                            data_inicial = date.today()
+                        data_inicial = date.today()
 
-                # --- REGISTROS RÁPIDOS DA LIGAÇÃO ---
+                # Form de Atendimento
                 with st.form("form_callcenter_editavel"):
                     st.markdown("#### ✍️ Registros Rápidos da Ligação")
                     
@@ -588,21 +744,33 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                         st.session_state['df_base'].loc[mask, 'Observacoes'] = obs
                         st.session_state['df_base'].loc[mask, 'Data_do_Contato'] = datetime.today().strftime('%d/%m/%Y %H:%M')
                         
-                        st.success("✅ Atendimento registrado e data formatada com sucesso!")
+                        st.success("✅ Atendimento registrado com sucesso!")
                         st.rerun()
 
-                # Histórico Cronológico / Timeline
-                st.divider()
-                st.markdown("#### ⏱️ Histórico de Interações")
-                data_ct = posto.get('Data_do_Contato', 'Sem registro')
-                data_agendada_str = posto.get('Data_Agendada', 'Não agendado')
-                st.markdown(f"""
-                    <div class="timeline-item">
-                        <small style="color:#A0AAB8;"><b>Última Atualização:</b> {data_ct}</small><br>
-                        <span><b>Status:</b> {posto.get('Status_Contato', '-')} | <b>Data Agendada:</b> {data_agendada_str} | <b>Instrutor:</b> {posto.get('Instrutor_Sugerido', '-')}</span><br>
-                        <span style="color:#D1D5DB;"><i>"{posto.get('Observacoes', 'Sem observações registradas.')}"</i></span>
-                    </div>
-                """, unsafe_allow_html=True)
+                # GERADOR DE PDF DA FICHA
+                pdf_bytes = gerar_pdf_ordem_servico({
+                    'PV Abadi': posto.get('PV Abadi'),
+                    'Razao Social': posto.get('Razão Social'),
+                    'Endereco': posto.get('Endereço'),
+                    'Municipio': posto.get('Municipio'),
+                    'UF': posto.get('UF'),
+                    'CF': posto.get('CF'),
+                    'Status_Contato': posto.get('Status_Contato'),
+                    'Data_Agendada': posto.get('Data_Agendada'),
+                    'Instrutor_Sugerido': posto.get('Instrutor_Sugerido'),
+                    'Qtd_Funcionarios': posto.get('Qtd_Funcionarios'),
+                    'Material_Em_Loja': posto.get('Material_Em_Loja'),
+                    'Nome_Contato': posto.get('Nome_Contato'),
+                    'Telefone_Contato': posto.get('Telefone_Contato'),
+                    'Observacoes': posto.get('Observacoes')
+                })
+                
+                st.download_button(
+                    label="🖨️ Baixar Ordem de Serviço / Ficha (PDF)",
+                    data=pdf_bytes,
+                    file_name=f"OS_Treinamento_PV_{posto['PV Abadi']}.pdf",
+                    mime="application/pdf"
+                )
 
 # ==========================================
 # MÓDULO 6: EQUIPE DE INSTRUTORES
@@ -613,18 +781,18 @@ elif modulo == "👔 Equipe de Instrutores":
         st.dataframe(df_instrutores[['NOME_COMPLETO', 'STATUS', 'TELEFONE', 'EMAIL', 'Cidade', 'UF']], use_container_width=True, hide_index=True)
 
 # ==========================================
-# MÓDULO 7: RELATÓRIOS & EXPORTAÇÃO
+# MÓDULO 7: RELATÓRIOS & EXPORTAÇÃO COMPLETA
 # ==========================================
-elif modulo == "📂 Relatórios & Exportação":
-    st.subheader("📂 Central de Exportação e Relatórios")
-    st.caption("Faça o download dos dados operacionais atualizados em tempo real.")
+elif modulo == "📂 Relatórios, Importação & PDF":
+    st.subheader("📂 Central de Exportação de Dados e Relatórios")
+    st.caption("Faça o download dos relatórios consolidados no formato de sua preferência.")
     
     col_exp1, col_exp2 = st.columns(2)
     
     csv_buffer = df_base.to_csv(index=False).encode('utf-8')
     with col_exp1:
         st.download_button(
-            label="📄 Baixar Base Completa em CSV",
+            label="📄 Baixar Base Completa (CSV)",
             data=csv_buffer,
             file_name=f"Base_CRM_AmPm_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
             mime="text/csv"
@@ -637,7 +805,7 @@ elif modulo == "📂 Relatórios & Exportação":
     
     with col_exp2:
         st.download_button(
-            label="📊 Baixar Base Completa em Excel",
+            label="📊 Baixar Base Completa (Excel)",
             data=excel_data,
             file_name=f"Base_CRM_AmPm_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
