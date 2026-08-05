@@ -81,10 +81,13 @@ def carregar_bases_integradas():
                 left_on='PV Abadi', right_on='PV ABADI', how='left'
             )
             
-            # Tratamento de valores nulos
+            # Tratamento de valores nulos e criação das novas colunas operacionais
             df_base['Status_Contato'] = df_base['Status_Contato'].fillna('A Contatar')
             df_base['Tipo_Necessidade'] = df_base['Tipo_Necessidade'].fillna('Rede Ativa (Sem Pendência)')
             df_base['Instrutor_Sugerido'] = df_base['Instrutor_Sugerido'].fillna('Pendente de Alocação')
+            df_base['Nome_Contato'] = ""
+            df_base['Qtd_Funcionarios'] = 0
+            df_base['Material_Em_Loja'] = "N/A"
             
             return df_base, df_instrutores, df_rec
         except Exception as e:
@@ -202,6 +205,8 @@ elif modulo == "🔍 PROCV & Gestão de Lojas":
                 st.markdown(f"**Necessidade:** {p.get('Tipo_Necessidade', '-')}")
                 st.markdown(f"**Instrutor Sugerido:** {p.get('Instrutor_Sugerido', '-')}")
                 st.markdown(f"**Status Contato:** {p.get('Status_Contato', '-')}")
+                st.markdown(f"**Contato:** {p.get('Nome_Contato', '-')}")
+                st.markdown(f"**Nº Funcionários:** {p.get('Qtd_Funcionarios', 0)}")
                 st.markdown("</div>", unsafe_allow_html=True)
 
 # ==========================================
@@ -253,12 +258,12 @@ elif modulo == "📍 Menor Custo & Geodeslocamento (Top 3)":
 # ==========================================
 elif modulo == "📞 Fila Call Center & Registro de Contatos":
     st.title("📞 Fila de Atendimento do Call Center & Registro Pós-Contato")
-    st.markdown("Selecione um posto da fila para abrir a ficha de atendimento e salvar as informações do contato.")
+    st.markdown("Selecione um posto da fila para abrir a ficha de atendimento e registrar as informações do contato.")
     
     if not df_base.empty:
         df_fila_view = df_base[df_base['Tipo_Necessidade'] != 'Rede Ativa (Sem Pendência)'].copy()
         
-        col1_tabela, col2_form = st.columns([1.8, 1.2])
+        col1_tabela, col2_form = st.columns([1.7, 1.3])
         
         with col1_tabela:
             st.subheader("📋 Lojas Pendentes / Agendadas")
@@ -275,23 +280,60 @@ elif modulo == "📞 Fila Call Center & Registro de Contatos":
             selecionado = evento_call.selection.get("rows", [])
             
         with col2_form:
-            st.subheader("📝 Ficha de Atualização Pós-Contato")
+            st.subheader("📝 Ficha Pós-Contato")
             
             if selecionado:
                 idx_sel = selecionado[0]
                 posto = df_fila_view.iloc[idx_sel]
                 pv_alvo = posto['PV Abadi']
+                tipo_nec = str(posto.get('Tipo_Necessidade', '')).lower()
+                
+                # Identifica se é uma loja em processo de Inauguração
+                is_inauguracao = 'inaugura' in tipo_nec or pd.notna(posto.get('Previsão Inauguração'))
                 
                 with st.form(key="form_registro_callcenter"):
                     st.markdown(f"<div class='form-box'>", unsafe_allow_html=True)
                     st.markdown(f"### ⛽ PV {posto['PV Abadi']} — {posto['Razão Social']}")
                     st.markdown(f"**Cidade/UF:** {posto['Municipio']}/{posto['UF']}")
-                    st.markdown(f"**Necessidade Identificada:** {posto['Tipo_Necessidade']}")
+                    st.markdown(f"**Necessidade:** `{posto['Tipo_Necessidade']}`")
                     
                     st.divider()
                     
+                    # Campos de Informação do Contato
+                    nome_contato = st.text_input(
+                        "👤 Nome do Contato / Responsável:", 
+                        value=str(posto.get('Nome_Contato', '') if pd.notna(posto.get('Nome_Contato')) else '')
+                    )
+                    
+                    c_tel, c_func = st.columns(2)
+                    with c_tel:
+                        telefone_contato = st.text_input(
+                            "📞 Telefone de Contato:", 
+                            value=str(posto.get('Telefone_Contato', '') if pd.notna(posto.get('Telefone_Contato')) else '')
+                        )
+                    with c_func:
+                        qtd_funcionarios = st.number_input(
+                            "👥 Nº de Funcionários:", 
+                            min_value=0, 
+                            max_value=200, 
+                            value=int(posto.get('Qtd_Funcionarios', 0)) if pd.notna(posto.get('Qtd_Funcionarios')) else 0
+                        )
+                    
+                    # Campo Condicional: Exibido apenas para Lojas de Inauguração
+                    material_loja = "N/A"
+                    if is_inauguracao:
+                        st.markdown("---")
+                        st.markdown("📦 **Controle de Insumos (Exclusivo Inaugurações)**")
+                        material_loja = st.radio(
+                            "Todo o material de treinamento já está disponível na loja?",
+                            ["Sim — Material Completo na Loja", "Não — Aguardando Chegada dos Materiais", "Parcial — Entregue Incompleto"],
+                            index=0
+                        )
+                    
+                    st.markdown("---")
+                    
                     novo_status = st.selectbox(
-                        "Novo Status do Contato:",
+                        "Status do Contato:",
                         ["A Contatar", "Em Negociação", "Agendado", "Treinamento Realizado", "Recusado / Indisponível"],
                         index=["A Contatar", "Em Negociação", "Agendado", "Treinamento Realizado", "Recusado / Indisponível"].index(posto.get('Status_Contato', 'A Contatar')) if posto.get('Status_Contato') in ["A Contatar", "Em Negociação", "Agendado", "Treinamento Realizado", "Recusado / Indisponível"] else 0
                     )
@@ -301,21 +343,23 @@ elif modulo == "📞 Fila Call Center & Registro de Contatos":
                         lista_instrutores += sorted(df_instrutores['NOME_COMPLETO'].dropna().unique().tolist())
                         
                     novo_instrutor = st.selectbox(
-                        "Instrutor Confirmado/Sugerido:",
+                        "Instrutor Sugerido / Confirmado:",
                         lista_instrutores,
                         index=lista_instrutores.index(posto.get('Instrutor_Sugerido')) if posto.get('Instrutor_Sugerido') in lista_instrutores else 0
                     )
                     
                     semana_agendada = st.text_input("Semana Agendada (Ex: Sem 35):", value=str(posto.get('Semana_Sugerida', '') if pd.notna(posto.get('Semana_Sugerida')) else ''))
-                    telefone_contato = st.text_input("Telefone de Contato / Responsável:", value=str(posto.get('Telefone_Contato', '') if pd.notna(posto.get('Telefone_Contato')) else ''))
                     observacoes_contato = st.text_area("Observações do Atendimento:", value=str(posto.get('Observacoes', '') if pd.notna(posto.get('Observacoes')) else ''))
                     
-                    btn_salvar = st.form_submit_button("💾 Salvar Atendimento Pós-Contato")
+                    btn_salvar = st.form_submit_button("💾 Salvar Informações do Atendimento")
                     st.markdown("</div>", unsafe_allow_html=True)
                     
                     if btn_salvar:
-                        # Atualiza no DataFrame mantido na sessão
+                        # Atualização no estado da sessão
                         mask = st.session_state['df_base']['PV Abadi'] == pv_alvo
+                        st.session_state['df_base'].loc[mask, 'Nome_Contato'] = nome_contato
+                        st.session_state['df_base'].loc[mask, 'Qtd_Funcionarios'] = qtd_funcionarios
+                        st.session_state['df_base'].loc[mask, 'Material_Em_Loja'] = material_loja
                         st.session_state['df_base'].loc[mask, 'Status_Contato'] = novo_status
                         st.session_state['df_base'].loc[mask, 'Instrutor_Sugerido'] = novo_instrutor
                         st.session_state['df_base'].loc[mask, 'Semana_Sugerida'] = semana_agendada
@@ -326,7 +370,7 @@ elif modulo == "📞 Fila Call Center & Registro de Contatos":
                         st.success(f"✅ Atendimento do PV {pv_alvo} atualizado com sucesso!")
                         st.rerun()
             else:
-                st.info("👈 Selecione uma linha na tabela ao lado para preencher as informações após o contato.")
+                st.info("👈 Selecione um posto na tabela ao lado para carregar o formulário.")
 
 # ==========================================
 # MÓDULO 5: GESTÃO DE INSTRUTORES
