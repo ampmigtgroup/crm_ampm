@@ -42,6 +42,22 @@ st.markdown("""
         border-radius: 10px;
         border-top: 4px solid #e0a96d;
     }
+    .modal-badge-aereo {
+        background-color: #0288D1;
+        color: white;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-weight: bold;
+        font-size: 0.85rem;
+    }
+    .modal-badge-terrestre {
+        background-color: #388E3C;
+        color: white;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-weight: bold;
+        font-size: 0.85rem;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -81,7 +97,21 @@ def carregar_bases_integradas():
                 left_on='PV Abadi', right_on='PV ABADI', how='left'
             )
             
-            # Tratamento de valores nulos e criação das novas colunas operacionais
+            # PROCV 3: Cruzando Geocodificação dos Instrutores na tabela de Recomendação
+            df_rec = pd.merge(
+                df_rec,
+                df_instrutores[['NOME_COMPLETO', 'Latitude', 'Longitude']],
+                left_on='Instrutor_Sugerido', right_on='NOME_COMPLETO', how='left'
+            ).rename(columns={'Latitude': 'Lat_Instrutor', 'Longitude': 'Lon_Instrutor'})
+            
+            # PROCV 4: Cruzando Geocodificação das Lojas na tabela de Recomendação
+            df_rec = pd.merge(
+                df_rec,
+                df_lojas[['PV Abadi', 'Latitude', 'Longitude']],
+                left_on='PV_ABADI', right_on='PV Abadi', how='left'
+            ).rename(columns={'Latitude': 'Lat_Loja', 'Longitude': 'Lon_Loja'})
+
+            # Tratamento de valores nulos
             df_base['Status_Contato'] = df_base['Status_Contato'].fillna('A Contatar')
             df_base['Tipo_Necessidade'] = df_base['Tipo_Necessidade'].fillna('Rede Ativa (Sem Pendência)')
             df_base['Instrutor_Sugerido'] = df_base['Instrutor_Sugerido'].fillna('Pendente de Alocação')
@@ -97,7 +127,7 @@ def carregar_bases_integradas():
         st.warning("⚠️ Arquivo 'Base_Unificada_AmPm.xlsx' não localizado.")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-# Inicialização da base na Session State para manter as atualizações em memória
+# Inicialização da Session State
 if 'df_base' not in st.session_state:
     b, i, r = carregar_bases_integradas()
     st.session_state['df_base'] = b
@@ -210,11 +240,11 @@ elif modulo == "🔍 PROCV & Gestão de Lojas":
                 st.markdown("</div>", unsafe_allow_html=True)
 
 # ==========================================
-# MÓDULO 3: MENOR CUSTO & GEODESLOCAMENTO (TOP 3)
+# MÓDULO 3: MENOR CUSTO & GEODESLOCAMENTO (TOP 3) + MAPA DE ROTA
 # ==========================================
 elif modulo == "📍 Menor Custo & Geodeslocamento (Top 3)":
-    st.title("📍 Otimizador de Deslocamento — Top 3 Instrutores Mais Próximos")
-    st.markdown("Cruzamento geográfico de latitude/longitude para minimização do custo de passagem e hospedagem.")
+    st.title("📍 Otimizador de Deslocamento & Rotas — Top 3 Instrutores")
+    st.markdown("Análise geográfica de rotas para redução de custos com passagens e estadias.")
     
     if not df_rec.empty:
         postos_unicos = df_rec[['PV_ABADI', 'Razao_Social', 'Municipio_Loja', 'UF_Loja']].drop_duplicates()
@@ -231,22 +261,64 @@ elif modulo == "📍 Menor Custo & Geodeslocamento (Top 3)":
             st.markdown(f"📍 **Localização:** {info_posto['Municipio_Loja']}/{info_posto['UF_Loja']} | **Dias de Treinamento Necessários:** {info_posto['Dias_Treinamento_Necessarios']}")
             
             st.write("")
-            st.subheader("🥇 Top 3 Opções de Instrutores por Menor Distância (Menor Custo Logístico)")
+            st.subheader("🥇 Top 3 Opções de Instrutores & Modal Recomendado")
             
             col1, col2, col3 = st.columns(3)
             cols = [col1, col2, col3]
             
             for idx, (_, row) in enumerate(top_3.iterrows()):
+                dist = row['Distancia_km_linha_reta']
+                # Classificação automática do meio de transporte
+                if dist > 300:
+                    modal = "✈️ Aéreo (Avião + Conexão)"
+                    badge = "<span class='modal-badge-aereo'>Viagem Aérea</span>"
+                else:
+                    modal = "🚗 Terrestre (Carro / Uber / Ônibus)"
+                    badge = "<span class='modal-badge-terrestre'>Deslocamento Terrestre</span>"
+                    
                 if idx < 3:
                     with cols[idx]:
                         st.markdown(f"<div class='top-instructor'>", unsafe_allow_html=True)
-                        st.markdown(f"#### #{row['Ranking_Proximidade']}º Opção — {row['Instrutor_Sugerido']}")
-                        st.markdown(f"📍 **Origem Instrutor:** {row['Cidade_Instrutor']} / {row['UF_Instrutor']}")
-                        st.markdown(f"📏 **Distância Linear:** `{row['Distancia_km_linha_reta']} km`")
+                        st.markdown(f"#### #{row['Ranking_Proximidade']}º — {row['Instrutor_Sugerido']}")
+                        st.markdown(f"📍 **Origem:** {row['Cidade_Instrutor']} / {row['UF_Instrutor']}")
+                        st.markdown(f"📏 **Distância:** `{dist} km`")
+                        st.markdown(f"🚌 **Modal Indicado:** {modal}")
+                        st.markdown(badge, unsafe_allow_html=True)
                         st.markdown("</div>", unsafe_allow_html=True)
-                        
+            
             st.divider()
-            st.markdown("### 📊 Tabela de Comparação de Custo e Deslocamento")
+            
+            # --- MAPA DE VISUALIZAÇÃO DE DESLOCAMENTO ---
+            st.subheader("🗺️ Mapa Visual de Deslocamento & Rotas")
+            
+            instrutor_opcoes = top_3['Instrutor_Sugerido'].tolist()
+            inst_selecionado = st.radio(
+                "Selecione um instrutor para traçar a rota visual no mapa:",
+                instrutor_opcoes,
+                horizontal=True
+            )
+            
+            dados_rota = top_3[top_3['Instrutor_Sugerido'] == inst_selecionado].iloc[0]
+            
+            # Monta dataframe de coordenadas para o mapa do Streamlit
+            lat_loja = dados_rota.get('Lat_Loja')
+            lon_loja = dados_rota.get('Lon_Loja')
+            lat_inst = dados_rota.get('Lat_Instrutor')
+            lon_inst = dados_rota.get('Lon_Instrutor')
+            
+            if pd.notna(lat_loja) and pd.notna(lon_loja) and pd.notna(lat_inst) and pd.notna(lon_inst):
+                df_mapa = pd.DataFrame({
+                    'lat': [lat_loja, lat_inst],
+                    'lon': [lon_loja, lon_inst],
+                    'Ponto': [f"Loja: {dados_rota['Razao_Social']}", f"Instrutor: {dados_rota['Instrutor_Sugerido']}"]
+                })
+                
+                st.map(df_mapa, zoom=5)
+                st.caption(f"🔵 Marcadores no mapa: Posto ({dados_rota['Municipio_Loja']}/{dados_rota['UF_Loja']}) e Instrutor ({dados_rota['Cidade_Instrutor']}/{dados_rota['UF_Instrutor']})")
+            else:
+                st.info("ℹ️ Coordenadas de latitude/longitude do posto ou instrutor selecionado indisponíveis para plotagem.")
+
+            st.markdown("### 📊 Tabela de Comparação Logística")
             st.dataframe(
                 top_3[['Ranking_Proximidade', 'Instrutor_Sugerido', 'Cidade_Instrutor', 'UF_Instrutor', 'Distancia_km_linha_reta']],
                 use_container_width=True,
@@ -288,7 +360,6 @@ elif modulo == "📞 Fila Call Center & Registro de Contatos":
                 pv_alvo = posto['PV Abadi']
                 tipo_nec = str(posto.get('Tipo_Necessidade', '')).lower()
                 
-                # Identifica se é uma loja em processo de Inauguração
                 is_inauguracao = 'inaugura' in tipo_nec or pd.notna(posto.get('Previsão Inauguração'))
                 
                 with st.form(key="form_registro_callcenter"):
@@ -299,7 +370,6 @@ elif modulo == "📞 Fila Call Center & Registro de Contatos":
                     
                     st.divider()
                     
-                    # Campos de Informação do Contato
                     nome_contato = st.text_input(
                         "👤 Nome do Contato / Responsável:", 
                         value=str(posto.get('Nome_Contato', '') if pd.notna(posto.get('Nome_Contato')) else '')
@@ -319,7 +389,6 @@ elif modulo == "📞 Fila Call Center & Registro de Contatos":
                             value=int(posto.get('Qtd_Funcionarios', 0)) if pd.notna(posto.get('Qtd_Funcionarios')) else 0
                         )
                     
-                    # Campo Condicional: Exibido apenas para Lojas de Inauguração
                     material_loja = "N/A"
                     if is_inauguracao:
                         st.markdown("---")
@@ -355,7 +424,6 @@ elif modulo == "📞 Fila Call Center & Registro de Contatos":
                     st.markdown("</div>", unsafe_allow_html=True)
                     
                     if btn_salvar:
-                        # Atualização no estado da sessão
                         mask = st.session_state['df_base']['PV Abadi'] == pv_alvo
                         st.session_state['df_base'].loc[mask, 'Nome_Contato'] = nome_contato
                         st.session_state['df_base'].loc[mask, 'Qtd_Funcionarios'] = qtd_funcionarios
@@ -379,3 +447,4 @@ elif modulo == "👔 Gestão de Instrutores":
     st.title("👔 Relação de Instrutores")
     if not df_instrutores.empty:
         st.dataframe(df_instrutores[['NOME_COMPLETO', 'STATUS', 'TELEFONE', 'EMAIL', 'Cidade', 'UF']], use_container_width=True, hide_index=True)
+
