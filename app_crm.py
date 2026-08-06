@@ -14,7 +14,6 @@ st.set_page_config(
 )
 
 CAMINHO_ARQUIVO = "Base_Unificada_AmPm.xlsx"
-CAMINHO_BACKUP = "Base_Unificada_AmPm.backup.xlsx"
 
 # Colunas "editáveis" que vivem na aba Fila_CallCenter.
 # Consolidamos aqui TODOS os campos que o Call Center e o Pipeline escrevem,
@@ -193,266 +192,40 @@ def parse_data_flexivel(valor):
     return None
 
 
-def _normalizar_nome(nome):
-    """Normaliza um texto (nome de aba ou de coluna) para comparação
-    tolerante a acentos, espaços/underscores extras e maiúsculas/minúsculas
-    (ex.: 'PV_Abadi', 'pv abadi', ' PV ABADI ' → 'pv abadi')."""
-    import unicodedata
-    nome = str(nome).strip().lower()
-    nome = unicodedata.normalize('NFKD', nome).encode('ascii', 'ignore').decode('ascii')
-    nome = nome.replace('_', ' ').replace('-', ' ')
-    nome = ' '.join(nome.split())
-    return nome
-
-
-# Para cada tipo de dado que o sistema precisa, definimos a coluna-chave
-# (obrigatória para reconhecer a aba) e os "apelidos" aceitos para cada
-# coluna. Isso permite que o app reconheça uma planilha pelo CONTEÚDO
-# (quais colunas ela tem), não pelo nome da aba nem pela grafia exata —
-# só entram no sistema as colunas que ele reconhece como compatíveis.
-ENTIDADES = {
-    "lojas": {
-        "chave": "PV Abadi",
-        "obrigatoria": True,
-        "colunas": {
-            "PV Abadi": ["pv abadi", "pv", "codigo pv", "cod pv", "id loja", "codigo loja", "numero pv", "n pv", "pv abadi rede"],
-            "Razão Social": ["razao social", "nome loja", "loja", "unidade", "nome fantasia", "franquia", "nome da loja"],
-            "Municipio": ["municipio", "cidade", "municipio loja"],
-            "UF": ["uf", "estado", "uf loja"],
-            "Endereço": ["endereco", "endereco completo", "logradouro", "endereço"],
-            "Status Loja": ["status loja", "status", "situacao loja", "situacao"],
-            "GF": ["gf", "gerente franquia", "gerente"],
-            "CF": ["cf", "consultor", "consultor franquia", "consultor de franquia"],
-            "Latitude": ["latitude", "lat"],
-            "Longitude": ["longitude", "lon", "long", "lng"],
-        },
-    },
-    "fila": {
-        "chave": "PV_Abadi",
-        "obrigatoria": False,
-        "colunas": {
-            "PV_Abadi": ["pv abadi", "pv", "codigo pv", "cod pv", "id loja", "codigo loja"],
-            "Tipo_Necessidade": ["tipo necessidade", "necessidade", "tipo de necessidade", "tipo pendencia"],
-            "Data_Ultimo_Treinamento": ["data ultimo treinamento", "ultimo treinamento", "data do ultimo treinamento"],
-            "Dias_desde_Ultimo_Treinamento": ["dias desde ultimo treinamento", "dias sem treinamento", "dias desde treinamento"],
-            "Instrutor_Sugerido": ["instrutor sugerido", "instrutor", "instrutor designado"],
-            "Semana_Sugerida": ["semana sugerida", "semana"],
-            "Telefone_Contato": ["telefone contato", "telefone", "contato telefone", "celular"],
-            "Status_Contato": ["status contato", "status do contato", "status atendimento"],
-            "Data_do_Contato": ["data do contato", "data contato", "ultima atualizacao"],
-            "Observacoes": ["observacoes", "observacao", "obs", "comentarios"],
-            "Nome_Contato": ["nome contato", "nome do contato", "responsavel loja", "responsavel"],
-            "Qtd_Funcionarios": ["qtd funcionarios", "quantidade funcionarios", "qtd de funcionarios", "numero de funcionarios", "funcionarios"],
-            "Material_Em_Loja": ["material em loja", "material na loja", "possui material", "apostilas"],
-            "Data_Agendada": ["data agendada", "data do agendamento", "agendamento"],
-        },
-    },
-    "inaug": {
-        "chave": "PV ABADI",
-        "obrigatoria": False,
-        "colunas": {
-            "PV ABADI": ["pv abadi", "pv", "codigo pv", "cod pv"],
-            "Previsão Inauguração": ["previsao inauguracao", "data inauguracao", "previsao de inauguracao", "inauguracao"],
-            "Pipeline": ["pipeline", "etapa pipeline", "fase"],
-            "Consultor_Possivel_Instrutor": ["consultor possivel instrutor", "consultor instrutor", "possivel instrutor"],
-        },
-    },
-    "instrutores": {
-        "chave": "NOME_COMPLETO",
-        "chave_numerica": False,
-        "obrigatoria": False,
-        "colunas": {
-            "NOME_COMPLETO": ["nome completo", "nome", "instrutor", "nome do instrutor"],
-            "STATUS": ["status", "situacao"],
-            "TELEFONE": ["telefone", "celular", "contato telefone"],
-            "EMAIL": ["email", "e mail"],
-            "Cidade": ["cidade", "municipio"],
-            "UF": ["uf", "estado"],
-            "Latitude": ["latitude", "lat"],
-            "Longitude": ["longitude", "lon", "long", "lng"],
-        },
-    },
-    "rec": {
-        "chave": "PV_ABADI",
-        "obrigatoria": False,
-        "colunas": {
-            "PV_ABADI": ["pv abadi", "pv", "codigo pv", "cod pv"],
-            "Razao_Social": ["razao social", "nome loja", "loja", "unidade"],
-            "Municipio_Loja": ["municipio loja", "municipio", "cidade loja"],
-            "UF_Loja": ["uf loja", "uf", "estado loja"],
-            "Instrutor_Sugerido": ["instrutor sugerido", "instrutor"],
-            "Cidade_Instrutor": ["cidade instrutor", "cidade do instrutor"],
-            "UF_Instrutor": ["uf instrutor", "uf do instrutor"],
-            "Ranking_Proximidade": ["ranking proximidade", "ranking", "posicao ranking"],
-            "Distancia_km_linha_reta": ["distancia km linha reta", "distancia km", "distancia", "distancia linha reta"],
-            "Dias_Treinamento_Necessarios": ["dias treinamento necessarios", "dias necessarios", "dias de treinamento"],
-        },
-    },
-}
-
-MIN_SCORE_CONFIANTE = 2  # chave + pelo menos 1 outra coluna reconhecida
-
-
-def _construir_lookup(colunas_dict):
-    """Constrói um dicionário {apelido_normalizado: nome_canonico} para uma
-    entidade, incluindo o próprio nome canônico como apelido de si mesmo."""
-    lookup = {}
-    for canonico, apelidos in colunas_dict.items():
-        for apelido in set(apelidos) | {canonico}:
-            lookup[_normalizar_nome(apelido)] = canonico
-    return lookup
-
-
-def _mapear_colunas_compativeis(df, definicao_entidade):
-    """Compara as colunas reais de um DataFrame com os apelidos aceitos de
-    uma entidade. Retorna (rename_map, canonicas_encontradas, colunas_ignoradas).
-    Só as colunas reconhecidas entram no rename_map — o resto é ignorado."""
-    lookup = _construir_lookup(definicao_entidade["colunas"])
-    rename_map = {}
-    canonicas_encontradas = set()
-    colunas_ignoradas = []
-    for col in df.columns:
-        chave_norm = _normalizar_nome(col)
-        canonico = lookup.get(chave_norm)
-        if canonico and canonico not in canonicas_encontradas:
-            rename_map[col] = canonico
-            canonicas_encontradas.add(canonico)
-        else:
-            colunas_ignoradas.append(str(col))
-    return rename_map, canonicas_encontradas, colunas_ignoradas
-
-
-def detectar_entidades_no_workbook(xls):
-    """Examina TODAS as abas do arquivo e, para cada uma, mede a
-    compatibilidade de colunas com cada tipo de dado esperado pelo sistema
-    (lojas, fila de call center, inaugurações, instrutores, recomendação de
-    deslocamento). Cada aba é atribuída ao tipo mais compatível, independente
-    do nome da aba ou da grafia exata das colunas. Colunas não reconhecidas
-    são descartadas silenciosamente (registradas no relatório, não usadas).
-    Retorna (bases_dict, relatorio_list)."""
-    dfs_brutos = {}
-    candidatos = []  # (score, sheet_name, entidade, rename_map, canonicas)
-
-    for sheet_name in xls.sheet_names:
-        try:
-            df_bruto = pd.read_excel(xls, sheet_name=sheet_name)
-        except Exception:
-            continue
-        if df_bruto is None or len(df_bruto.columns) == 0:
-            continue
-        dfs_brutos[sheet_name] = df_bruto
-        for entidade, definicao in ENTIDADES.items():
-            rename_map, canonicas, _ = _mapear_colunas_compativeis(df_bruto, definicao)
-            if definicao["chave"] not in canonicas:
-                continue  # sem a coluna-chave, a aba não pode representar esta entidade
-            score = len(canonicas)
-            candidatos.append((score, sheet_name, entidade, rename_map, canonicas))
-
-    candidatos.sort(key=lambda x: -x[0])
-
-    entidade_atribuida = {}
-    aba_usada = set()
-    for score, sheet_name, entidade, rename_map, canonicas in candidatos:
-        if score < MIN_SCORE_CONFIANTE:
-            continue
-        if entidade in entidade_atribuida or sheet_name in aba_usada:
-            continue
-        entidade_atribuida[entidade] = (sheet_name, rename_map, canonicas, score)
-        aba_usada.add(sheet_name)
-
-    # 'lojas' é obrigatória: se nada bateu com confiança, aceitamos o melhor
-    # candidato disponível (mesmo que só tenha a coluna-chave), pois sem
-    # rede de lojas o sistema não tem como funcionar.
-    if "lojas" not in entidade_atribuida:
-        for score, sheet_name, entidade, rename_map, canonicas in candidatos:
-            if entidade == "lojas" and sheet_name not in aba_usada:
-                entidade_atribuida["lojas"] = (sheet_name, rename_map, canonicas, score)
-                aba_usada.add(sheet_name)
-                break
-
-    bases = {}
-    relatorio = []
-    for entidade, definicao in ENTIDADES.items():
-        colunas_canonicas = list(definicao["colunas"].keys())
-        if entidade in entidade_atribuida:
-            sheet_name, rename_map, canonicas, score = entidade_atribuida[entidade]
-            df_bruto = dfs_brutos[sheet_name]
-            df_mapeado = df_bruto.rename(columns=rename_map)
-            colunas_presentes = [c for c in colunas_canonicas if c in df_mapeado.columns]
-            df_final = df_mapeado[colunas_presentes].copy()
-            colunas_ignoradas = [c for c in df_bruto.columns if c not in rename_map]
-            bases[entidade] = df_final
-            relatorio.append({
-                "entidade": entidade,
-                "aba_origem": sheet_name,
-                "confianca": "alta" if score >= MIN_SCORE_CONFIANTE else "baixa",
-                "colunas_reconhecidas": colunas_presentes,
-                "colunas_ignoradas": colunas_ignoradas,
-            })
-        else:
-            bases[entidade] = pd.DataFrame(columns=colunas_canonicas)
-            relatorio.append({
-                "entidade": entidade,
-                "aba_origem": None,
-                "confianca": "n/a",
-                "colunas_reconhecidas": [],
-                "colunas_ignoradas": [],
-            })
-
-    return bases, relatorio
-
-
-def _processar_excelfile(xls):
-    """Detecta e monta as bases a partir de um pd.ExcelFile já aberto (seja
-    de um caminho em disco ou de bytes em memória), aceitando qualquer nome
-    de aba/coluna e usando apenas as informações compatíveis com o sistema.
-    Lança ValueError se não for possível identificar nem a base de lojas."""
-    bases, relatorio = detectar_entidades_no_workbook(xls)
-
-    if bases["lojas"].empty or ENTIDADES["lojas"]["chave"] not in bases["lojas"].columns:
-        abas_disponiveis = ", ".join(xls.sheet_names) if xls.sheet_names else "(nenhuma)"
-        raise ValueError(
-            "Não foi possível identificar, em nenhuma aba do arquivo, dados de rede de lojas "
-            "(é necessário pelo menos uma coluna equivalente a 'PV Abadi'). "
-            f"Abas presentes no arquivo enviado: {abas_disponiveis}."
-        )
-
-    for entidade, definicao in ENTIDADES.items():
-        chave = definicao["chave"]
-        df = bases[entidade]
-        if definicao.get("chave_numerica", True) and chave in df.columns:
-            df[chave] = pd.to_numeric(df[chave], errors="coerce")
-        bases[entidade] = df
-
-    for col in COLUNAS_FILA:
-        if col not in bases["fila"].columns:
-            bases["fila"][col] = pd.NA
-
-    return bases, relatorio
-
-
-def validar_bytes_excel(conteudo_bytes):
-    """Valida (sem tocar no disco) se os bytes de um .xlsx enviado contêm ao
-    menos dados de lojas reconhecíveis. Retorna (bases_dict, relatorio, None)
-    em caso de sucesso, ou (None, None, mensagem_de_erro) em caso de falha —
-    usado para checar o upload ANTES de sobrescrever o arquivo em produção."""
-    try:
-        xls = pd.ExcelFile(io.BytesIO(conteudo_bytes), engine='openpyxl')
-        bases, relatorio = _processar_excelfile(xls)
-        return bases, relatorio, None
-    except Exception as e:
-        return None, None, str(e)
-
-
 @st.cache_data
-def carregar_bases_do_disco(caminho, assinatura=None):
-    """Lê e detecta as abas do Excel no disco. O parâmetro `assinatura`
-    (ex.: data de modificação do arquivo) força o Streamlit a invalidar o
-    cache quando o arquivo muda, mesmo com o mesmo caminho."""
+def carregar_bases_do_disco(caminho):
+    """Lê as abas brutas do Excel do disco. Não faz merges nem preenchimentos
+    de valores padrão — isso é feito à parte, para que os dados brutos
+    permaneçam limpos e fiéis ao arquivo de origem (essencial para salvar
+    corretamente de volta)."""
     if not os.path.exists(caminho):
-        return None, None
+        return None
+
     xls = pd.ExcelFile(caminho, engine='openpyxl')
-    return _processar_excelfile(xls)
+    df_lojas = pd.read_excel(xls, sheet_name='Rede_de_Lojas')
+    df_fila = pd.read_excel(xls, sheet_name='Fila_CallCenter')
+    df_inaug = pd.read_excel(xls, sheet_name='Previsao_Inauguracao')
+    df_instrutores = pd.read_excel(xls, sheet_name='Instrutores')
+    df_rec = pd.read_excel(xls, sheet_name='Recomendacao_Deslocamento')
+
+    df_lojas['PV Abadi'] = pd.to_numeric(df_lojas['PV Abadi'], errors='coerce')
+    df_fila['PV_Abadi'] = pd.to_numeric(df_fila['PV_Abadi'], errors='coerce')
+    df_inaug['PV ABADI'] = pd.to_numeric(df_inaug['PV ABADI'], errors='coerce')
+    df_rec['PV_ABADI'] = pd.to_numeric(df_rec['PV_ABADI'], errors='coerce')
+
+    # Garante que todas as colunas editáveis existam na aba de fila,
+    # mesmo que o arquivo de origem ainda não as tenha.
+    for col in COLUNAS_FILA:
+        if col not in df_fila.columns:
+            df_fila[col] = pd.NA
+
+    return {
+        "lojas": df_lojas,
+        "fila": df_fila,
+        "inaug": df_inaug,
+        "instrutores": df_instrutores,
+        "rec": df_rec,
+    }
 
 
 def construir_base_unificada(df_lojas, df_fila, df_inaug):
@@ -527,46 +300,22 @@ def atualizar_fila(pv_abadi, campos: dict):
     salvar_fila_no_disco()
 
 
-def _bases_vazias():
-    return {
-        "lojas": pd.DataFrame(),
-        "fila": pd.DataFrame(columns=COLUNAS_FILA),
-        "inaug": pd.DataFrame(),
-        "instrutores": pd.DataFrame(),
-        "rec": pd.DataFrame(),
-    }
-
-
 def inicializar_estado():
     if 'bases' in st.session_state:
         return
-    st.session_state.setdefault('erro_carga', None)
-    st.session_state.setdefault('relatorio_importacao', None)
-    if not os.path.exists(CAMINHO_ARQUIVO):
-        st.session_state['bases'] = _bases_vazias()
-        return
-    try:
-        assinatura = os.path.getmtime(CAMINHO_ARQUIVO)
-        bases, relatorio = carregar_bases_do_disco(CAMINHO_ARQUIVO, assinatura)
-        st.session_state['bases'] = bases if bases is not None else _bases_vazias()
-        st.session_state['relatorio_importacao'] = relatorio
-        st.session_state['erro_carga'] = None
-    except Exception as e:
-        # Nunca deixa uma falha de leitura derrubar o app inteiro: guarda o
-        # erro para mostrar na tela e segue com bases vazias, permitindo que
-        # o usuário faça um novo upload válido ou restaure o backup.
-        st.session_state['erro_carga'] = str(e)
-        st.session_state['bases'] = _bases_vazias()
+    bases = carregar_bases_do_disco(CAMINHO_ARQUIVO)
+    if bases is None:
+        bases = {
+            "lojas": pd.DataFrame(),
+            "fila": pd.DataFrame(columns=COLUNAS_FILA),
+            "inaug": pd.DataFrame(),
+            "instrutores": pd.DataFrame(),
+            "rec": pd.DataFrame(),
+        }
+    st.session_state['bases'] = bases
 
 
 inicializar_estado()
-
-if st.session_state.get('erro_carga'):
-    st.error(
-        "⚠️ Não foi possível carregar `Base_Unificada_AmPm.xlsx`:\n\n"
-        f"{st.session_state['erro_carga']}\n\n"
-        "Envie um arquivo válido na barra lateral, ou restaure o último backup se houver um disponível."
-    )
 
 # --- SIDEBAR DE NAVEGAÇÃO, FILTROS GLOBAIS E UPLOAD ---
 with st.sidebar:
@@ -594,60 +343,26 @@ with st.sidebar:
     st.caption("Um .xlsx substitui o arquivo inteiro. Um .csv atualiza apenas UMA aba — escolha qual abaixo.")
 
     aba_destino_csv = st.selectbox(
-        "Se o CSV não puder ser identificado automaticamente, use como destino:",
+        "Se enviar um CSV, ele substitui:",
         ["Rede_de_Lojas", "Fila_CallCenter", "Previsao_Inauguracao", "Instrutores", "Recomendacao_Deslocamento"],
-        help="O sistema tenta identificar sozinho pelo conteúdo das colunas. Esta opção só é usada como reserva, se a identificação automática falhar."
+        help="Ignorado se você enviar um .xlsx completo."
     )
 
     uploaded_file = st.file_uploader(
         "Envie a nova planilha (.xlsx ou .csv):",
         type=["xlsx", "csv"],
-        help="O sistema aceita qualquer nome de aba/coluna — ele reconhece o conteúdo automaticamente e usa apenas o que for compatível."
+        help="Carregue o arquivo Excel completo ou um CSV de uma única aba para atualizar a base de dados."
     )
-
-    def _exibir_relatorio_importacao(relatorio):
-        nomes_entidade = {
-            "lojas": "🏪 Rede de Lojas",
-            "fila": "📞 Fila de Call Center",
-            "inaug": "🚀 Previsão de Inauguração",
-            "instrutores": "👔 Instrutores",
-            "rec": "📍 Recomendação de Deslocamento",
-        }
-        with st.expander("🔎 Ver o que foi reconhecido no arquivo", expanded=False):
-            for item in relatorio:
-                nome = nomes_entidade.get(item["entidade"], item["entidade"])
-                if item["aba_origem"]:
-                    st.markdown(f"**{nome}** — encontrado na aba `{item['aba_origem']}`")
-                    if item["colunas_reconhecidas"]:
-                        st.caption("Colunas usadas: " + ", ".join(item["colunas_reconhecidas"]))
-                    if item["colunas_ignoradas"]:
-                        st.caption("Colunas ignoradas (não reconhecidas): " + ", ".join(item["colunas_ignoradas"]))
-                else:
-                    st.markdown(f"**{nome}** — não encontrado no arquivo (ficará vazio)")
 
     if uploaded_file is not None:
         try:
             if uploaded_file.name.endswith('.xlsx'):
-                conteudo = uploaded_file.getbuffer().tobytes()
-                # Valida a estrutura ANTES de tocar no arquivo em produção —
-                # isto evita sobrescrever uma base boa com um arquivo inválido
-                # e deixar o app quebrado até um novo upload.
-                bases_validadas, relatorio, erro = validar_bytes_excel(conteudo)
-                if erro:
-                    st.error(f"❌ Arquivo rejeitado — a base atual foi mantida intacta.\n\n{erro}")
-                else:
-                    if os.path.exists(CAMINHO_ARQUIVO):
-                        with open(CAMINHO_ARQUIVO, "rb") as f_atual, open(CAMINHO_BACKUP, "wb") as f_bak:
-                            f_bak.write(f_atual.read())
-                    with open(CAMINHO_ARQUIVO, "wb") as f:
-                        f.write(conteudo)
-                    st.cache_data.clear()
-                    st.session_state['bases'] = bases_validadas
-                    st.session_state['relatorio_importacao'] = relatorio
-                    st.session_state['erro_carga'] = None
-                    # st.toast (e não st.success) porque sobrevive ao st.rerun() logo abaixo
-                    st.toast("💾 Banco de dados atualizado! Backup do arquivo anterior guardado.", icon="✅")
-                    st.rerun()
+                with open(CAMINHO_ARQUIVO, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+                st.cache_data.clear()
+                del st.session_state['bases']
+                inicializar_estado()
+                st.success("✅ Banco de dados (arquivo completo) atualizado!")
             elif uploaded_file.name.endswith('.csv'):
                 df_csv = pd.read_csv(uploaded_file)
                 chave_map = {
@@ -657,67 +372,17 @@ with st.sidebar:
                     "Instrutores": "instrutores",
                     "Recomendacao_Deslocamento": "rec",
                 }
-
-                # Tenta identificar automaticamente a que tipo de dado o CSV
-                # corresponde, comparando suas colunas com as de cada entidade.
-                melhor_entidade, melhor_score = None, 0
-                for entidade, definicao in ENTIDADES.items():
-                    _, canonicas, _ = _mapear_colunas_compativeis(df_csv, definicao)
-                    if definicao["chave"] in canonicas and len(canonicas) > melhor_score:
-                        melhor_entidade, melhor_score = entidade, len(canonicas)
-
-                if melhor_entidade and melhor_score >= MIN_SCORE_CONFIANTE:
-                    chave = melhor_entidade
-                    origem = "identificação automática"
-                else:
-                    chave = chave_map[aba_destino_csv]
-                    origem = "aba selecionada manualmente (não foi possível identificar automaticamente)"
-
-                definicao = ENTIDADES[chave]
-                rename_map, canonicas, ignoradas = _mapear_colunas_compativeis(df_csv, definicao)
-                if definicao["chave"] not in canonicas:
-                    st.error(
-                        f"❌ O CSV não possui uma coluna equivalente a '{definicao['chave']}', "
-                        "necessária para identificar os registros. Nada foi alterado."
-                    )
-                else:
-                    df_mapeado = df_csv.rename(columns=rename_map)
-                    colunas_presentes = [c for c in definicao["colunas"].keys() if c in df_mapeado.columns]
-                    df_final = df_mapeado[colunas_presentes].copy()
-                    df_final[definicao["chave"]] = pd.to_numeric(df_final[definicao["chave"]], errors='coerce')
-
-                    if chave == "fila":
-                        for col in COLUNAS_FILA:
-                            if col not in df_final.columns:
-                                df_final[col] = pd.NA
-
-                    st.session_state['bases'][chave] = df_final
-                    if chave == "fila":
-                        salvar_fila_no_disco()
-                    st.toast(f"✅ Dados de '{chave}' atualizados via {origem}!", icon="✅")
-                    if ignoradas:
-                        st.toast("ℹ️ Colunas ignoradas: " + ", ".join(ignoradas), icon="ℹ️")
-                    st.rerun()
+                chave = chave_map[aba_destino_csv]
+                st.session_state['bases'][chave] = df_csv
+                if chave == "fila":
+                    for col in COLUNAS_FILA:
+                        if col not in st.session_state['bases']['fila'].columns:
+                            st.session_state['bases']['fila'][col] = pd.NA
+                    salvar_fila_no_disco()
+                st.success(f"✅ Aba '{aba_destino_csv}' atualizada a partir do CSV!")
+            st.rerun()
         except Exception as e:
             st.error(f"❌ Erro ao processar o arquivo: {e}")
-
-    if os.path.exists(CAMINHO_BACKUP):
-        if st.button("↩️ Restaurar último backup do Excel"):
-            try:
-                with open(CAMINHO_BACKUP, "rb") as f_bak, open(CAMINHO_ARQUIVO, "wb") as f_atual:
-                    f_atual.write(f_bak.read())
-                st.cache_data.clear()
-                if 'bases' in st.session_state:
-                    del st.session_state['bases']
-                st.session_state['relatorio_importacao'] = None
-                inicializar_estado()
-                st.success("✅ Backup restaurado com sucesso!")
-                st.rerun()
-            except Exception as e:
-                st.error(f"❌ Erro ao restaurar backup: {e}")
-
-    if st.session_state.get('relatorio_importacao'):
-        _exibir_relatorio_importacao(st.session_state['relatorio_importacao'])
 
     st.divider()
 
