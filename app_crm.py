@@ -71,15 +71,15 @@ st.markdown("""
         margin-top: 8px;
     }
 
-    /* Estilização do Kanban */
-    .kanban-column {
+    /* Estilização do Pipeline AmPm */
+    .ampm-column {
         background-color: #14171D;
         border-radius: 12px;
         padding: 14px;
         border: 1px solid #2D333F;
         min-height: 500px;
     }
-    .kanban-title {
+    .ampm-title {
         font-size: 0.95rem;
         font-weight: 700;
         margin-bottom: 12px;
@@ -214,17 +214,27 @@ def carregar_bases_integradas():
             return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
     return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
+def salvar_alteracoes_disco():
+    caminho = "Base_Unificada_AmPm.xlsx"
+    if os.path.exists(caminho) and 'df_base' in st.session_state:
+        try:
+            with pd.ExcelWriter(caminho, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
+                st.session_state['df_base'].to_excel(writer, sheet_name='Fila_CallCenter', index=False)
+            st.toast("💾 Dados salvos no arquivo Excel local com sucesso!", icon="✅")
+        except Exception as e:
+            st.toast(f"⚠️ Erro ao salvar arquivo: {e}", icon="⚠️")
+
 if 'df_base' not in st.session_state:
     b, i, r = carregar_bases_integradas()
     st.session_state['df_base'] = b
     st.session_state['df_instrutores'] = i
     st.session_state['df_rec'] = r
 
-df_base = st.session_state['df_base']
+df_base_raw = st.session_state['df_base']
 df_instrutores = st.session_state['df_instrutores']
 df_rec = st.session_state['df_rec']
 
-# --- SIDEBAR DE NAVEGAÇÃO ---
+# --- SIDEBAR DE NAVEGAÇÃO E FILTROS GLOBAIS ---
 with st.sidebar:
     st.markdown("## ⛽ **CRM AmPm**")
     st.caption("🌐 *Plataforma Integrada de Operações*")
@@ -234,7 +244,7 @@ with st.sidebar:
         "📌 **Módulos do Sistema:**",
         [
             "📊 Dashboard Executivo", 
-            "📋 Pipeline Kanban", 
+            "📋 Pipeline AmPm", 
             "🔍 PROCV & Filtros Avançados", 
             "📍 Calculadora & Otimizador de Custos", 
             "📞 Call Center & Timeline WhatsApp", 
@@ -244,8 +254,25 @@ with st.sidebar:
     )
     
     st.divider()
+    
+    # FILTROS GLOBAIS
+    st.markdown("🎯 **Filtros Globais**")
+    uf_opcoes = ["Todas"] + sorted([str(x) for x in df_base_raw['UF'].dropna().unique()]) if 'UF' in df_base_raw.columns else ["Todas"]
+    filtro_uf = st.selectbox("Filtrar Estado (UF):", uf_opcoes)
+
+    cf_opcoes = ["Todos"] + sorted([str(x) for x in df_base_raw['CF'].dropna().unique()]) if 'CF' in df_base_raw.columns else ["Todos"]
+    filtro_cf = st.selectbox("Filtrar Consultor (CF):", cf_opcoes)
+
+    st.divider()
     st.markdown("📶 **Status:** `Operacional 🟢`")
-    st.markdown(f"🏪 **Rede:** `{len(df_base)} Unidades`")
+    st.markdown(f"🏪 **Rede Total:** `{len(df_base_raw)} Unidades`")
+
+# APLICAÇÃO DOS FILTROS GLOBAIS
+df_base = df_base_raw.copy()
+if filtro_uf != "Todas":
+    df_base = df_base[df_base['UF'] == filtro_uf]
+if filtro_cf != "Todos":
+    df_base = df_base[df_base['CF'] == filtro_cf]
 
 # Header Global
 st.markdown("""
@@ -265,7 +292,7 @@ if modulo == "📊 Dashboard Executivo":
         with c1:
             st.markdown(f"""
                 <div class="kpi-card" style="border-left-color: #E27B00;">
-                    <div class="kpi-header"><span class="kpi-title">Rede Total</span><span>🏪</span></div>
+                    <div class="kpi-header"><span class="kpi-title">Rede Filtrada</span><span>🏪</span></div>
                     <div class="kpi-value">{len(df_base)}</div>
                 </div>
             """, unsafe_allow_html=True)
@@ -308,22 +335,22 @@ if modulo == "📊 Dashboard Executivo":
             st.bar_chart(df_base['Status_Contato'].value_counts(), color="#FF9800")
 
 # ==========================================
-# MÓDULO 2: PIPELINE KANBAN INTERATIVO
+# MÓDULO 2: PIPELINE AMPM
 # ==========================================
-elif modulo == "📋 Pipeline Kanban":
-    st.subheader("📋 Pipeline Operacional de Treinamentos")
-    st.caption("Gerencie o fluxo de atendimento da rede navegando entre os estágios de contato.")
+elif modulo == "📋 Pipeline AmPm":
+    st.subheader("📋 Pipeline AmPm — Fluxo Operacional de Treinamentos")
+    st.caption("Gerencie o fluxo de atendimento navegando entre os estágios de contato.")
     
-    colunas_kanban = ["A Contatar", "Em Negociação", "Agendado", "Treinamento Realizado", "Recusado"]
-    cols_k = st.columns(len(colunas_kanban))
+    colunas_pipeline = ["A Contatar", "Em Negociação", "Agendado", "Treinamento Realizado", "Recusado"]
+    cols_k = st.columns(len(colunas_pipeline))
     
-    for idx, status in enumerate(colunas_kanban):
+    for idx, status in enumerate(colunas_pipeline):
         df_status = df_base[df_base['Status_Contato'] == status]
         
         with cols_k[idx]:
             st.markdown(f"""
-                <div class="kanban-column">
-                    <div class="kanban-title">
+                <div class="ampm-column">
+                    <div class="ampm-title">
                         <span>{status}</span>
                         <span style="background:#2D333F; padding:2px 8px; border-radius:10px; font-size:0.8rem;">{len(df_status)}</span>
                     </div>
@@ -339,14 +366,15 @@ elif modulo == "📋 Pipeline Kanban":
                     
                     mudar_status = st.selectbox(
                         "Alterar Status:",
-                        colunas_kanban,
-                        index=colunas_kanban.index(status),
-                        key=f"kan_sel_{item['PV Abadi']}"
+                        colunas_pipeline,
+                        index=colunas_pipeline.index(status),
+                        key=f"pipe_sel_{item['PV Abadi']}"
                     )
                     
                     if mudar_status != status:
                         mask = st.session_state['df_base']['PV Abadi'] == item['PV Abadi']
                         st.session_state['df_base'].loc[mask, 'Status_Contato'] = mudar_status
+                        salvar_alteracoes_disco()
                         st.success("Atualizado!")
                         st.rerun()
 
@@ -355,11 +383,10 @@ elif modulo == "📋 Pipeline Kanban":
 # ==========================================
 elif modulo == "🔍 PROCV & Filtros Avançados":
     if not df_base.empty:
-        with st.expander("🔎 **Filtros Avançados de Pesquisa**", expanded=True):
-            f1, f2, f3 = st.columns(3)
+        with st.expander("🔎 **Pesquisa Avançada na Base Filtrada**", expanded=True):
+            f1, f2 = st.columns(2)
             termo = f1.text_input("🔍 PV, Nome ou Município:", "")
-            f_uf = f2.selectbox("📌 UF:", ["Todas"] + sorted([str(x) for x in df_base['UF'].dropna().unique()]))
-            f_necessidade = f3.selectbox("🎯 Tipo de Necessidade:", ["Todas"] + sorted([str(x) for x in df_base['Tipo_Necessidade'].dropna().unique()]))
+            f_necessidade = f2.selectbox("🎯 Tipo de Necessidade:", ["Todas"] + sorted([str(x) for x in df_base['Tipo_Necessidade'].dropna().unique()]))
             
         df_view = df_base.copy()
         if termo:
@@ -368,8 +395,6 @@ elif modulo == "🔍 PROCV & Filtros Avançados":
                 df_view['PV Abadi'].astype(str).str.contains(termo, na=False) |
                 df_view['Municipio'].astype(str).str.contains(termo, case=False, na=False)
             ]
-        if f_uf != "Todas":
-            df_view = df_view[df_view['UF'] == f_uf]
         if f_necessidade != "Todas":
             df_view = df_view[df_view['Tipo_Necessidade'] == f_necessidade]
             
@@ -420,66 +445,110 @@ elif modulo == "🔍 PROCV & Filtros Avançados":
 # ==========================================
 elif modulo == "📍 Calculadora & Otimizador de Custos":
     st.subheader("📍 Análise Financeira e Otimização Logística")
-    st.caption("Cálculo detalhado de custos de viagens com indicador de economia por rota.")
+    st.caption("Cálculo detalhado de custos com mapas interativos e simulação de rotas.")
     
     if not df_rec.empty:
-        postos_unicos = df_rec[['PV_ABADI', 'Razao_Social', 'Municipio_Loja', 'UF_Loja']].drop_duplicates()
-        postos_unicos['label'] = postos_unicos['PV_ABADI'].astype(str) + " - " + postos_unicos['Razao_Social'] + " (" + postos_unicos['Municipio_Loja'] + "/" + postos_unicos['UF_Loja'] + ")"
-        
-        posto_sel = st.selectbox("⛽ Selecione o Posto Alvo:", postos_unicos['label'].tolist())
-        pv_sel = int(posto_sel.split(" - ")[0])
-        
-        top_3 = df_rec[df_rec['PV_ABADI'] == pv_sel].sort_values(by='Ranking_Proximidade').head(3)
-        
-        if not top_3.empty:
-            st.divider()
+        df_rec_filtrado = df_rec.copy()
+        if filtro_uf != "Todas":
+            df_rec_filtrado = df_rec_filtrado[df_rec_filtrado['UF_Loja'] == filtro_uf]
+
+        postos_unicos = df_rec_filtrado[['PV_ABADI', 'Razao_Social', 'Municipio_Loja', 'UF_Loja']].drop_duplicates()
+        if not postos_unicos.empty:
+            postos_unicos['label'] = postos_unicos['PV_ABADI'].astype(str) + " - " + postos_unicos['Razao_Social'] + " (" + postos_unicos['Municipio_Loja'] + "/" + postos_unicos['UF_Loja'] + ")"
             
-            with st.expander("⚙️ **Ajustar Parâmetros Financeiros de Viagem**", expanded=False):
-                ca1, ca2, ca3, ca4 = st.columns(4)
-                v_km = ca1.number_input("Valor KM (Terrestre R$):", value=2.10)
-                v_passagem = ca2.number_input("Passagem Aérea Média (R$):", value=1400.0)
-                v_diaria = ca3.number_input("Diária Instrutor (Hosp./Alimentação R$):", value=280.0)
-                v_traslado = ca4.number_input("Traslado/Uber Aeroporto (R$):", value=150.0)
-
-            col1, col2, col3 = st.columns(3)
-            cols = [col1, col2, col3]
-            custos_calculados = []
-
-            for idx, (_, row) in enumerate(top_3.iterrows()):
-                dist = row['Distancia_km_linha_reta']
-                dias = row['Dias_Treinamento_Necessarios']
+            posto_sel = st.selectbox("⛽ Selecione o Posto Alvo:", postos_unicos['label'].tolist())
+            pv_sel = int(posto_sel.split(" - ")[0])
+            
+            top_3 = df_rec_filtrado[df_rec_filtrado['PV_ABADI'] == pv_sel].sort_values(by='Ranking_Proximidade').head(3)
+            
+            if not top_3.empty:
+                st.divider()
                 
-                if dist <= 300:
-                    modal = "Terrestre 🚗"
-                    c_desloc = (dist * 2) * v_km
-                    c_aereo = 0
-                else:
-                    modal = "Aéreo ✈️"
-                    c_desloc = v_traslado
-                    c_aereo = v_passagem
+                # --- MAPA 3D PYDECK ---
+                primeira = top_3.iloc[0]
+                if pd.notna(primeira.get('Lat_Loja')) and pd.notna(primeira.get('Lon_Loja')) and pd.notna(primeira.get('Lat_Instrutor')) and pd.notna(primeira.get('Lon_Instrutor')):
+                    p_lat, p_lon = float(primeira['Lat_Loja']), float(primeira['Lon_Loja'])
+                    i_lat, i_lon = float(primeira['Lat_Instrutor']), float(primeira['Lon_Instrutor'])
                     
-                c_hospedagem = dias * v_diaria
-                custo_total = c_desloc + c_aereo + c_hospedagem
-                custos_calculados.append(custo_total)
+                    df_mapa_pontos = pd.DataFrame([
+                        {"name": f"Posto {primeira['PV_ABADI']}", "lat": p_lat, "lon": p_lon, "color": [226, 123, 0, 220]},
+                        {"name": f"Instrutor {primeira['Instrutor_Sugerido']}", "lat": i_lat, "lon": i_lon, "color": [76, 175, 80, 220]}
+                    ])
+                    
+                    df_mapa_arco = pd.DataFrame([{
+                        "from_lat": i_lat, "from_lon": i_lon, "to_lat": p_lat, "to_lon": p_lon
+                    }])
+                    
+                    layer_pontos = pdk.Layer(
+                        "ScatterplotLayer",
+                        df_mapa_pontos,
+                        get_position="[lon, lat]",
+                        get_color="color",
+                        get_radius=20000,
+                        pickable=True
+                    )
+                    
+                    layer_arco = pdk.Layer(
+                        "ArcLayer",
+                        df_mapa_arco,
+                        get_source_position="[from_lon, from_lat]",
+                        get_target_position="[to_lon, to_lat]",
+                        get_source_color=[76, 175, 80, 180],
+                        get_target_color=[226, 123, 0, 180],
+                        get_width=4
+                    )
+                    
+                    view_state = pdk.ViewState(latitude=(p_lat + i_lat) / 2, longitude=(p_lon + i_lon) / 2, zoom=5, pitch=40)
+                    
+                    st.markdown("##### 🗺️ Visualização Geográfica do Deslocamento")
+                    st.pydeck_chart(pdk.Deck(layers=[layer_pontos, layer_arco], initial_view_state=view_state, tooltip={"text": "{name}"}))
 
-                with cols[idx]:
-                    st.markdown(f"""
-                        <div class="top-instructor-card">
-                            <h4 style="margin:0 0 8px 0; color:#E27B00;">#{row['Ranking_Proximidade']}º {row['Instrutor_Sugerido']}</h4>
-                            <p style="margin:2px 0;">🏙️ <b>Origem:</b> {row['Cidade_Instrutor']}/{row['UF_Instrutor']}</p>
-                            <p style="margin:2px 0;">📏 <b>Distância:</b> <code>{dist} km</code></p>
-                            <p style="margin:2px 0;">✈️ <b>Modal:</b> {modal}</p>
-                            <hr style="border-color:#2D333F; margin:8px 0;">
-                            <p style="margin:2px 0; font-size:0.85rem;">• Deslocamento: R$ {c_desloc:.2f}</p>
-                            <p style="margin:2px 0; font-size:0.85rem;">• Passagem Aérea: R$ {c_aereo:.2f}</p>
-                            <p style="margin:2px 0; font-size:0.85rem;">• Diárias ({dias}d): R$ {c_hospedagem:.2f}</p>
-                            <h3 style="color:#4CAF50; margin:10px 0 0 0;">Total: R$ {custo_total:.2f}</h3>
-                        </div>
-                    """, unsafe_allow_html=True)
+                with st.expander("⚙️ **Ajustar Parâmetros Financeiros de Viagem**", expanded=False):
+                    ca1, ca2, ca3, ca4 = st.columns(4)
+                    v_km = ca1.number_input("Valor KM (Terrestre R$):", value=2.10)
+                    v_passagem = ca2.number_input("Passagem Aérea Média (R$):", value=1400.0)
+                    v_diaria = ca3.number_input("Diária Instrutor (Hosp./Alimentação R$):", value=280.0)
+                    v_traslado = ca4.number_input("Traslado/Uber Aeroporto (R$):", value=150.0)
 
-            if len(custos_calculados) >= 2:
-                economia = custos_calculados[1] - custos_calculados[0]
-                st.success(f"💡 **Economia Eficiente:** Optar pelo **1º Instrutor Recomendado** garante uma economia estimada de **R$ {economia:.2f}** nesta operação.")
+                col1, col2, col3 = st.columns(3)
+                cols = [col1, col2, col3]
+                custos_calculados = []
+
+                for idx, (_, row) in enumerate(top_3.iterrows()):
+                    dist = row['Distancia_km_linha_reta']
+                    dias = row['Dias_Treinamento_Necessarios']
+                    
+                    if dist <= 300:
+                        modal = "Terrestre 🚗"
+                        c_desloc = (dist * 2) * v_km
+                        c_aereo = 0
+                    else:
+                        modal = "Aéreo ✈️"
+                        c_desloc = v_traslado
+                        c_aereo = v_passagem
+                        
+                    c_hospedagem = dias * v_diaria
+                    custo_total = c_desloc + c_aereo + c_hospedagem
+                    custos_calculados.append(custo_total)
+
+                    with cols[idx]:
+                        st.markdown(f"""
+                            <div class="top-instructor-card">
+                                <h4 style="margin:0 0 8px 0; color:#E27B00;">#{row['Ranking_Proximidade']}º {row['Instrutor_Sugerido']}</h4>
+                                <p style="margin:2px 0;">🏙️ <b>Origem:</b> {row['Cidade_Instrutor']}/{row['UF_Instrutor']}</p>
+                                <p style="margin:2px 0;">📏 <b>Distância:</b> <code>{dist} km</code></p>
+                                <p style="margin:2px 0;">✈️ <b>Modal:</b> {modal}</p>
+                                <hr style="border-color:#2D333F; margin:8px 0;">
+                                <p style="margin:2px 0; font-size:0.85rem;">• Deslocamento: R$ {c_desloc:.2f}</p>
+                                <p style="margin:2px 0; font-size:0.85rem;">• Passagem Aérea: R$ {c_aereo:.2f}</p>
+                                <p style="margin:2px 0; font-size:0.85rem;">• Diárias ({dias}d): R$ {c_hospedagem:.2f}</p>
+                                <h3 style="color:#4CAF50; margin:10px 0 0 0;">Total: R$ {custo_total:.2f}</h3>
+                            </div>
+                        """, unsafe_allow_html=True)
+
+                if len(custos_calculados) >= 2:
+                    economia = custos_calculados[1] - custos_calculados[0]
+                    st.success(f"💡 **Economia Eficiente:** Optar pelo **1º Instrutor Recomendado** garante uma economia estimada de **R$ {economia:.2f}** nesta operação.")
 
 # ==========================================
 # MÓDULO 5: CALL CENTER & TIMELINE WHATSAPP
@@ -506,7 +575,6 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                 
                 st.markdown(f"### 📝 Ficha de Atendimento — **PV {posto['PV Abadi']}**")
                 
-                # --- PAINEL DE CONTEXTO DO POSTO (SEM O INSTRUTOR AUTOMÁTICO PARA NÃO CONFUNDIR) ---
                 st.markdown(f"""
                     <div class="procv-card">
                         <h4>🏪 Contexto do Posto (Consulta Rápida)</h4>
@@ -526,13 +594,33 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                     </div>
                 """, unsafe_allow_html=True)
                 
-                # Botão Direto para WhatsApp Web
+                # --- INTEGRAÇÃO WHATSAPP FLEXÍVEL (LINK DIRETO + TEMPLATES) ---
                 if tel_limpo:
-                    msg = f"Olá, equipe {posto['Razão Social']}! Aqui é da equipe de Capacitação AmPm. Gostaria de agendar o treinamento da loja."
-                    link_wa = f"https://wa.me/55{tel_limpo}?text={msg.replace(' ', '%20')}"
-                    st.markdown(f"📲 **[Clique aqui para chamar no WhatsApp Direct]( {link_wa} )**")
+                    st.markdown("##### 📲 Envio de Mensagem WhatsApp")
+                    opcao_wa = st.radio("Selecione o estilo do envio:", ["Link Direto Rápido", "Template Customizado"], horizontal=True)
+                    
+                    if opcao_wa == "Link Direto Rápido":
+                        msg_final = f"Olá, equipe {posto['Razão Social']}! Aqui é da equipe de Capacitação AmPm. Gostaria de agendar o treinamento da loja."
+                    else:
+                        tmpl = st.selectbox("Escolha o Modelo de Mensagem:", [
+                            "Agendamento de Treinamento",
+                            "Cobrança / Verificação de Apostilas",
+                            "Lembrete de Treinamento Agendado",
+                            "Acompanhamento Pós-Treinamento"
+                        ])
+                        
+                        if tmpl == "Agendamento de Treinamento":
+                            msg_final = f"Olá! Aqui é da Capacitação AmPm. Gostaríamos de confirmar as datas disponíveis para o treinamento na loja {posto['Razão Social']} (PV {posto['PV Abadi']})."
+                        elif tmpl == "Cobrança / Verificação de Apostilas":
+                            msg_final = f"Olá, equipe {posto['Razão Social']}! Para darmos início ao treinamento, poderiam confirmar se o material de apoio e apostilas já chegaram na loja?"
+                        elif tmpl == "Lembrete de Treinamento Agendado":
+                            msg_final = f"Olá! Passando para lembrar que o treinamento AmPm da loja {posto['Razão Social']} está agendado para o dia {posto.get('Data_Agendada', 'em breve')}. Contamos com todos!"
+                        else:
+                            msg_final = f"Olá! Como foi o treinamento concluído na loja {posto['Razão Social']}? Estamos à disposição para dúvidas ou feedbacks."
+                    
+                    link_wa = f"https://wa.me/55{tel_limpo}?text={msg_final.replace(' ', '%20')}"
+                    st.markdown(f"👉 **[Clique aqui para chamar no WhatsApp Direct]({link_wa})**")
 
-                # Lista de instrutores para o selectbox do operador
                 lista_instrutores = ["Pendente de Alocação"]
                 if not df_instrutores.empty and 'NOME_COMPLETO' in df_instrutores.columns:
                     lista_instrutores += sorted(df_instrutores['NOME_COMPLETO'].dropna().unique().tolist())
@@ -540,7 +628,6 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                 instrutor_atual = str(posto.get('Instrutor_Sugerido', 'Pendente de Alocação'))
                 idx_instrutor = lista_instrutores.index(instrutor_atual) if instrutor_atual in lista_instrutores else 0
 
-                # Tratamento da data agendada inicial
                 val_data_agendada = posto.get('Data_Agendada')
                 data_inicial = date.today()
                 if isinstance(val_data_agendada, (date, datetime)):
@@ -588,10 +675,10 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                         st.session_state['df_base'].loc[mask, 'Observacoes'] = obs
                         st.session_state['df_base'].loc[mask, 'Data_do_Contato'] = datetime.today().strftime('%d/%m/%Y %H:%M')
                         
-                        st.success("✅ Atendimento registrado e data formatada com sucesso!")
+                        salvar_alteracoes_disco()
+                        st.success("✅ Atendimento registrado com sucesso!")
                         st.rerun()
 
-                # Histórico Cronológico / Timeline
                 st.divider()
                 st.markdown("#### ⏱️ Histórico de Interações")
                 data_ct = posto.get('Data_do_Contato', 'Sem registro')
@@ -624,7 +711,7 @@ elif modulo == "📂 Relatórios & Exportação":
     csv_buffer = df_base.to_csv(index=False).encode('utf-8')
     with col_exp1:
         st.download_button(
-            label="📄 Baixar Base Completa em CSV",
+            label="📄 Baixar Base Filtrada em CSV",
             data=csv_buffer,
             file_name=f"Base_CRM_AmPm_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
             mime="text/csv"
@@ -637,7 +724,7 @@ elif modulo == "📂 Relatórios & Exportação":
     
     with col_exp2:
         st.download_button(
-            label="📊 Baixar Base Completa em Excel",
+            label="📊 Baixar Base Filtrada em Excel",
             data=excel_data,
             file_name=f"Base_CRM_AmPm_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
