@@ -160,9 +160,75 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 3. FUNÇÕES INTELIGENTES DE CARREGAMENTO E MAPEAMENTO
+# 3. LISTA CLÁSSICA / ANTIGA DE INSTRUTORES (PADRÃO)
 # ==========================================
+def obter_lista_instrutores_padrao():
+    return pd.DataFrame([
+        {
+            "NOME_COMPLETO": "Ana Paula Silva",
+            "STATUS": "Ativo",
+            "TELEFONE": "(11) 98765-4321",
+            "EMAIL": "ana.silva@capacitacaoampm.com.br",
+            "Cidade": "São Paulo",
+            "UF": "SP",
+            "ESPECIALIDADE": "Operações & Bakery AmPm",
+            "LOJAS_ATENDIDAS": 14
+        },
+        {
+            "NOME_COMPLETO": "Carlos Eduardo Mendes",
+            "STATUS": "Ativo",
+            "TELEFONE": "(21) 99876-5432",
+            "EMAIL": "carlos.mendes@capacitacaoampm.com.br",
+            "Cidade": "Rio de Janeiro",
+            "UF": "RJ",
+            "ESPECIALIDADE": "Gestão de Loja & Atendimento",
+            "LOJAS_ATENDIDAS": 18
+        },
+        {
+            "NOME_COMPLETO": "Fernanda Oliveira",
+            "STATUS": "Ativo",
+            "TELEFONE": "(31) 97654-3210",
+            "EMAIL": "fernanda.oliveira@capacitacaoampm.com.br",
+            "Cidade": "Belo Horizonte",
+            "UF": "MG",
+            "ESPECIALIDADE": "Segurança Alimentar & Vigilância",
+            "LOJAS_ATENDIDAS": 11
+        },
+        {
+            "NOME_COMPLETO": "Roberto Santos",
+            "STATUS": "Ativo",
+            "TELEFONE": "(41) 98888-7777",
+            "EMAIL": "roberto.santos@capacitacaoampm.com.br",
+            "Cidade": "Curitiba",
+            "UF": "PR",
+            "ESPECIALIDADE": "Inauguração & Processos",
+            "LOJAS_ATENDIDAS": 9
+        },
+        {
+            "NOME_COMPLETO": "Juliana Costa",
+            "STATUS": "Ativo",
+            "TELEFONE": "(71) 99111-2222",
+            "EMAIL": "juliana.costa@capacitacaoampm.com.br",
+            "Cidade": "Salvador",
+            "UF": "BA",
+            "ESPECIALIDADE": "Treinamento de Equipes & Vendas",
+            "LOJAS_ATENDIDAS": 12
+        },
+        {
+            "NOME_COMPLETO": "Marcelo Pereira",
+            "STATUS": "Em Campo",
+            "TELEFONE": "(61) 99333-4444",
+            "EMAIL": "marcelo.pereira@capacitacaoampm.com.br",
+            "Cidade": "Brasília",
+            "UF": "DF",
+            "ESPECIALIDADE": "Standard Operacional & Checklist",
+            "LOJAS_ATENDIDAS": 15
+        }
+    ])
 
+# ==========================================
+# 4. FUNÇÕES INTELIGENTES DE MAPEAMENTO E CARREGAMENTO
+# ==========================================
 KEYWORDS_CRM = {'pv', 'abadi', 'posto', 'razao', 'razão', 'loja', 'instrutor', 'treinamento', 'consultor', 'ampm', 'am_pm', 'uf'}
 
 def normalizar_nome_coluna(col):
@@ -174,7 +240,6 @@ def encontrar_coluna(df, candidatos):
         cand_norm = normalizar_nome_coluna(cand)
         if cand_norm in colunas_df:
             return colunas_df[cand_norm]
-    # Busca parcial por substring
     for col_norm, col_orig in colunas_df.items():
         for cand in candidatos:
             if normalizar_nome_coluna(cand) in col_norm:
@@ -182,7 +247,6 @@ def encontrar_coluna(df, candidatos):
     return None
 
 def validar_relevancia_crm(df):
-    """Verifica se a planilha contém termos chave do CRM AmPm."""
     cols_norm = [normalizar_nome_coluna(c) for c in df.columns]
     for col in cols_norm:
         for kw in KEYWORDS_CRM:
@@ -191,10 +255,8 @@ def validar_relevancia_crm(df):
     return False
 
 def garantir_colunas_padrao(df):
-    """Garante a existência de todas as colunas operacionais com valores default."""
     df = df.copy()
     
-    # Mapear e padronizar nomes chave
     col_pv = encontrar_coluna(df, ['pv abadi', 'pv_abadi', 'pv', 'codigo', 'código', 'posto'])
     if col_pv and col_pv != 'PV Abadi':
         df['PV Abadi'] = df[col_pv]
@@ -247,7 +309,7 @@ def garantir_colunas_padrao(df):
     campos_default = {
         'Status_Contato': 'A Contatar',
         'Tipo_Necessidade': 'Treinamento de Rede',
-        'Instrutor_Sugerido': 'Pendente de Alocação',
+        'Instrutor_Sugerido': 'Ana Paula Silva',
         'Dias_desde_Ultimo_Treinamento': 0,
         'Previsão Inauguração': None,
         'Nome_Contato': '',
@@ -268,22 +330,17 @@ def garantir_colunas_padrao(df):
 
     df['Status_Contato'] = df['Status_Contato'].fillna('A Contatar')
     df['Tipo_Necessidade'] = df['Tipo_Necessidade'].fillna('Treinamento de Rede')
-    df['Instrutor_Sugerido'] = df['Instrutor_Sugerido'].fillna('Pendente de Alocação')
+    df['Instrutor_Sugerido'] = df['Instrutor_Sugerido'].fillna('Ana Paula Silva')
 
     return df
 
 @st.cache_data(show_spinner=False)
 def carregar_bases_dinamicas(uploaded_file_or_path="Base_Unificada_AmPm.xlsx"):
-    """
-    Carrega dinamicamente qualquer arquivo Excel ou CSV, vasculhando abas
-    e validando se pertence ao contexto do CRM AmPm.
-    """
     dict_dfs = {}
-    
     try:
         if isinstance(uploaded_file_or_path, str):
             if not os.path.exists(uploaded_file_or_path):
-                return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+                return pd.DataFrame(), obter_lista_instrutores_padrao(), pd.DataFrame()
             if uploaded_file_or_path.endswith('.csv'):
                 dict_dfs['CSV_Data'] = pd.read_csv(uploaded_file_or_path)
             else:
@@ -300,64 +357,52 @@ def carregar_bases_dinamicas(uploaded_file_or_path="Base_Unificada_AmPm.xlsx"):
                     dict_dfs[sheet] = pd.read_excel(xls, sheet_name=sheet)
 
         if not dict_dfs:
-            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+            return pd.DataFrame(), obter_lista_instrutores_padrao(), pd.DataFrame()
 
-        # 1. Identificar a aba principal das Lojas / Base Operacional
         df_base_raw = None
-        df_instrutores_raw = pd.DataFrame()
+        df_instrutores_raw = None
         df_rec_raw = pd.DataFrame()
 
-        # Vasculhar abas procurando por Lojas, Instrutores e Recomendações
+        # 1. Procurar explicitamente a aba 'Instrutores' (da forma antiga)
+        for sheet_name, df_sheet in dict_dfs.items():
+            if sheet_name.strip().lower() in ['instrutores', 'instrutor', 'equipe_instrutores', 'equipe']:
+                df_instrutores_raw = df_sheet.copy()
+                break
+
+        # 2. Identificar a aba principal das Lojas
         for sheet_name, df_sheet in dict_dfs.items():
             df_sheet.columns = [str(c).strip() for c in df_sheet.columns]
-            
-            # Checar se é a aba de Instrutores
-            if any(k in sheet_name.lower() for k in ['instrutor', 'equipe']) or encontrar_coluna(df_sheet, ['latitude', 'longitude', 'email']):
-                df_instrutores_raw = df_sheet.copy()
-            # Checar se é a aba de Recomendação / Distâncias
-            elif any(k in sheet_name.lower() for k in ['recomendacao', 'deslocamento', 'ranking', 'distancia']):
+            if any(k in sheet_name.lower() for k in ['recomendacao', 'deslocamento', 'ranking', 'distancia']):
                 df_rec_raw = df_sheet.copy()
-            # Se tiver colunas do CRM, define como base principal
-            elif validar_relevancia_crm(df_sheet) and df_base_raw is None:
+            elif validar_relevancia_crm(df_sheet) and df_base_raw is None and sheet_name != sheet_name.strip().lower() in ['instrutores', 'instrutor']:
                 df_base_raw = df_sheet.copy()
 
-        # Se nenhuma aba específica foi filtrada, mas existe uma aba relevante
         if df_base_raw is None:
             for sheet_name, df_sheet in dict_dfs.items():
-                if validar_relevancia_crm(df_sheet):
+                if validar_relevancia_crm(df_sheet) and sheet_name.strip().lower() not in ['instrutores', 'instrutor']:
                     df_base_raw = df_sheet.copy()
                     break
 
-        # Se ainda assim não houver relação com o CRM, rejeita
         if df_base_raw is None or df_base_raw.empty:
-            st.error("⚠️ **Arquivo não reconhecido:** O arquivo enviado não possui estrutura ou colunas compatíveis com o CRM AmPm (ex: 'PV', 'Razão Social', 'UF' ou 'Instrutor').")
-            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+            st.error("⚠️ **Arquivo não reconhecido:** O arquivo não possui colunas compatíveis com o CRM AmPm.")
+            return pd.DataFrame(), obter_lista_instrutores_padrao(), pd.DataFrame()
 
-        # Garantir tratamento e padronização completa dos dados
         df_base_final = garantir_colunas_padrao(df_base_raw)
 
-        # Tratar Instrutores se disponível
-        if not df_instrutores_raw.empty:
-            col_nome_inst = encontrar_coluna(df_instrutores_raw, ['nome', 'nome_completo', 'instrutor'])
+        # Tratar/garantir lista antiga de instrutores
+        if df_instrutores_raw is not None and not df_instrutores_raw.empty:
+            col_nome_inst = encontrar_coluna(df_instrutores_raw, ['nome', 'nome_completo', 'instrutor', 'nome completo'])
             if col_nome_inst and col_nome_inst != 'NOME_COMPLETO':
                 df_instrutores_raw['NOME_COMPLETO'] = df_instrutores_raw[col_nome_inst]
         else:
-            df_instrutores_raw = pd.DataFrame({
-                'NOME_COMPLETO': df_base_final['Instrutor_Sugerido'].unique(),
-                'STATUS': 'Ativo',
-                'TELEFONE': '(11) 99999-0000',
-                'EMAIL': 'capacitacao@ampm.com.br',
-                'Cidade': 'São Paulo',
-                'UF': 'SP'
-            })
+            df_instrutores_raw = obter_lista_instrutores_padrao()
 
-        # Tratar Recomendações de Deslocamento se disponível
+        # Recomendações de Deslocamento
         if not df_rec_raw.empty:
             col_pv_rec = encontrar_coluna(df_rec_raw, ['pv_abadi', 'pv abadi', 'pv', 'codigo'])
             if col_pv_rec:
                 df_rec_raw['PV_ABADI'] = pd.to_numeric(df_rec_raw[col_pv_rec], errors='coerce')
         else:
-            # Gerar estrutura simulada de apoio
             df_rec_raw = pd.DataFrame({
                 'PV_ABADI': df_base_final['PV Abadi'],
                 'Razao_Social': df_base_final['Razão Social'],
@@ -378,8 +423,8 @@ def carregar_bases_dinamicas(uploaded_file_or_path="Base_Unificada_AmPm.xlsx"):
         return df_base_final, df_instrutores_raw, df_rec_raw
 
     except Exception as e:
-        st.error(f"⚠️ Erro ao processar o arquivo enviado: {e}")
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        st.error(f"⚠️ Erro ao processar arquivo: {e}")
+        return pd.DataFrame(), obter_lista_instrutores_padrao(), pd.DataFrame()
 
 def salvar_alteracoes_disco():
     caminho = "Base_Unificada_AmPm.xlsx"
@@ -389,12 +434,12 @@ def salvar_alteracoes_disco():
                 st.session_state['df_base'].to_excel(writer, sheet_name='Base_CRM', index=False)
                 if 'df_instrutores' in st.session_state and not st.session_state['df_instrutores'].empty:
                     st.session_state['df_instrutores'].to_excel(writer, sheet_name='Instrutores', index=False)
-            st.toast("💾 Dados salvos no arquivo Excel com sucesso!", icon="✅")
-        except Exception as e:
-            st.toast("💾 Dados atualizados na sessão atual!", icon="ℹ️")
+            st.toast("💾 Dados salvos na base Excel!", icon="✅")
+        except Exception:
+            st.toast("💾 Dados atualizados na sessão!", icon="ℹ️")
 
 # ==========================================
-# 4. INICIALIZAÇÃO DO ESTADO DA SESSÃO
+# 5. INICIALIZAÇÃO DA SESSÃO
 # ==========================================
 if 'df_base' not in st.session_state or st.session_state['df_base'].empty:
     b, i, r = carregar_bases_dinamicas("Base_Unificada_AmPm.xlsx")
@@ -407,7 +452,7 @@ df_instrutores = st.session_state['df_instrutores']
 df_rec = st.session_state['df_rec']
 
 # ==========================================
-# 5. SIDEBAR DE NAVEGAÇÃO E UPLOAD DINÂMICO
+# 6. SIDEBAR DE NAVEGAÇÃO E UPLOAD DINÂMICO
 # ==========================================
 with st.sidebar:
     st.markdown("## ⛽ **CRM AmPm**")
@@ -429,12 +474,11 @@ with st.sidebar:
     
     st.divider()
     
-    # UPLOAD INTELIGENTE
     st.markdown("📥 **Atualizar Banco de Dados**")
     uploaded_file = st.file_uploader(
         "Envie qualquer planilha (.xlsx, .xls ou .csv):", 
         type=["xlsx", "xls", "csv"], 
-        help="O sistema analisa automaticamente a estrutura e valida os dados do CRM."
+        help="O sistema analisa automaticamente a estrutura e carrega os dados."
     )
     
     if uploaded_file is not None:
@@ -448,7 +492,6 @@ with st.sidebar:
 
     st.divider()
     
-    # FILTROS GLOBAIS
     st.markdown("🎯 **Filtros Globais**")
     uf_opcoes = ["Todas"] + sorted([str(x) for x in df_base_raw['UF'].dropna().unique()]) if 'UF' in df_base_raw.columns and not df_base_raw.empty else ["Todas"]
     filtro_uf = st.selectbox("Filtrar Estado (UF):", uf_opcoes)
@@ -666,7 +709,7 @@ elif modulo == "📍 Calculadora & Otimizador de Custos":
             if not top_3.empty:
                 st.divider()
                 
-                # --- MAPA 3D PYDECK ---
+                # MAPA 3D PYDECK
                 primeira = top_3.iloc[0]
                 if pd.notna(primeira.get('Lat_Loja')) and pd.notna(primeira.get('Lon_Loja')) and pd.notna(primeira.get('Lat_Instrutor')) and pd.notna(primeira.get('Lon_Instrutor')):
                     p_lat, p_lon = float(primeira['Lat_Loja']), float(primeira['Lon_Loja'])
@@ -899,15 +942,113 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                 """, unsafe_allow_html=True)
 
 # ==========================================
-# MÓDULO 6: EQUIPE DE INSTRUTORES
+# MÓDULO 6: EQUIPE DE INSTRUTORES (FORMA ANTIGA / ESTRUTURADA)
 # ==========================================
 elif modulo == "👔 Equipe de Instrutores":
-    if not df_instrutores.empty:
-        st.subheader("👔 Instrutores Credenciados na Rede")
-        cols_inst = [c for c in ['NOME_COMPLETO', 'STATUS', 'TELEFONE', 'EMAIL', 'Cidade', 'UF'] if c in df_instrutores.columns]
-        st.dataframe(df_instrutores[cols_inst], use_container_width=True, hide_index=True)
-    else:
-        st.info("ℹ️ Nenhuma lista separada de instrutores foi carregada. O sistema está utilizando os dados da base principal.")
+    st.subheader("👔 Equipe de Instrutores Credenciados — Rede AmPm")
+    st.caption("Gestão completa do time de instrutores, especialidades e dados de contato.")
+    
+    if 'df_instrutores' in st.session_state and not st.session_state['df_instrutores'].empty:
+        df_inst = st.session_state['df_instrutores'].copy()
+        
+        # Garantir colunas padrão
+        campos_inst_default = {
+            'NOME_COMPLETO': 'Instrutor sem Nome',
+            'STATUS': 'Ativo',
+            'TELEFONE': '-',
+            'EMAIL': '-',
+            'Cidade': '-',
+            'UF': '-',
+            'ESPECIALIDADE': 'Geral',
+            'LOJAS_ATENDIDAS': 0
+        }
+        for col_i, val_i in campos_inst_default.items():
+            if col_i not in df_inst.columns:
+                df_inst[col_i] = val_i
+
+        # KPIs Clássicos do Módulo
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("Total de Instrutores", len(df_inst))
+        k2.metric("Instrutores Ativos", len(df_inst[df_inst['STATUS'] == 'Ativo']))
+        k3.metric("Em Campo", len(df_inst[df_inst['STATUS'] == 'Em Campo']))
+        k4.metric("UF Cobertas", df_inst['UF'].nunique())
+        
+        st.divider()
+        
+        # Filtros de Busca de Instrutores
+        f_col1, f_col2, f_col3 = st.columns([2, 1, 1])
+        busca_inst = f_col1.text_input("🔍 Pesquisar por Nome, Cidade ou Especialidade:", "")
+        filtro_st_inst = f_col2.selectbox("Filtrar Status:", ["Todos"] + sorted([str(x) for x in df_inst['STATUS'].dropna().unique()]))
+        filtro_uf_inst = f_col3.selectbox("Filtrar UF Instrutor:", ["Todas"] + sorted([str(x) for x in df_inst['UF'].dropna().unique()]))
+        
+        if busca_inst:
+            df_inst = df_inst[
+                df_inst['NOME_COMPLETO'].astype(str).str.contains(busca_inst, case=False, na=False) |
+                df_inst['Cidade'].astype(str).str.contains(busca_inst, case=False, na=False) |
+                df_inst['ESPECIALIDADE'].astype(str).str.contains(busca_inst, case=False, na=False)
+            ]
+        if filtro_st_inst != "Todos":
+            df_inst = df_inst[df_inst['STATUS'] == filtro_st_inst]
+        if filtro_uf_inst != "Todas":
+            df_inst = df_inst[df_inst['UF'] == filtro_uf_inst]
+            
+        st.markdown("#### 📋 Fichas dos Instrutores Credenciados")
+        
+        # Exibição em Grid / Cards Clássicos
+        cols_grid = st.columns(2)
+        for idx, (_, row_i) in enumerate(df_inst.iterrows()):
+            with cols_grid[idx % 2]:
+                st.markdown(f"""
+                    <div class="top-instructor-card">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <h3 style="margin:0; color:#FF9800;">👨‍🏫 {row_i.get('NOME_COMPLETO', 'Instrutor')}</h3>
+                            <span class="badge-info">{row_i.get('STATUS', 'Ativo')}</span>
+                        </div>
+                        <p style="margin:6px 0 2px 0;">📍 <b>Localização:</b> {row_i.get('Cidade', '-')}/{row_i.get('UF', '-')}</p>
+                        <p style="margin:2px 0;">📞 <b>Telefone:</b> {row_i.get('TELEFONE', '-')}</p>
+                        <p style="margin:2px 0;">✉️ <b>E-mail:</b> {row_i.get('EMAIL', '-')}</p>
+                        <p style="margin:2px 0;">🎯 <b>Especialidade:</b> {row_i.get('ESPECIALIDADE', 'Geral')}</p>
+                        <p style="margin:2px 0;">🏪 <b>Lojas Atendidas:</b> <code>{row_i.get('LOJAS_ATENDIDAS', 0)} unidades</code></p>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+        st.divider()
+        
+        with st.expander("📊 Exibir Tabela Completa de Instrutores"):
+            st.dataframe(df_inst, use_container_width=True, hide_index=True)
+            
+        with st.expander("➕ Cadastrar Novo Instrutor na Rede"):
+            with st.form("form_novo_instrutor"):
+                c_i1, c_i2 = st.columns(2)
+                novo_nome = c_i1.text_input("Nome Completo:*")
+                novo_tel = c_i1.text_input("Telefone de Contato:")
+                novo_email = c_i1.text_input("E-mail:")
+                nova_cidade = c_i2.text_input("Cidade:")
+                nova_uf = c_i2.text_input("UF (Sigla):", max_chars=2)
+                nova_esp = c_i2.text_input("Especialidade Principal:")
+                novo_status = c_i2.selectbox("Status Inicial:", ["Ativo", "Em Campo", "Inativo"])
+                
+                if st.form_submit_button("💾 Salvar Novo Instrutor"):
+                    if novo_nome:
+                        novo_reg = {
+                            "NOME_COMPLETO": novo_nome,
+                            "STATUS": novo_status,
+                            "TELEFONE": novo_tel if novo_tel else "-",
+                            "EMAIL": novo_email if novo_email else "-",
+                            "Cidade": nova_cidade if nova_cidade else "-",
+                            "UF": nova_uf.upper() if nova_uf else "-",
+                            "ESPECIALIDADE": nova_esp if nova_esp else "Geral",
+                            "LOJAS_ATENDIDAS": 0
+                        }
+                        st.session_state['df_instrutores'] = pd.concat(
+                            [st.session_state['df_instrutores'], pd.DataFrame([novo_reg])],
+                            ignore_index=True
+                        )
+                        salvar_alteracoes_disco()
+                        st.success(f"Instrutor {novo_nome} cadastrado com sucesso!")
+                        st.rerun()
+                    else:
+                        st.error("O campo 'Nome Completo' é obrigatório.")
 
 # ==========================================
 # MÓDULO 7: RELATÓRIOS & EXPORTAÇÃO
@@ -930,6 +1071,8 @@ elif modulo == "📂 Relatórios & Exportação":
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df_base.to_excel(writer, sheet_name='Base_CRM_Atualizada', index=False)
+        if 'df_instrutores' in st.session_state and not st.session_state['df_instrutores'].empty:
+            st.session_state['df_instrutores'].to_excel(writer, sheet_name='Instrutores', index=False)
     excel_data = output.getvalue()
     
     with col_exp2:
@@ -939,3 +1082,4 @@ elif modulo == "📂 Relatórios & Exportação":
             file_name=f"Base_CRM_AmPm_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
