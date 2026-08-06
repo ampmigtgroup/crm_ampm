@@ -234,7 +234,7 @@ df_base_raw = st.session_state['df_base']
 df_instrutores = st.session_state['df_instrutores']
 df_rec = st.session_state['df_rec']
 
-# --- SIDEBAR DE NAVEGAÇÃO E FILTROS GLOBAIS ---
+# --- SIDEBAR DE NAVEGAÇÃO, FILTROS GLOBAIS E UPLOAD ---
 with st.sidebar:
     st.markdown("## ⛽ **CRM AmPm**")
     st.caption("🌐 *Plataforma Integrada de Operações*")
@@ -253,6 +253,28 @@ with st.sidebar:
         ]
     )
     
+    st.divider()
+    
+    # UPLOAD DE BANCO DE DADOS NA SIDEBAR
+    st.markdown("📥 **Atualizar Banco de Dados**")
+    uploaded_file = st.file_uploader("Envie a nova planilha (.xlsx):", type=["xlsx"], help="Carregue o arquivo Base_Unificada_AmPm.xlsx atualizado.")
+    
+    if uploaded_file is not None:
+        try:
+            with open("Base_Unificada_AmPm.xlsx", "wb") as f:
+                f.write(uploaded_file.getbuffer())
+            
+            st.cache_data.clear()
+            b, i, r = carregar_bases_integradas()
+            st.session_state['df_base'] = b
+            st.session_state['df_instrutores'] = i
+            st.session_state['df_rec'] = r
+            
+            st.success("✅ Banco de dados atualizado!")
+            st.rerun()
+        except Exception as e:
+            st.error(f"❌ Erro ao processar o arquivo: {e}")
+
     st.divider()
     
     # FILTROS GLOBAIS
