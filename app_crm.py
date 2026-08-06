@@ -1,364 +1,768 @@
-full_code = '''import streamlit as st
+import streamlit as st
 import pandas as pd
-import numpy as np
+import os
+from datetime import datetime, date
 import pydeck as pdk
 import io
-import os
-import urllib.parse
-from datetime import datetime, date
 
-# ==============================================================================
-# CONFIGURAÇÃO DA PÁGINA
-# ==============================================================================
+# --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(
-    page_title="CRM Operacional & Logística — AmPm",
+    page_title="CRM Operacional AmPm",
     page_icon="⛽",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# ==============================================================================
-# BASE DE DADOS OFICIAL DE INSTRUTORES (CARREGAMENTO DINÂMICO + FALLBACK)
-# ==============================================================================
-INSTRUTORES_OFICIAIS_FALLBACK = [
-    {"nome": "Betânia Cayret Pregnolato", "id_auvo": "Betânia Pregnolato", "email": "betania.ampm@igtgroup-ext.com.br", "telefone": "(11) 99351-1743", "cidade": "São Paulo - SP", "status": "Ativo", "lat": -23.5505, "lon": -46.6333},
-    {"nome": "Bruno Souza", "id_auvo": "Bruno Ferreira", "email": "bruno.ampm@igtgroup-ext.com.br", "telefone": "(11) 99596-6401", "cidade": "Barueri - SP", "status": "Ativo", "lat": -23.5106, "lon": -46.8761},
-    {"nome": "Carla Fernandes Dionizio", "id_auvo": "Carla Dionizio", "email": "carla.ampm@igtgroup-ext.com.br", "telefone": "(11) 98744-7398", "cidade": "São Paulo - SP", "status": "Ativo", "lat": -23.5505, "lon": -46.6333},
-    {"nome": "Isabela Paim Ricardo", "id_auvo": "Isabela Paim", "email": "isabela.ampm@igtgroup-ext.com.br", "telefone": "(21) 99390-7088", "cidade": "Rio de Janeiro - RJ", "status": "Ativo", "lat": -22.9068, "lon": -43.1729},
-    {"nome": "Leonardo da Silva Azevedo", "id_auvo": "Leonardo Azevedo", "email": "leonardo.ampm@igtgroup-ext.com.br", "telefone": "(53) 8112-3384", "cidade": "Rio Grande - RS", "status": "Ativo", "lat": -32.0350, "lon": -52.0986},
-    {"nome": "Roberta de Cássia Martareli", "id_auvo": "Roberta de Cassia", "email": "roberta.ampm@igtgroup-ext.com.br", "telefone": "(11) 95337-4199", "cidade": "São Paulo - SP", "status": "Ativo", "lat": -23.5505, "lon": -46.6333},
-    {"nome": "Lucas Silva dos Santos", "id_auvo": "Lucas Silva", "email": "lucas.ampm@igtgroup-ext.com.br", "telefone": "(11) 97707-5141", "cidade": "Monte Carmelo - MG", "status": "Ativo", "lat": -18.7247, "lon": -47.4981},
-    # Inativos
-    {"nome": "André Luiz de Medeiros", "id_auvo": "Andre Luiz", "email": "andre.ampm@igtgroup-ext.com.br", "telefone": "(81) 9386-9032", "cidade": "Jaboatão - PE", "status": "Saiu", "lat": -8.1143, "lon": -35.0139},
-    {"nome": "Diego Henrique de Souza", "id_auvo": "Diego Henrique", "email": "diego.ampm@igtgroup-ext.com.br", "telefone": "(41) 8706-3610", "cidade": "Curitiba - PR", "status": "Saiu", "lat": -25.4284, "lon": -49.2733},
-    {"nome": "Juliano Rodrigues Amoretti", "id_auvo": "Juliano Amoretti", "email": "juliano.ampm@igtgroup-ext.com.br", "telefone": "(48) 9138-0057", "cidade": "Florianópolis - SC", "status": "Saiu", "lat": -27.5954, "lon": -48.5480},
-    {"nome": "Marcela Lourenço", "id_auvo": "Marcela Lourenço", "email": "marcela.ampm@igtgroup-ext.com.br", "telefone": "(43) 9159-2334", "cidade": "Londrina - PR", "status": "Saiu", "lat": -23.3045, "lon": -51.1696},
-    {"nome": "Simone Franceschi Barreto", "id_auvo": "Simone Franceschi", "email": "simone.ampm@igtgroup-ext.com.br", "telefone": "(47) 9252-8844", "cidade": "Joinville - SC", "status": "Saiu", "lat": -26.3045, "lon": -48.8487},
-    {"nome": "Tabajara Grecca", "id_auvo": "Tabajara Grecca", "email": "tabajara.ampm@igtgroup-ext.com.br", "telefone": "(19) 98161-1163", "cidade": "Campinas - SP", "status": "Saiu", "lat": -22.9099, "lon": -47.0626},
-]
+# --- ESTILIZAÇÃO CSS CUSTOMIZADA (DESIGN SYSTEM AMPM PREMIUM) ---
+st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif;
+    }
 
+    /* Topbar Premium */
+    .main-header {
+        background: linear-gradient(135deg, #E27B00 0%, #FF9800 50%, #D32F2F 100%);
+        padding: 24px 28px;
+        border-radius: 16px;
+        color: white;
+        margin-bottom: 25px;
+        box-shadow: 0 8px 24px rgba(226, 123, 0, 0.25);
+    }
+    .main-header h1 {
+        color: white !important;
+        margin: 0 0 6px 0;
+        font-weight: 700;
+        font-size: 2.2rem;
+    }
+    .main-header p {
+        margin: 0;
+        font-size: 1.05rem;
+        opacity: 0.95;
+    }
+
+    /* KPI Cards */
+    .kpi-card {
+        background-color: #1E222A;
+        border-radius: 12px;
+        padding: 20px;
+        border: 1px solid #2D333F;
+        border-left: 6px solid #E27B00;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    }
+    .kpi-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .kpi-title {
+        font-size: 0.8rem;
+        color: #A0AAB8;
+        text-transform: uppercase;
+        font-weight: 700;
+        letter-spacing: 0.8px;
+    }
+    .kpi-value {
+        font-size: 1.8rem;
+        font-weight: 700;
+        color: #FFFFFF;
+        margin-top: 8px;
+    }
+
+    /* Estilização do Pipeline AmPm */
+    .ampm-column {
+        background-color: #14171D;
+        border-radius: 12px;
+        padding: 14px;
+        border: 1px solid #2D333F;
+        min-height: 500px;
+    }
+    .ampm-title {
+        font-size: 0.95rem;
+        font-weight: 700;
+        margin-bottom: 12px;
+        padding-bottom: 8px;
+        border-bottom: 2px solid #2D333F;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    /* Cards de Informação PROCV e Call Center */
+    .procv-card {
+        background-color: #1A1D24;
+        padding: 20px;
+        border-radius: 12px;
+        border: 1px solid #2D333F;
+        border-top: 4px solid #E27B00;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+        margin-bottom: 15px;
+    }
+    .procv-card h4 {
+        margin-top: 0;
+        margin-bottom: 12px;
+        color: #FF9800;
+        font-size: 1rem;
+    }
+    .procv-card p {
+        margin: 4px 0;
+        font-size: 0.9rem;
+    }
+    
+    .top-instructor-card {
+        background-color: #1A1D24;
+        padding: 18px;
+        border-radius: 12px;
+        border: 1px solid #2D333F;
+        border-left: 5px solid #4CAF50;
+        margin-bottom: 14px;
+    }
+
+    /* Timeline de Atendimentos */
+    .timeline-item {
+        border-left: 3px solid #E27B00;
+        padding-left: 15px;
+        margin-bottom: 15px;
+        position: relative;
+    }
+
+    /* Badges */
+    .badge-info {
+        background: rgba(226, 123, 0, 0.15);
+        color: #FF9800;
+        border: 1px solid #E27B00;
+        padding: 3px 8px;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 0.78rem;
+    }
+
+    /* Botão Customizado AmPm */
+    .stButton>button {
+        background: linear-gradient(90deg, #E27B00 0%, #FF9800 100%);
+        color: #FFFFFF !important;
+        font-weight: 600;
+        border: none;
+        border-radius: 8px;
+        padding: 10px 24px;
+        transition: all 0.3s ease;
+    }
+    .stButton>button:hover {
+        box-shadow: 0 4px 14px rgba(226, 123, 0, 0.5);
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# --- CARREGAMENTO DE DADOS ---
 @st.cache_data
-def carregar_base_instrutores():
-    arquivo_excel = "2026.AMPM - instrutores.xlsx"
-    if os.path.exists(arquivo_excel):
+def carregar_bases_integradas():
+    caminho = "Base_Unificada_AmPm.xlsx"
+    if os.path.exists(caminho):
         try:
-            df = pd.read_excel(arquivo_excel)
-            df_clean = df.iloc[1:].copy()
-            df_clean.columns = ['ID_AUVO', 'ID_CAJU', 'ID_UBER', 'ID_UNICO', 'NOME', 'TELEFONE', 'E_MAIL', 'ENDERECO', 'DATA_NASC', 'CPF', 'STATUS', 'CIDADE_1', 'INSTRUTOR', 'CIDADE_2']
+            xls = pd.ExcelFile(caminho, engine='openpyxl')
+            df_lojas = pd.read_excel(xls, sheet_name='Rede_de_Lojas')
+            df_fila = pd.read_excel(xls, sheet_name='Fila_CallCenter')
+            df_inaug = pd.read_excel(xls, sheet_name='Previsao_Inauguracao')
+            df_instrutores = pd.read_excel(xls, sheet_name='Instrutores')
+            df_rec = pd.read_excel(xls, sheet_name='Recomendacao_Deslocamento')
             
-            lista = []
-            for _, r in df_clean.iterrows():
-                nome = str(r['NOME']).strip() if pd.notna(r['NOME']) else ""
-                status = str(r['STATUS']).strip() if pd.notna(r['STATUS']) else "Ativo"
-                email = str(r['E_MAIL']).strip() if pd.notna(r['E_MAIL']) else ""
-                tel = str(r['TELEFONE']).strip() if pd.notna(r['TELEFONE']) else ""
-                cid = str(r['CIDADE_1']).strip() if pd.notna(r['CIDADE_1']) else "N/A"
-                id_auvo = str(r['ID_AUVO']).strip() if pd.notna(r['ID_AUVO']) else nome
-                
-                # Coordenadas aproximadas para mapa por estado/cidade
-                lat, lon = -23.5505, -46.6333
-                if "Rio de Janeiro" in cid: lat, lon = -22.9068, -43.1729
-                elif "Barueri" in cid: lat, lon = -23.5106, -46.8761
-                elif "Rio Grande" in cid: lat, lon = -32.0350, -52.0986
-                elif "Monte Carlo" in cid or "Monte Carmelo" in cid: lat, lon = -18.7247, -47.4981
-                
-                lista.append({
-                    "nome": nome,
-                    "id_auvo": id_auvo,
-                    "email": email,
-                    "telefone": tel,
-                    "cidade": cid,
-                    "status": status,
-                    "lat": lat,
-                    "lon": lon
-                })
-            return pd.DataFrame(lista)
-        except Exception:
-            pass
-    return pd.DataFrame(INSTRUTORES_OFICIAIS_FALLBACK)
+            df_lojas['PV Abadi'] = pd.to_numeric(df_lojas['PV Abadi'], errors='coerce')
+            df_fila['PV_Abadi'] = pd.to_numeric(df_fila['PV_Abadi'], errors='coerce')
+            df_inaug['PV ABADI'] = pd.to_numeric(df_inaug['PV ABADI'], errors='coerce')
+            df_rec['PV_ABADI'] = pd.to_numeric(df_rec['PV_ABADI'], errors='coerce')
+            
+            df_base = pd.merge(
+                df_lojas,
+                df_fila[['PV_Abadi', 'Tipo_Necessidade', 'Data_Ultimo_Treinamento', 
+                         'Dias_desde_Ultimo_Treinamento', 'Instrutor_Sugerido', 
+                         'Semana_Sugerida', 'Telefone_Contato', 'Status_Contato', 
+                         'Data_do_Contato', 'Observacoes']],
+                left_on='PV Abadi', right_on='PV_Abadi', how='left'
+            )
+            
+            df_base = pd.merge(
+                df_base,
+                df_inaug[['PV ABADI', 'Previsão Inauguração', 'Pipeline', 'Consultor_Possivel_Instrutor']],
+                left_on='PV Abadi', right_on='PV ABADI', how='left'
+            )
+            
+            df_rec = pd.merge(
+                df_rec,
+                df_instrutores[['NOME_COMPLETO', 'Latitude', 'Longitude']],
+                left_on='Instrutor_Sugerido', right_on='NOME_COMPLETO', how='left'
+            ).rename(columns={'Latitude': 'Lat_Instrutor', 'Longitude': 'Lon_Instrutor'})
+            
+            df_rec = pd.merge(
+                df_rec,
+                df_lojas[['PV Abadi', 'Latitude', 'Longitude']],
+                left_on='PV_ABADI', right_on='PV Abadi', how='left'
+            ).rename(columns={'Latitude': 'Lat_Loja', 'Longitude': 'Lon_Loja'})
 
-# ==============================================================================
-# INICIALIZAÇÃO DE ESTADO
-# ==============================================================================
-if "df_instrutores" not in st.session_state:
-    st.session_state.df_instrutores = carregar_base_instrutores()
+            df_base['Status_Contato'] = df_base['Status_Contato'].fillna('A Contatar')
+            df_base['Tipo_Necessidade'] = df_base['Tipo_Necessidade'].fillna('Rede Ativa (Sem Pendência)')
+            df_base['Instrutor_Sugerido'] = df_base['Instrutor_Sugerido'].fillna('Pendente de Alocação')
+            df_base['Nome_Contato'] = ""
+            df_base['Qtd_Funcionarios'] = 0
+            df_base['Material_Em_Loja'] = "Não Informado"
+            df_base['Data_Agendada'] = None
+            
+            return df_base, df_instrutores, df_rec
+        except Exception as e:
+            st.error(f"⚠️ Erro ao carregar planilhas: {e}")
+            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+    return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-if "atendimentos" not in st.session_state:
-    st.session_state.atendimentos = pd.DataFrame([
-        {"id": "AT001", "posto": "Posto AmPm Marginal Pinheiros", "cidade": "São Paulo - SP", "instrutor": "Betânia Cayret Pregnolato", "status": "Em Treinamento", "data": "2026-08-10", "custo": 450.0},
-        {"id": "AT002", "posto": "Posto AmPm Barra da Tijuca", "cidade": "Rio de Janeiro - RJ", "instrutor": "Isabela Paim Ricardo", "status": "Aguardando", "data": "2026-08-12", "custo": 780.0},
-        {"id": "AT003", "posto": "Posto AmPm Alphaville", "cidade": "Barueri - SP", "instrutor": "Bruno Souza", "status": "Concluído", "data": "2026-08-01", "custo": 320.0},
-        {"id": "AT004", "posto": "Posto AmPm Centro Rio Grande", "cidade": "Rio Grande - RS", "instrutor": "Leonardo da Silva Azevedo", "status": "Aguardando", "data": "2026-08-15", "custo": 1200.0},
-        {"id": "AT005", "posto": "Posto AmPm Av. Paulista", "cidade": "São Paulo - SP", "instrutor": "Roberta de Cássia Martareli", "status": "Em Treinamento", "data": "2026-08-08", "custo": 290.0},
-    ])
+def salvar_alteracoes_disco():
+    caminho = "Base_Unificada_AmPm.xlsx"
+    if os.path.exists(caminho) and 'df_base' in st.session_state:
+        try:
+            with pd.ExcelWriter(caminho, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
+                st.session_state['df_base'].to_excel(writer, sheet_name='Fila_CallCenter', index=False)
+            st.toast("💾 Dados salvos no arquivo Excel local com sucesso!", icon="✅")
+        except Exception as e:
+            st.toast(f"⚠️ Erro ao salvar arquivo: {e}", icon="⚠️")
 
-# ==============================================================================
-# SIDEBAR / NAVEGAÇÃO
-# ==============================================================================
-st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/thumb/1/1b/AmPm_logo.svg/320px-AmPm_logo.svg.png", width=160)
-st.sidebar.title("CRM Operacional AmPm")
+if 'df_base' not in st.session_state:
+    b, i, r = carregar_bases_integradas()
+    st.session_state['df_base'] = b
+    st.session_state['df_instrutores'] = i
+    st.session_state['df_rec'] = r
 
-menu = st.sidebar.radio(
-    "Navegação:",
-    [
-        "📊 Dashboard & KPIs",
-        "📋 Pipeline AmPm (Kanban)",
-        "📍 Otimizador de Rotas (PyDeck 3D)",
-        "📞 Call Center & WhatsApp",
-        "👨‍🏫 Gestão de Instrutores",
-        "📑 Relatórios & Exportação"
-    ]
-)
+df_base_raw = st.session_state['df_base']
+df_instrutores = st.session_state['df_instrutores']
+df_rec = st.session_state['df_rec']
 
-st.sidebar.markdown("---")
-st.sidebar.caption("Base Oficial: 2026.AMPM - instrutores.xlsx")
-
-# ==============================================================================
-# MÓDULO 1: DASHBOARD & KPIS
-# ==============================================================================
-if menu == "📊 Dashboard & KPIs":
-    st.title("📊 Painel Geral de Operações — AmPm")
+# --- SIDEBAR DE NAVEGAÇÃO, FILTROS GLOBAIS E UPLOAD ---
+with st.sidebar:
+    st.markdown("## ⛽ **CRM AmPm**")
+    st.caption("🌐 *Plataforma Integrada de Operações*")
+    st.divider()
     
-    df_inst = st.session_state.df_instrutores
-    df_atend = st.session_state.atendimentos
+    modulo = st.radio(
+        "📌 **Módulos do Sistema:**",
+        [
+            "📊 Dashboard Executivo", 
+            "📋 Pipeline AmPm", 
+            "🔍 PROCV & Filtros Avançados", 
+            "📍 Calculadora & Otimizador de Custos", 
+            "📞 Call Center & Timeline WhatsApp", 
+            "👔 Equipe de Instrutores",
+            "📂 Relatórios & Exportação"
+        ]
+    )
     
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Instrutores Ativos", len(df_inst[df_inst['status'] == 'Ativo']))
-    c2.metric("Treinamentos Ativos", len(df_atend[df_atend['status'].isin(['Aguardando', 'Em Treinamento'])]))
-    c3.metric("Concluídos este Mês", len(df_atend[df_atend['status'] == 'Concluído']))
-    c4.metric("Custo Logístico Acumulado", f"R$ {df_atend['custo'].sum():,.2f}")
+    st.divider()
     
-    st.markdown("---")
-    col_a, col_b = st.columns(2)
+    # UPLOAD DE BANCO DE DADOS NA SIDEBAR (.XLSX E .CSV)
+    st.markdown("📥 **Atualizar Banco de Dados**")
+    uploaded_file = st.file_uploader(
+        "Envie a nova planilha (.xlsx ou .csv):", 
+        type=["xlsx", "csv"], 
+        help="Carregue o arquivo Excel ou CSV para atualizar a base de dados."
+    )
     
-    with col_a:
-        st.subheader("Distribuição de Atendimentos por Status")
-        status_count = df_atend['status'].value_counts().reset_index()
-        status_count.columns = ['Status', 'Quantidade']
-        st.bar_chart(data=status_count, x='Status', y='Quantidade')
+    if uploaded_file is not None:
+        try:
+            if uploaded_file.name.endswith('.xlsx'):
+                with open("Base_Unificada_AmPm.xlsx", "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+                st.cache_data.clear()
+                b, i, r = carregar_bases_integradas()
+                st.session_state['df_base'] = b
+                st.session_state['df_instrutores'] = i
+                st.session_state['df_rec'] = r
+            elif uploaded_file.name.endswith('.csv'):
+                df_csv = pd.read_csv(uploaded_file)
+                st.session_state['df_base'] = df_csv
+            
+            st.success("✅ Banco de dados atualizado!")
+            st.rerun()
+        except Exception as e:
+            st.error(f"❌ Erro ao processar o arquivo: {e}")
+
+    st.divider()
+    
+    # FILTROS GLOBAIS
+    st.markdown("🎯 **Filtros Globais**")
+    uf_opcoes = ["Todas"] + sorted([str(x) for x in df_base_raw['UF'].dropna().unique()]) if 'UF' in df_base_raw.columns else ["Todas"]
+    filtro_uf = st.selectbox("Filtrar Estado (UF):", uf_opcoes)
+
+    cf_opcoes = ["Todos"] + sorted([str(x) for x in df_base_raw['CF'].dropna().unique()]) if 'CF' in df_base_raw.columns else ["Todos"]
+    filtro_cf = st.selectbox("Filtrar Consultor (CF):", cf_opcoes)
+
+    st.divider()
+    st.markdown("📶 **Status:** `Operacional 🟢`")
+    st.markdown(f"🏪 **Rede Total:** `{len(df_base_raw)} Unidades`")
+
+# APLICAÇÃO DOS FILTROS GLOBAIS
+df_base = df_base_raw.copy()
+if filtro_uf != "Todas":
+    df_base = df_base[df_base['UF'] == filtro_uf]
+if filtro_cf != "Todos":
+    df_base = df_base[df_base['CF'] == filtro_cf]
+
+# Header Global
+st.markdown("""
+    <div class="main-header">
+        <h1>⛽ CRM Operacional AmPm</h1>
+        <p>🚀 Gestão Estratégica de Capacitação, Logística de Viagens e Atendimento da Rede</p>
+    </div>
+""", unsafe_allow_html=True)
+
+# ==========================================
+# MÓDULO 1: DASHBOARD EXECUTIVO
+# ==========================================
+if modulo == "📊 Dashboard Executivo":
+    if not df_base.empty:
+        c1, c2, c3, c4 = st.columns(4)
         
-    with col_b:
-        st.subheader("Instrutores Ativos por Região")
-        ativos_df = df_inst[df_inst['status'] == 'Ativo']
-        cidade_count = ativos_df['cidade'].value_counts().reset_index()
-        cidade_count.columns = ['Cidade/UF', 'Instrutores']
-        st.dataframe(cidade_count, use_container_width=True, hide_index=True)
-
-# ==============================================================================
-# MÓDULO 2: PIPELINE AMPM (KANBAN)
-# ==============================================================================
-elif menu == "📋 Pipeline AmPm (Kanban)":
-    st.title("📋 Pipeline de Treinamentos (Kanban)")
-    
-    col_add, col_filter = st.columns([1, 2])
-    with col_add:
-        with st.expander("➕ Novo Atendimento"):
-            with st.form("form_novo_atendimento"):
-                posto = st.text_input("Nome do Posto AmPm")
-                cidade = st.text_input("Cidade / UF")
-                instrutores_ativos = st.session_state.df_instrutores[st.session_state.df_instrutores['status'] == 'Ativo']['nome'].tolist()
-                instrutor = st.selectbox("Instrutor Responsável", instrutores_ativos)
-                custo = st.number_input("Custo Logístico Estimado (R$)", min_value=0.0, value=300.0)
-                data_t = st.date_input("Data Prevista", value=date.today())
-                btn_salvar = st.form_submit_button("Criar Atendimento")
-                
-                if btn_salvar and posto:
-                    novo_id = f"AT00{len(st.session_state.atendimentos) + 1}"
-                    novo_rec = {
-                        "id": novo_id, "posto": posto, "cidade": cidade, 
-                        "instrutor": instrutor, "status": "Aguardando", 
-                        "data": str(data_t), "custo": custo
-                    }
-                    st.session_state.atendimentos = pd.concat([st.session_state.atendimentos, pd.DataFrame([novo_rec])], ignore_index=True)
-                    st.success("Atendimento adicionado com sucesso!")
-                    st.rerun()
-
-    st.markdown("---")
-    
-    cols = st.columns(3)
-    col_names = ["Aguardando", "Em Treinamento", "Concluído"]
-    
-    for i, col_status in enumerate(col_names):
-        with cols[i]:
-            st.markdown(f"### {col_status}")
-            sub_df = st.session_state.atendimentos[st.session_state.atendimentos['status'] == col_status]
+        with c1:
+            st.markdown(f"""
+                <div class="kpi-card" style="border-left-color: #E27B00;">
+                    <div class="kpi-header"><span class="kpi-title">Rede Filtrada</span><span>🏪</span></div>
+                    <div class="kpi-value">{len(df_base)}</div>
+                </div>
+            """, unsafe_allow_html=True)
             
-            for _, row in sub_df.iterrows():
-                with st.container(border=True):
-                    st.markdown(f"**{row['posto']}**")
-                    st.caption(f"📍 {row['cidade']} | 👨‍🏫 {row['instrutor']}")
-                    st.write(f"📅 {row['data']} | 💰 R$ {row['custo']:,.2f}")
+        with c2:
+            pendentes = len(df_base[df_base['Tipo_Necessidade'] != 'Rede Ativa (Sem Pendência)']) if 'Tipo_Necessidade' in df_base.columns else 0
+            st.markdown(f"""
+                <div class="kpi-card" style="border-left-color: #FF9800;">
+                    <div class="kpi-header"><span class="kpi-title">Fila Treinamento</span><span>🎓</span></div>
+                    <div class="kpi-value">{pendentes}</div>
+                </div>
+            """, unsafe_allow_html=True)
+            
+        with c3:
+            a_contatar = len(df_base[df_base['Status_Contato'] == 'A Contatar']) if 'Status_Contato' in df_base.columns else 0
+            st.markdown(f"""
+                <div class="kpi-card" style="border-left-color: #D32F2F;">
+                    <div class="kpi-header"><span class="kpi-title">Pendentes Contato</span><span>📞</span></div>
+                    <div class="kpi-value">{a_contatar}</div>
+                </div>
+            """, unsafe_allow_html=True)
+            
+        with c4:
+            inaug = len(df_base[df_base['Previsão Inauguração'].notna()]) if 'Previsão Inauguração' in df_base.columns else 0
+            st.markdown(f"""
+                <div class="kpi-card" style="border-left-color: #0288D1;">
+                    <div class="kpi-header"><span class="kpi-title">Inaugurações</span><span>🚀</span></div>
+                    <div class="kpi-value">{inaug}</div>
+                </div>
+            """, unsafe_allow_html=True)
+
+        st.write("")
+        st.divider()
+        col_A, col_B = st.columns(2)
+        with col_A:
+            st.subheader("🗺️ Concentração por Estado (UF)")
+            if 'UF' in df_base.columns:
+                st.bar_chart(df_base['UF'].value_counts().head(10), color="#E27B00")
+        with col_B:
+            st.subheader("📊 Situação dos Contatos no Call Center")
+            if 'Status_Contato' in df_base.columns:
+                st.bar_chart(df_base['Status_Contato'].value_counts(), color="#FF9800")
+
+# ==========================================
+# MÓDULO 2: PIPELINE AMPM
+# ==========================================
+elif modulo == "📋 Pipeline AmPm":
+    st.subheader("📋 Pipeline AmPm — Fluxo Operacional de Treinamentos")
+    st.caption("Gerencie o fluxo de atendimento navegando entre os estágios de contato.")
+    
+    colunas_pipeline = ["A Contatar", "Em Negociação", "Agendado", "Treinamento Realizado", "Recusado"]
+    cols_k = st.columns(len(colunas_pipeline))
+    
+    for idx, status in enumerate(colunas_pipeline):
+        df_status = df_base[df_base['Status_Contato'] == status] if 'Status_Contato' in df_base.columns else pd.DataFrame()
+        
+        with cols_k[idx]:
+            st.markdown(f"""
+                <div class="ampm-column">
+                    <div class="ampm-title">
+                        <span>{status}</span>
+                        <span style="background:#2D333F; padding:2px 8px; border-radius:10px; font-size:0.8rem;">{len(df_status)}</span>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            for _, item in df_status.head(6).iterrows():
+                with st.expander(f"📍 PV {item.get('PV Abadi', '-')} | {str(item.get('Razão Social', ''))[:14]}..."):
+                    st.write(f"**Cidade:** {item.get('Municipio', '-')}/{item.get('UF', '-')}")
+                    st.write(f"**Necessidade:** {item.get('Tipo_Necessidade', '-')}")
+                    st.write(f"**Treinandos:** {item.get('Qtd_Funcionarios', 0)} pessoas")
+                    st.write(f"**Instrutor:** {item.get('Instrutor_Sugerido', 'Pendente')}")
                     
-                    # Ações de movimentação do Kanban
-                    c_left, c_right = st.columns(2)
-                    if col_status == "Aguardando":
-                        if c_right.button("Iniciar ▶️", key=f"act_inici_{row['id']}"):
-                            st.session_state.atendimentos.loc[st.session_state.atendimentos['id'] == row['id'], 'status'] = "Em Treinamento"
-                            st.rerun()
-                    elif col_status == "Em Treinamento":
-                        if c_left.button("⬅️ Voltar", key=f"act_volt_{row['id']}"):
-                            st.session_state.atendimentos.loc[st.session_state.atendimentos['id'] == row['id'], 'status'] = "Aguardando"
-                            st.rerun()
-                        if c_right.button("Concluir ✅", key=f"act_conc_{row['id']}"):
-                            st.session_state.atendimentos.loc[st.session_state.atendimentos['id'] == row['id'], 'status'] = "Concluído"
-                            st.rerun()
+                    mudar_status = st.selectbox(
+                        "Alterar Status:",
+                        colunas_pipeline,
+                        index=colunas_pipeline.index(status),
+                        key=f"pipe_sel_{item.get('PV Abadi')}"
+                    )
+                    
+                    if mudar_status != status:
+                        mask = st.session_state['df_base']['PV Abadi'] == item['PV Abadi']
+                        st.session_state['df_base'].loc[mask, 'Status_Contato'] = mudar_status
+                        salvar_alteracoes_disco()
+                        st.success("Atualizado!")
+                        st.rerun()
 
-# ==============================================================================
-# MÓDULO 3: OTIMIZADOR DE ROTAS LOGÍSTICAS (PYDECK 3D)
-# ==============================================================================
-elif menu == "📍 Otimizador de Rotas (PyDeck 3D)":
-    st.title("📍 Visualizador Geográfico 3D & Otimizador Logístico")
-    
-    df_ativos = st.session_state.df_instrutores[st.session_state.df_instrutores['status'] == 'Ativo'].copy()
-    
-    st.subheader("Mapa Interativo de Instrutores Ativos")
-    
-    view_state = pdk.ViewState(
-        latitude=-23.5505,
-        longitude=-46.6333,
-        zoom=4,
-        pitch=45
-    )
-    
-    layer_instrutores = pdk.Layer(
-        "ColumnLayer",
-        data=df_ativos,
-        get_position=["lon", "lat"],
-        get_elevation=50000,
-        elevation_scale=100,
-        radius=25000,
-        get_fill_color="[230, 81, 0, 200]",
-        pickable=True,
-        auto_highlight=True
-    )
-    
-    deck = pdk.Deck(
-        layers=[layer_instrutores],
-        initial_view_state=view_state,
-        tooltip={"text": "Instrutor: {nome}\nCidade: {cidade}\nContato: {telefone}"}
-    )
-    
-    st.pydeck_chart(deck)
-    
-    st.markdown("---")
-    st.subheader("Calculadora de Custos Logísticos de Deslocamento")
-    
-    c_calc1, c_calc2, c_calc3 = st.columns(3)
-    distancia = c_calc1.number_input("Distância estimada (KM)", min_value=0, value=250)
-    diarias = c_calc2.number_input("Quantidade de Diárias", min_value=1, value=2)
-    valor_km = c_calc3.number_input("Custo por KM (R$)", min_value=0.0, value=1.50)
-    
-    custo_total = (distancia * valor_km) + (diarias * 220.0) # 220 por diária/alimentação
-    st.info(f"💰 **Custo Logístico Total Estimado:** R$ {custo_total:,.2f}")
-
-# ==============================================================================
-# MÓDULO 4: CALL CENTER & WHATSAPP
-# ==============================================================================
-elif menu == "📞 Call Center & WhatsApp":
-    st.title("📞 Central de Atendimento & Disparo WhatsApp")
-    
-    st.markdown("Selecione um instrutor ou gerente de posto para iniciar o contato diretamente no WhatsApp:")
-    
-    df_inst = st.session_state.df_instrutores[st.session_state.df_instrutores['status'] == 'Ativo']
-    
-    col_sel, col_msg = st.columns([1, 2])
-    
-    with col_sel:
-        instrutor_alvo = st.selectbox("Selecione o Destinatário", df_inst['nome'].tolist())
-        d_row = df_inst[df_inst['nome'] == instrutor_alvo].iloc[0]
-        st.write(f"**Telefone:** {d_row['telefone']}")
-        st.write(f"**E-mail:** {d_row['email']}")
-        
-    with col_msg:
-        template = st.selectbox("Modelo de Mensagem", [
-            "Confirmação de Agendamento de Treinamento",
-            "Lembrete de Envio de Relatório Operacional",
-            "Atualização de Escala de Atendimento"
-        ])
-        
-        if template == "Confirmação de Agendamento de Treinamento":
-            msg_padrao = f"Olá {d_row['nome']}, confirmamos seu treinamento na rede AmPm. Por favor verifique sua agenda no sistema Auvo."
-        elif template == "Lembrete de Envio de Relatório Operacional":
-            msg_padrao = f"Olá {d_row['nome']}, lembramos de realizar o envio do relatório de visita técnica do posto AmPm."
-        else:
-            msg_padrao = f"Olá {d_row['nome']}, temos atualizações sobre a sua escala de atendimento."
+# ==========================================
+# MÓDULO 3: PROCV & FILTROS AVANÇADOS
+# ==========================================
+elif modulo == "🔍 PROCV & Filtros Avançados":
+    if not df_base.empty:
+        with st.expander("🔎 **Pesquisa Avançada na Base Filtrada**", expanded=True):
+            f1, f2 = st.columns(2)
+            termo = f1.text_input("🔍 PV, Nome ou Município:", "")
+            f_necessidade = f2.selectbox("🎯 Tipo de Necessidade:", ["Todas"] + sorted([str(x) for x in df_base['Tipo_Necessidade'].dropna().unique()])) if 'Tipo_Necessidade' in df_base.columns else ["Todas"]
             
-        mensagem = st.text_area("Texto da Mensagem", value=msg_padrao, height=120)
-        
-        # Formatar número limpo
-        num_limpo = ''.join(filter(str.isdigit, str(d_row['telefone'])))
-        if not num_limpo.startswith('55'):
-            num_limpo = '55' + num_limpo
+        df_view = df_base.copy()
+        if termo:
+            df_view = df_view[
+                df_view.get('Razão Social', pd.Series()).astype(str).str.contains(termo, case=False, na=False) |
+                df_view.get('PV Abadi', pd.Series()).astype(str).str.contains(termo, na=False) |
+                df_view.get('Municipio', pd.Series()).astype(str).str.contains(termo, case=False, na=False)
+            ]
+        if f_necessidade != "Todas" and 'Tipo_Necessidade' in df_view.columns:
+            df_view = df_view[df_view['Tipo_Necessidade'] == f_necessidade]
             
-        encoded_msg = urllib.parse.quote(mensagem)
-        link_wa = f"https://wa.me/{num_limpo}?text={encoded_msg}"
+        st.caption("👇 *Clique em uma linha para abrir a Ficha Detalhada PROCV:*")
         
-        st.markdown(f'<a href="{link_wa}" target="_blank" style="display: inline-block; padding: 10px 20px; background-color: #25D366; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">📱 Enviar via WhatsApp Web</a>', unsafe_allow_html=True)
+        cols_mostrar = [c for c in ['PV Abadi', 'Razão Social', 'Municipio', 'UF', 'Status Loja', 'Tipo_Necessidade', 'Status_Contato'] if c in df_view.columns]
+        evento = st.dataframe(
+            df_view[cols_mostrar],
+            use_container_width=True, hide_index=True, selection_mode="single-row", on_select="rerun"
+        )
+        
+        linhas = evento.selection.get("rows", [])
+        if linhas:
+            p = df_view.iloc[linhas[0]].to_dict()
+            st.divider()
+            st.markdown(f"### 📋 Ficha de Detalhes PROCV — **PV {p.get('PV Abadi', '-')} | {p.get('Razão Social', '-')}**")
+            
+            k1, k2, k3 = st.columns(3)
+            with k1:
+                st.markdown(f"""
+                    <div class="procv-card">
+                        <h4>🏪 Cadastro da Loja</h4>
+                        <p>📍 <b>Endereço:</b> {p.get('Endereço', '-')}</p>
+                        <p>🏙️ <b>Município/UF:</b> {p.get('Municipio', '-')}/{p.get('UF', '-')}</p>
+                        <p>⚙️ <b>Status Loja:</b> {p.get('Status Loja', '-')}</p>
+                    </div>
+                """, unsafe_allow_html=True)
+            with k2:
+                st.markdown(f"""
+                    <div class="procv-card">
+                        <h4>👔 Gestão & Franquia</h4>
+                        <p>👤 <b>Gerência (GF):</b> {p.get('GF', '-')}</p>
+                        <p>👔 <b>Consultor (CF):</b> {p.get('CF', '-')}</p>
+                        <p>📅 <b>Inauguração:</b> {p.get('Previsão Inauguração', 'N/A')}</p>
+                    </div>
+                """, unsafe_allow_html=True)
+            with k3:
+                st.markdown(f"""
+                    <div class="procv-card">
+                        <h4>📞 Status do Atendimento</h4>
+                        <p>🎯 <b>Necessidade:</b> {p.get('Tipo_Necessidade', '-')}</p>
+                        <p>👨‍🏫 <b>Instrutor Alocado:</b> {p.get('Instrutor_Sugerido', '-')}</p>
+                        <p>🔄 <b>Status Contato:</b> {p.get('Status_Contato', '-')}</p>
+                    </div>
+                """, unsafe_allow_html=True)
 
-# ==============================================================================
-# MÓDULO 5: GESTÃO DE INSTRUTORES
-# ==============================================================================
-elif menu == "👨‍🏫 Gestão de Instrutores":
-    st.title("👨‍🏫 Base de Dados Oficial de Instrutores")
+# ==========================================
+# MÓDULO 4: CALCULADORA & OTIMIZADOR DE CUSTOS
+# ==========================================
+elif modulo == "📍 Calculadora & Otimizador de Custos":
+    st.subheader("📍 Análise Financeira e Otimização Logística")
+    st.caption("Cálculo detalhado de custos com mapas interativos e simulação de rotas.")
     
-    df_inst = st.session_state.df_instrutores
-    
-    filtro_status = st.radio("Filtrar por Status:", ["Ativos (7)", "Todos (13)", "Desligados (6)"], horizontal=True)
-    
-    if "Ativos" in filtro_status:
-        df_vis = df_inst[df_inst['status'] == 'Ativo']
-    elif "Desligados" in filtro_status:
-        df_vis = df_inst[df_inst['status'] == 'Saiu']
-    else:
-        df_vis = df_inst
-        
-    st.dataframe(
-        df_vis[['nome', 'id_auvo', 'status', 'telefone', 'email', 'cidade']],
-        column_config={
-            "nome": "Nome Completo",
-            "id_auvo": "ID Auvo",
-            "status": "Status",
-            "telefone": "Telefone",
-            "email": "E-mail Oficial",
-            "cidade": "Cidade / UF"
-        },
-        use_container_width=True,
-        hide_index=True
-    )
-    
-    st.markdown("---")
-    st.subheader("Ficha Detalhada do Instrutor")
-    sel_inst = st.selectbox("Selecione para consultar:", df_inst['nome'].tolist())
-    if sel_inst:
-        f_row = df_inst[df_inst['nome'] == sel_inst].iloc[0]
-        c_f1, c_f2 = st.columns(2)
-        with c_f1:
-            st.write(f"**Nome:** {f_row['nome']}")
-            st.write(f"**ID Auvo:** {f_row['id_auvo']}")
-            st.write(f"**Status:** {f_row['status']}")
-        with c_f2:
-            st.write(f"**Telefone:** {f_row['telefone']}")
-            st.write(f"**E-mail:** {f_row['email']}")
-            st.write(f"**Cidade:** {f_row['cidade']}")
+    if not df_rec.empty:
+        df_rec_filtrado = df_rec.copy()
+        if filtro_uf != "Todas":
+            df_rec_filtrado = df_rec_filtrado[df_rec_filtrado['UF_Loja'] == filtro_uf]
 
-# ==============================================================================
-# MÓDULO 6: RELATÓRIOS & EXPORTAÇÃO
-# ==============================================================================
-elif menu == "📑 Relatórios & Exportação":
-    st.title("📑 Exportação de Relatórios Operacionais")
-    
-    st.write("Exporte os dados completos dos treinamentos e instrutores em formato Excel.")
-    
-    buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-        st.session_state.df_instrutores.to_excel(writer, sheet_name='Instrutores', index=False)
-        st.session_state.atendimentos.to_excel(writer, sheet_name='Atendimentos', index=False)
+        postos_unicos = df_rec_filtrado[['PV_ABADI', 'Razao_Social', 'Municipio_Loja', 'UF_Loja']].drop_duplicates()
+        if not postos_unicos.empty:
+            postos_unicos['label'] = postos_unicos['PV_ABADI'].astype(str) + " - " + postos_unicos['Razao_Social'] + " (" + postos_unicos['Municipio_Loja'] + "/" + postos_unicos['UF_Loja'] + ")"
+            
+            posto_sel = st.selectbox("⛽ Selecione o Posto Alvo:", postos_unicos['label'].tolist())
+            pv_sel = int(posto_sel.split(" - ")[0])
+            
+            top_3 = df_rec_filtrado[df_rec_filtrado['PV_ABADI'] == pv_sel].sort_values(by='Ranking_Proximidade').head(3)
+            
+            if not top_3.empty:
+                st.divider()
+                
+                # --- MAPA 3D PYDECK ---
+                primeira = top_3.iloc[0]
+                if pd.notna(primeira.get('Lat_Loja')) and pd.notna(primeira.get('Lon_Loja')) and pd.notna(primeira.get('Lat_Instrutor')) and pd.notna(primeira.get('Lon_Instrutor')):
+                    p_lat, p_lon = float(primeira['Lat_Loja']), float(primeira['Lon_Loja'])
+                    i_lat, i_lon = float(primeira['Lat_Instrutor']), float(primeira['Lon_Instrutor'])
+                    
+                    df_mapa_pontos = pd.DataFrame([
+                        {"name": f"Posto {primeira['PV_ABADI']}", "lat": p_lat, "lon": p_lon, "color": [226, 123, 0, 220]},
+                        {"name": f"Instrutor {primeira['Instrutor_Sugerido']}", "lat": i_lat, "lon": i_lon, "color": [76, 175, 80, 220]}
+                    ])
+                    
+                    df_mapa_arco = pd.DataFrame([{
+                        "from_lat": i_lat, "from_lon": i_lon, "to_lat": p_lat, "to_lon": p_lon
+                    }])
+                    
+                    layer_pontos = pdk.Layer(
+                        "ScatterplotLayer",
+                        df_mapa_pontos,
+                        get_position="[lon, lat]",
+                        get_color="color",
+                        get_radius=20000,
+                        pickable=True
+                    )
+                    
+                    layer_arco = pdk.Layer(
+                        "ArcLayer",
+                        df_mapa_arco,
+                        get_source_position="[from_lon, from_lat]",
+                        get_target_position="[to_lon, to_lat]",
+                        get_source_color=[76, 175, 80, 180],
+                        get_target_color=[226, 123, 0, 180],
+                        get_width=4
+                    )
+                    
+                    view_state = pdk.ViewState(latitude=(p_lat + i_lat) / 2, longitude=(p_lon + i_lon) / 2, zoom=5, pitch=40)
+                    
+                    st.markdown("##### 🗺️ Visualização Geográfica do Deslocamento")
+                    st.pydeck_chart(pdk.Deck(layers=[layer_pontos, layer_arco], initial_view_state=view_state, tooltip={"text": "{name}"}))
+
+                with st.expander("⚙️ **Ajustar Parâmetros Financeiros de Viagem**", expanded=False):
+                    ca1, ca2, ca3, ca4 = st.columns(4)
+                    v_km = ca1.number_input("Valor KM (Terrestre R$):", value=2.10)
+                    v_passagem = ca2.number_input("Passagem Aérea Média (R$):", value=1400.0)
+                    v_diaria = ca3.number_input("Diária Instrutor (Hosp./Alimentação R$):", value=280.0)
+                    v_traslado = ca4.number_input("Traslado/Uber Aeroporto (R$):", value=150.0)
+
+                col1, col2, col3 = st.columns(3)
+                cols = [col1, col2, col3]
+                custos_calculados = []
+
+                for idx, (_, row) in enumerate(top_3.iterrows()):
+                    dist = row['Distancia_km_linha_reta']
+                    dias = row['Dias_Treinamento_Necessarios']
+                    
+                    if dist <= 300:
+                        modal = "Terrestre 🚗"
+                        c_desloc = (dist * 2) * v_km
+                        c_aereo = 0
+                    else:
+                        modal = "Aéreo ✈️"
+                        c_desloc = v_traslado
+                        c_aereo = v_passagem
+                        
+                    c_hospedagem = dias * v_diaria
+                    custo_total = c_desloc + c_aereo + c_hospedagem
+                    custos_calculados.append(custo_total)
+
+                    with cols[idx]:
+                        st.markdown(f"""
+                            <div class="top-instructor-card">
+                                <h4 style="margin:0 0 8px 0; color:#E27B00;">#{row['Ranking_Proximidade']}º {row['Instrutor_Sugerido']}</h4>
+                                <p style="margin:2px 0;">🏙️ <b>Origem:</b> {row['Cidade_Instrutor']}/{row['UF_Instrutor']}</p>
+                                <p style="margin:2px 0;">📏 <b>Distância:</b> <code>{dist} km</code></p>
+                                <p style="margin:2px 0;">✈️ <b>Modal:</b> {modal}</p>
+                                <hr style="border-color:#2D333F; margin:8px 0;">
+                                <p style="margin:2px 0; font-size:0.85rem;">• Deslocamento: R$ {c_desloc:.2f}</p>
+                                <p style="margin:2px 0; font-size:0.85rem;">• Passagem Aérea: R$ {c_aereo:.2f}</p>
+                                <p style="margin:2px 0; font-size:0.85rem;">• Diárias ({dias}d): R$ {c_hospedagem:.2f}</p>
+                                <h3 style="color:#4CAF50; margin:10px 0 0 0;">Total: R$ {custo_total:.2f}</h3>
+                            </div>
+                        """, unsafe_allow_html=True)
+
+                if len(custos_calculados) >= 2:
+                    economia = custos_calculados[1] - custos_calculados[0]
+                    st.success(f"💡 **Economia Eficiente:** Optar pelo **1º Instrutor Recomendado** garante uma economia estimada de **R$ {economia:.2f}** nesta operação.")
+
+# ==========================================
+# MÓDULO 5: CALL CENTER & TIMELINE WHATSAPP
+# ==========================================
+elif modulo == "📞 Call Center & Timeline WhatsApp":
+    if not df_base.empty:
+        df_fila_view = df_base[df_base['Tipo_Necessidade'] != 'Rede Ativa (Sem Pendência)'].copy() if 'Tipo_Necessidade' in df_base.columns else df_base.copy()
         
-    st.download_button(
-        label="📥 Baixar Relatório Completo (Excel)",
-        data=buffer.getvalue(),
-        file_name=f"Relatorio_Operacional_AmPm_{date.today()}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-'''
-print("Code compiles cleanly!")
+        c_left, c_right = st.columns([1.2, 1.8])
+        
+        with c_left:
+            st.subheader("📋 Fila de Atendimento")
+            cols_call = [c for c in ['PV Abadi', 'Razão Social', 'Municipio', 'UF', 'Status_Contato'] if c in df_fila_view.columns]
+            evento_call = st.dataframe(
+                df_fila_view[cols_call],
+                use_container_width=True, hide_index=True, selection_mode="single-row", on_select="rerun"
+            )
+            selecionado = evento_call.selection.get("rows", [])
+            
+        with c_right:
+            if selecionado:
+                posto = df_fila_view.iloc[selecionado[0]]
+                pv_alvo = posto.get('PV Abadi')
+                tel_limpo = ''.join(filter(str.isdigit, str(posto.get('Telefone_Contato', ''))))
+                
+                st.markdown(f"### 📝 Ficha de Atendimento — **PV {posto.get('PV Abadi', '-')}**")
+                
+                st.markdown(f"""
+                    <div class="procv-card">
+                        <h4>🏪 Contexto do Posto (Consulta Rápida)</h4>
+                        <div style="display: flex; justify-content: space-between; flex-wrap: wrap;">
+                            <div style="flex: 1; min-width: 200px;">
+                                <p>🏬 <b>Razão Social:</b> {posto.get('Razão Social', '-')}</p>
+                                <p>📍 <b>Cidade/UF:</b> {posto.get('Municipio', '-')}/{posto.get('UF', '-')}</p>
+                                <p>🏠 <b>Endereço:</b> {posto.get('Endereço', '-')}</p>
+                            </div>
+                            <div style="flex: 1; min-width: 200px;">
+                                <p>👔 <b>Consultor (CF):</b> {posto.get('CF', '-')}</p>
+                                <p>🎯 <b>Necessidade:</b> <span class="badge-info">{posto.get('Tipo_Necessidade', '-')}</span></p>
+                                <p>⏱️ <b>Dias sem Treinamento:</b> {posto.get('Dias_desde_Ultimo_Treinamento', 'N/A')}</p>
+                                <p>📅 <b>Inauguração Prevista:</b> {posto.get('Previsão Inauguração', 'N/A')}</p>
+                            </div>
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+                # --- INTEGRAÇÃO WHATSAPP FLEXÍVEL (LINK DIRETO + TEMPLATES) ---
+                if tel_limpo:
+                    st.markdown("##### 📲 Envio de Mensagem WhatsApp")
+                    opcao_wa = st.radio("Selecione o estilo do envio:", ["Link Direto Rápido", "Template Customizado"], horizontal=True)
+                    
+                    if opcao_wa == "Link Direto Rápido":
+                        msg_final = f"Olá, equipe {posto.get('Razão Social', '')}! Aqui é da equipe de Capacitação AmPm. Gostaria de agendar o treinamento da loja."
+                    else:
+                        tmpl = st.selectbox("Escolha o Modelo de Mensagem:", [
+                            "Agendamento de Treinamento",
+                            "Cobrança / Verificação de Apostilas",
+                            "Lembrete de Treinamento Agendado",
+                            "Acompanhamento Pós-Treinamento"
+                        ])
+                        
+                        if tmpl == "Agendamento de Treinamento":
+                            msg_final = f"Olá! Aqui é da Capacitação AmPm. Gostaríamos de confirmar as datas disponíveis para o treinamento na loja {posto.get('Razão Social', '')} (PV {posto.get('PV Abadi', '')})."
+                        elif tmpl == "Cobrança / Verificação de Apostilas":
+                            msg_final = f"Olá, equipe {posto.get('Razão Social', '')}! Para darmos início ao treinamento, poderiam confirmar se o material de apoio e apostilas já chegaram na loja?"
+                        elif tmpl == "Lembrete de Treinamento Agendado":
+                            msg_final = f"Olá! Passando para lembrar que o treinamento AmPm da loja {posto.get('Razão Social', '')} está agendado para o dia {posto.get('Data_Agendada', 'em breve')}. Contamos com todos!"
+                        else:
+                            msg_final = f"Olá! Como foi o treinamento concluído na loja {posto.get('Razão Social', '')}? Estamos à disposição para dúvidas ou feedbacks."
+                    
+                    link_wa = f"https://wa.me/55{tel_limpo}?text={msg_final.replace(' ', '%20')}"
+                    st.markdown(f"👉 **[Clique aqui para chamar no WhatsApp Direct]({link_wa})**")
+
+                lista_instrutores = ["Pendente de Alocação"]
+                if not df_instrutores.empty and 'NOME_COMPLETO' in df_instrutores.columns:
+                    lista_instrutores += sorted(df_instrutores['NOME_COMPLETO'].dropna().unique().tolist())
+                
+                instrutor_atual = str(posto.get('Instrutor_Sugerido', 'Pendente de Alocação'))
+                idx_instrutor = lista_instrutores.index(instrutor_atual) if instrutor_atual in lista_instrutores else 0
+
+                val_data_agendada = posto.get('Data_Agendada')
+                data_inicial = date.today()
+                if isinstance(val_data_agendada, (date, datetime)):
+                    data_inicial = val_data_agendada
+                elif isinstance(val_data_agendada, str) and val_data_agendada:
+                    try:
+                        data_inicial = datetime.strptime(val_data_agendada, "%Y-%m-%d").date()
+                    except ValueError:
+                        try:
+                            data_inicial = datetime.strptime(val_data_agendada, "%d/%m/%Y").date()
+                        except ValueError:
+                            data_inicial = date.today()
+
+                # --- REGISTROS RÁPIDOS DA LIGAÇÃO ---
+                with st.form("form_callcenter_editavel"):
+                    st.markdown("#### ✍️ Registros Rápidos da Ligação")
+                    
+                    col_f1, col_f2 = st.columns(2)
+                    with col_f1:
+                        nome_c = st.text_input("👤 Nome do Responsável na Loja:", value=str(posto.get('Nome_Contato', '')))
+                        tel_c = st.text_input("📞 Telefone de Contato:", value=str(posto.get('Telefone_Contato', '')))
+                        qtd_func = st.number_input("👥 Qtd. de Funcionários para Treinar:", value=int(posto.get('Qtd_Funcionarios', 0)), min_value=0, step=1)
+                        instrutor_escolhido = st.selectbox("👨‍🏫 Instrutor Designado:", lista_instrutores, index=idx_instrutor)
+                        
+                    with col_f2:
+                        status_opcoes = ["A Contatar", "Em Negociação", "Agendado", "Treinamento Realizado", "Recusado"]
+                        st_atual = posto.get('Status_Contato', 'A Contatar')
+                        idx_st = status_opcoes.index(st_atual) if st_atual in status_opcoes else 0
+                        novo_st = st.selectbox("🔄 Status do Atendimento:", status_opcoes, index=idx_st)
+                        
+                        mat_opcoes = ["Não Informado", "Sim", "Não"]
+                        mat_atual = posto.get('Material_Em_Loja', 'Não Informado')
+                        idx_mat = mat_opcoes.index(mat_atual) if mat_atual in mat_opcoes else 0
+                        mat_loja = st.selectbox("📦 Possui Material/Apostilas na Loja?", mat_opcoes, index=idx_mat)
+                        data_ag = st.date_input("📅 Data Agendada (Calendário):", value=data_inicial, format="DD/MM/YYYY")
+                        
+                    obs = st.text_area("💬 Observações e Alinhamentos:", value=str(posto.get('Observacoes', '')), height=80)
+                    
+                    if st.form_submit_button("💾 Salvar Registro do Atendimento"):
+                        mask = st.session_state['df_base']['PV Abadi'] == pv_alvo
+                        st.session_state['df_base'].loc[mask, 'Nome_Contato'] = nome_c
+                        st.session_state['df_base'].loc[mask, 'Telefone_Contato'] = tel_c
+                        st.session_state['df_base'].loc[mask, 'Qtd_Funcionarios'] = qtd_func
+                        st.session_state['df_base'].loc[mask, 'Instrutor_Sugerido'] = instrutor_escolhido
+                        st.session_state['df_base'].loc[mask, 'Material_Em_Loja'] = mat_loja
+                        st.session_state['df_base'].loc[mask, 'Data_Agendada'] = data_ag.strftime("%d/%m/%Y")
+                        st.session_state['df_base'].loc[mask, 'Status_Contato'] = novo_st
+                        st.session_state['df_base'].loc[mask, 'Observacoes'] = obs
+                        st.session_state['df_base'].loc[mask, 'Data_do_Contato'] = datetime.today().strftime('%d/%m/%Y %H:%M')
+                        
+                        salvar_alteracoes_disco()
+                        st.success("✅ Atendimento registrado com sucesso!")
+                        st.rerun()
+
+                st.divider()
+                st.markdown("#### ⏱️ Histórico de Interações")
+                data_ct = posto.get('Data_do_Contato', 'Sem registro')
+                data_agendada_str = posto.get('Data_Agendada', 'Não agendado')
+                st.markdown(f"""
+                    <div class="timeline-item">
+                        <small style="color:#A0AAB8;"><b>Última Atualização:</b> {data_ct}</small><br>
+                        <span><b>Status:</b> {posto.get('Status_Contato', '-')} | <b>Data Agendada:</b> {data_agendada_str} | <b>Instrutor:</b> {posto.get('Instrutor_Sugerido', '-')}</span><br>
+                        <span style="color:#D1D5DB;"><i>"{posto.get('Observacoes', 'Sem observações registradas.')}"</i></span>
+                    </div>
+                """, unsafe_allow_html=True)
+
+# ==========================================
+# MÓDULO 6: EQUIPE DE INSTRUTORES
+# ==========================================
+elif modulo == "👔 Equipe de Instrutores":
+    if not df_instrutores.empty:
+        st.subheader("👔 Instrutores Credenciados na Rede")
+        cols_inst = [c for c in ['NOME_COMPLETO', 'STATUS', 'TELEFONE', 'EMAIL', 'Cidade', 'UF'] if c in df_instrutores.columns]
+        st.dataframe(df_instrutores[cols_inst], use_container_width=True, hide_index=True)
+
+# ==========================================
+# MÓDULO 7: RELATÓRIOS & EXPORTAÇÃO
+# ==========================================
+elif modulo == "📂 Relatórios & Exportação":
+    st.subheader("📂 Central de Exportação e Relatórios")
+    st.caption("Faça o download dos dados operacionais atualizados em tempo real.")
+    
+    col_exp1, col_exp2 = st.columns(2)
+    
+    csv_buffer = df_base.to_csv(index=False).encode('utf-8')
+    with col_exp1:
+        st.download_button(
+            label="📄 Baixar Base Filtrada em CSV",
+            data=csv_buffer,
+            file_name=f"Base_CRM_AmPm_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+            mime="text/csv"
+        )
+        
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_base.to_excel(writer, sheet_name='Base_CRM_Atualizada', index=False)
+    excel_data = output.getvalue()
+    
+    with col_exp2:
+        st.download_button(
+            label="📊 Baixar Base Filtrada em Excel",
+            data=excel_data,
+            file_name=f"Base_CRM_AmPm_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
