@@ -255,20 +255,27 @@ with st.sidebar:
     
     st.divider()
     
-    # UPLOAD DE BANCO DE DADOS NA SIDEBAR
+    # UPLOAD DE BANCO DE DADOS NA SIDEBAR (.XLSX E .CSV)
     st.markdown("📥 **Atualizar Banco de Dados**")
-    uploaded_file = st.file_uploader("Envie a nova planilha (.xlsx):", type=["xlsx"], help="Carregue o arquivo Base_Unificada_AmPm.xlsx atualizado.")
+    uploaded_file = st.file_uploader(
+        "Envie a nova planilha (.xlsx ou .csv):", 
+        type=["xlsx", "csv"], 
+        help="Carregue o arquivo Excel ou CSV para atualizar a base de dados."
+    )
     
     if uploaded_file is not None:
         try:
-            with open("Base_Unificada_AmPm.xlsx", "wb") as f:
-                f.write(uploaded_file.getbuffer())
-            
-            st.cache_data.clear()
-            b, i, r = carregar_bases_integradas()
-            st.session_state['df_base'] = b
-            st.session_state['df_instrutores'] = i
-            st.session_state['df_rec'] = r
+            if uploaded_file.name.endswith('.xlsx'):
+                with open("Base_Unificada_AmPm.xlsx", "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+                st.cache_data.clear()
+                b, i, r = carregar_bases_integradas()
+                st.session_state['df_base'] = b
+                st.session_state['df_instrutores'] = i
+                st.session_state['df_rec'] = r
+            elif uploaded_file.name.endswith('.csv'):
+                df_csv = pd.read_csv(uploaded_file)
+                st.session_state['df_base'] = df_csv
             
             st.success("✅ Banco de dados atualizado!")
             st.rerun()
@@ -320,7 +327,7 @@ if modulo == "📊 Dashboard Executivo":
             """, unsafe_allow_html=True)
             
         with c2:
-            pendentes = len(df_base[df_base['Tipo_Necessidade'] != 'Rede Ativa (Sem Pendência)'])
+            pendentes = len(df_base[df_base['Tipo_Necessidade'] != 'Rede Ativa (Sem Pendência)']) if 'Tipo_Necessidade' in df_base.columns else 0
             st.markdown(f"""
                 <div class="kpi-card" style="border-left-color: #FF9800;">
                     <div class="kpi-header"><span class="kpi-title">Fila Treinamento</span><span>🎓</span></div>
@@ -329,7 +336,7 @@ if modulo == "📊 Dashboard Executivo":
             """, unsafe_allow_html=True)
             
         with c3:
-            a_contatar = len(df_base[df_base['Status_Contato'] == 'A Contatar'])
+            a_contatar = len(df_base[df_base['Status_Contato'] == 'A Contatar']) if 'Status_Contato' in df_base.columns else 0
             st.markdown(f"""
                 <div class="kpi-card" style="border-left-color: #D32F2F;">
                     <div class="kpi-header"><span class="kpi-title">Pendentes Contato</span><span>📞</span></div>
@@ -338,7 +345,7 @@ if modulo == "📊 Dashboard Executivo":
             """, unsafe_allow_html=True)
             
         with c4:
-            inaug = len(df_base[df_base['Previsão Inauguração'].notna()])
+            inaug = len(df_base[df_base['Previsão Inauguração'].notna()]) if 'Previsão Inauguração' in df_base.columns else 0
             st.markdown(f"""
                 <div class="kpi-card" style="border-left-color: #0288D1;">
                     <div class="kpi-header"><span class="kpi-title">Inaugurações</span><span>🚀</span></div>
@@ -351,10 +358,12 @@ if modulo == "📊 Dashboard Executivo":
         col_A, col_B = st.columns(2)
         with col_A:
             st.subheader("🗺️ Concentração por Estado (UF)")
-            st.bar_chart(df_base['UF'].value_counts().head(10), color="#E27B00")
+            if 'UF' in df_base.columns:
+                st.bar_chart(df_base['UF'].value_counts().head(10), color="#E27B00")
         with col_B:
             st.subheader("📊 Situação dos Contatos no Call Center")
-            st.bar_chart(df_base['Status_Contato'].value_counts(), color="#FF9800")
+            if 'Status_Contato' in df_base.columns:
+                st.bar_chart(df_base['Status_Contato'].value_counts(), color="#FF9800")
 
 # ==========================================
 # MÓDULO 2: PIPELINE AMPM
@@ -367,7 +376,7 @@ elif modulo == "📋 Pipeline AmPm":
     cols_k = st.columns(len(colunas_pipeline))
     
     for idx, status in enumerate(colunas_pipeline):
-        df_status = df_base[df_base['Status_Contato'] == status]
+        df_status = df_base[df_base['Status_Contato'] == status] if 'Status_Contato' in df_base.columns else pd.DataFrame()
         
         with cols_k[idx]:
             st.markdown(f"""
@@ -380,9 +389,9 @@ elif modulo == "📋 Pipeline AmPm":
             """, unsafe_allow_html=True)
             
             for _, item in df_status.head(6).iterrows():
-                with st.expander(f"📍 PV {item['PV Abadi']} | {str(item['Razão Social'])[:14]}..."):
-                    st.write(f"**Cidade:** {item['Municipio']}/{item['UF']}")
-                    st.write(f"**Necessidade:** {item['Tipo_Necessidade']}")
+                with st.expander(f"📍 PV {item.get('PV Abadi', '-')} | {str(item.get('Razão Social', ''))[:14]}..."):
+                    st.write(f"**Cidade:** {item.get('Municipio', '-')}/{item.get('UF', '-')}")
+                    st.write(f"**Necessidade:** {item.get('Tipo_Necessidade', '-')}")
                     st.write(f"**Treinandos:** {item.get('Qtd_Funcionarios', 0)} pessoas")
                     st.write(f"**Instrutor:** {item.get('Instrutor_Sugerido', 'Pendente')}")
                     
@@ -390,7 +399,7 @@ elif modulo == "📋 Pipeline AmPm":
                         "Alterar Status:",
                         colunas_pipeline,
                         index=colunas_pipeline.index(status),
-                        key=f"pipe_sel_{item['PV Abadi']}"
+                        key=f"pipe_sel_{item.get('PV Abadi')}"
                     )
                     
                     if mudar_status != status:
@@ -408,22 +417,23 @@ elif modulo == "🔍 PROCV & Filtros Avançados":
         with st.expander("🔎 **Pesquisa Avançada na Base Filtrada**", expanded=True):
             f1, f2 = st.columns(2)
             termo = f1.text_input("🔍 PV, Nome ou Município:", "")
-            f_necessidade = f2.selectbox("🎯 Tipo de Necessidade:", ["Todas"] + sorted([str(x) for x in df_base['Tipo_Necessidade'].dropna().unique()]))
+            f_necessidade = f2.selectbox("🎯 Tipo de Necessidade:", ["Todas"] + sorted([str(x) for x in df_base['Tipo_Necessidade'].dropna().unique()])) if 'Tipo_Necessidade' in df_base.columns else ["Todas"]
             
         df_view = df_base.copy()
         if termo:
             df_view = df_view[
-                df_view['Razão Social'].astype(str).str.contains(termo, case=False, na=False) |
-                df_view['PV Abadi'].astype(str).str.contains(termo, na=False) |
-                df_view['Municipio'].astype(str).str.contains(termo, case=False, na=False)
+                df_view.get('Razão Social', pd.Series()).astype(str).str.contains(termo, case=False, na=False) |
+                df_view.get('PV Abadi', pd.Series()).astype(str).str.contains(termo, na=False) |
+                df_view.get('Municipio', pd.Series()).astype(str).str.contains(termo, case=False, na=False)
             ]
-        if f_necessidade != "Todas":
+        if f_necessidade != "Todas" and 'Tipo_Necessidade' in df_view.columns:
             df_view = df_view[df_view['Tipo_Necessidade'] == f_necessidade]
             
         st.caption("👇 *Clique em uma linha para abrir a Ficha Detalhada PROCV:*")
         
+        cols_mostrar = [c for c in ['PV Abadi', 'Razão Social', 'Municipio', 'UF', 'Status Loja', 'Tipo_Necessidade', 'Status_Contato'] if c in df_view.columns]
         evento = st.dataframe(
-            df_view[['PV Abadi', 'Razão Social', 'Municipio', 'UF', 'Status Loja', 'Tipo_Necessidade', 'Status_Contato']],
+            df_view[cols_mostrar],
             use_container_width=True, hide_index=True, selection_mode="single-row", on_select="rerun"
         )
         
@@ -431,7 +441,7 @@ elif modulo == "🔍 PROCV & Filtros Avançados":
         if linhas:
             p = df_view.iloc[linhas[0]].to_dict()
             st.divider()
-            st.markdown(f"### 📋 Ficha de Detalhes PROCV — **PV {p['PV Abadi']} | {p['Razão Social']}**")
+            st.markdown(f"### 📋 Ficha de Detalhes PROCV — **PV {p.get('PV Abadi', '-')} | {p.get('Razão Social', '-')}**")
             
             k1, k2, k3 = st.columns(3)
             with k1:
@@ -577,14 +587,15 @@ elif modulo == "📍 Calculadora & Otimizador de Custos":
 # ==========================================
 elif modulo == "📞 Call Center & Timeline WhatsApp":
     if not df_base.empty:
-        df_fila_view = df_base[df_base['Tipo_Necessidade'] != 'Rede Ativa (Sem Pendência)'].copy()
+        df_fila_view = df_base[df_base['Tipo_Necessidade'] != 'Rede Ativa (Sem Pendência)'].copy() if 'Tipo_Necessidade' in df_base.columns else df_base.copy()
         
         c_left, c_right = st.columns([1.2, 1.8])
         
         with c_left:
             st.subheader("📋 Fila de Atendimento")
+            cols_call = [c for c in ['PV Abadi', 'Razão Social', 'Municipio', 'UF', 'Status_Contato'] if c in df_fila_view.columns]
             evento_call = st.dataframe(
-                df_fila_view[['PV Abadi', 'Razão Social', 'Municipio', 'UF', 'Status_Contato']],
+                df_fila_view[cols_call],
                 use_container_width=True, hide_index=True, selection_mode="single-row", on_select="rerun"
             )
             selecionado = evento_call.selection.get("rows", [])
@@ -592,10 +603,10 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
         with c_right:
             if selecionado:
                 posto = df_fila_view.iloc[selecionado[0]]
-                pv_alvo = posto['PV Abadi']
+                pv_alvo = posto.get('PV Abadi')
                 tel_limpo = ''.join(filter(str.isdigit, str(posto.get('Telefone_Contato', ''))))
                 
-                st.markdown(f"### 📝 Ficha de Atendimento — **PV {posto['PV Abadi']}**")
+                st.markdown(f"### 📝 Ficha de Atendimento — **PV {posto.get('PV Abadi', '-')}**")
                 
                 st.markdown(f"""
                     <div class="procv-card">
@@ -622,7 +633,7 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                     opcao_wa = st.radio("Selecione o estilo do envio:", ["Link Direto Rápido", "Template Customizado"], horizontal=True)
                     
                     if opcao_wa == "Link Direto Rápido":
-                        msg_final = f"Olá, equipe {posto['Razão Social']}! Aqui é da equipe de Capacitação AmPm. Gostaria de agendar o treinamento da loja."
+                        msg_final = f"Olá, equipe {posto.get('Razão Social', '')}! Aqui é da equipe de Capacitação AmPm. Gostaria de agendar o treinamento da loja."
                     else:
                         tmpl = st.selectbox("Escolha o Modelo de Mensagem:", [
                             "Agendamento de Treinamento",
@@ -632,13 +643,13 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                         ])
                         
                         if tmpl == "Agendamento de Treinamento":
-                            msg_final = f"Olá! Aqui é da Capacitação AmPm. Gostaríamos de confirmar as datas disponíveis para o treinamento na loja {posto['Razão Social']} (PV {posto['PV Abadi']})."
+                            msg_final = f"Olá! Aqui é da Capacitação AmPm. Gostaríamos de confirmar as datas disponíveis para o treinamento na loja {posto.get('Razão Social', '')} (PV {posto.get('PV Abadi', '')})."
                         elif tmpl == "Cobrança / Verificação de Apostilas":
-                            msg_final = f"Olá, equipe {posto['Razão Social']}! Para darmos início ao treinamento, poderiam confirmar se o material de apoio e apostilas já chegaram na loja?"
+                            msg_final = f"Olá, equipe {posto.get('Razão Social', '')}! Para darmos início ao treinamento, poderiam confirmar se o material de apoio e apostilas já chegaram na loja?"
                         elif tmpl == "Lembrete de Treinamento Agendado":
-                            msg_final = f"Olá! Passando para lembrar que o treinamento AmPm da loja {posto['Razão Social']} está agendado para o dia {posto.get('Data_Agendada', 'em breve')}. Contamos com todos!"
+                            msg_final = f"Olá! Passando para lembrar que o treinamento AmPm da loja {posto.get('Razão Social', '')} está agendado para o dia {posto.get('Data_Agendada', 'em breve')}. Contamos com todos!"
                         else:
-                            msg_final = f"Olá! Como foi o treinamento concluído na loja {posto['Razão Social']}? Estamos à disposição para dúvidas ou feedbacks."
+                            msg_final = f"Olá! Como foi o treinamento concluído na loja {posto.get('Razão Social', '')}? Estamos à disposição para dúvidas ou feedbacks."
                     
                     link_wa = f"https://wa.me/55{tel_limpo}?text={msg_final.replace(' ', '%20')}"
                     st.markdown(f"👉 **[Clique aqui para chamar no WhatsApp Direct]({link_wa})**")
@@ -675,12 +686,15 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                         instrutor_escolhido = st.selectbox("👨‍🏫 Instrutor Designado:", lista_instrutores, index=idx_instrutor)
                         
                     with col_f2:
-                        novo_st = st.selectbox(
-                            "🔄 Status do Atendimento:", 
-                            ["A Contatar", "Em Negociação", "Agendado", "Treinamento Realizado", "Recusado"],
-                            index=["A Contatar", "Em Negociação", "Agendado", "Treinamento Realizado", "Recusado"].index(posto.get('Status_Contato', 'A Contatar'))
-                        )
-                        mat_loja = st.selectbox("📦 Possui Material/Apostilas na Loja?", ["Não Informado", "Sim", "Não"], index=["Não Informado", "Sim", "Não"].index(posto.get('Material_Em_Loja', 'Não Informado')))
+                        status_opcoes = ["A Contatar", "Em Negociação", "Agendado", "Treinamento Realizado", "Recusado"]
+                        st_atual = posto.get('Status_Contato', 'A Contatar')
+                        idx_st = status_opcoes.index(st_atual) if st_atual in status_opcoes else 0
+                        novo_st = st.selectbox("🔄 Status do Atendimento:", status_opcoes, index=idx_st)
+                        
+                        mat_opcoes = ["Não Informado", "Sim", "Não"]
+                        mat_atual = posto.get('Material_Em_Loja', 'Não Informado')
+                        idx_mat = mat_opcoes.index(mat_atual) if mat_atual in mat_opcoes else 0
+                        mat_loja = st.selectbox("📦 Possui Material/Apostilas na Loja?", mat_opcoes, index=idx_mat)
                         data_ag = st.date_input("📅 Data Agendada (Calendário):", value=data_inicial, format="DD/MM/YYYY")
                         
                     obs = st.text_area("💬 Observações e Alinhamentos:", value=str(posto.get('Observacoes', '')), height=80)
@@ -719,7 +733,8 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
 elif modulo == "👔 Equipe de Instrutores":
     if not df_instrutores.empty:
         st.subheader("👔 Instrutores Credenciados na Rede")
-        st.dataframe(df_instrutores[['NOME_COMPLETO', 'STATUS', 'TELEFONE', 'EMAIL', 'Cidade', 'UF']], use_container_width=True, hide_index=True)
+        cols_inst = [c for c in ['NOME_COMPLETO', 'STATUS', 'TELEFONE', 'EMAIL', 'Cidade', 'UF'] if c in df_instrutores.columns]
+        st.dataframe(df_instrutores[cols_inst], use_container_width=True, hide_index=True)
 
 # ==========================================
 # MÓDULO 7: RELATÓRIOS & EXPORTAÇÃO
@@ -751,4 +766,3 @@ elif modulo == "📂 Relatórios & Exportação":
             file_name=f"Base_CRM_AmPm_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-
