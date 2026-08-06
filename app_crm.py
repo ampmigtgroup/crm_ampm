@@ -14,6 +14,15 @@ st.set_page_config(
 )
 
 CAMINHO_ARQUIVO = "Base_Unificada_AmPm.xlsx"
+CAMINHO_BACKUP = "Base_Unificada_AmPm.backup.xlsx"
+
+SHEETS_ESPERADAS = [
+    "Rede_de_Lojas",
+    "Fila_CallCenter",
+    "Previsao_Inauguracao",
+    "Instrutores",
+    "Recomendacao_Deslocamento",
+]
 
 # Colunas "editáveis" que vivem na aba Fila_CallCenter.
 # Consolidamos aqui TODOS os campos que o Call Center e o Pipeline escrevem,
@@ -192,26 +201,69 @@ def parse_data_flexivel(valor):
     return None
 
 
-@st.cache_data
-def carregar_bases_do_disco(caminho):
-    """Lê as abas brutas do Excel do disco. Não faz merges nem preenchimentos
-    de valores padrão — isso é feito à parte, para que os dados brutos
-    permaneçam limpos e fiéis ao arquivo de origem (essencial para salvar
-    corretamente de volta)."""
-    if not os.path.exists(caminho):
-        return None
+def _normalizar_nome(nome):
+    """Normaliza nome de aba para comparação tolerante a acentos, espaços
+    extras e maiúsculas/minúsculas (ex.: ' rede_de_lojas ' == 'Rede_de_Lojas')."""
+    import unicodedata
+    nome = str(nome).strip().lower()
+    nome = unicodedata.normalize('NFKD', nome).encode('ascii', 'ignore').decode('ascii')
+    return nome
 
-    xls = pd.ExcelFile(caminho, engine='openpyxl')
-    df_lojas = pd.read_excel(xls, sheet_name='Rede_de_Lojas')
-    df_fila = pd.read_excel(xls, sheet_name='Fila_CallCenter')
-    df_inaug = pd.read_excel(xls, sheet_name='Previsao_Inauguracao')
-    df_instrutores = pd.read_excel(xls, sheet_name='Instrutores')
-    df_rec = pd.read_excel(xls, sheet_name='Recomendacao_Deslocamento')
 
-    df_lojas['PV Abadi'] = pd.to_numeric(df_lojas['PV Abadi'], errors='coerce')
-    df_fila['PV_Abadi'] = pd.to_numeric(df_fila['PV_Abadi'], errors='coerce')
-    df_inaug['PV ABADI'] = pd.to_numeric(df_inaug['PV ABADI'], errors='coerce')
-    df_rec['PV_ABADI'] = pd.to_numeric(df_rec['PV_ABADI'], errors='coerce')
+def _mapear_abas(xls):
+    """Casa cada aba esperada com a aba real do arquivo (tolerando pequenas
+    diferenças de grafia). Levanta ValueError descritivo se alguma aba
+    obrigatória não for encontrada, listando o que foi encontrado no arquivo
+    para facilitar o diagnóstico."""
+    abas_reais = xls.sheet_names
+    normalizado_para_real = {_normalizar_nome(a): a for a in abas_reais}
+
+    mapa = {}
+    faltando = []
+    for esperada in SHEETS_ESPERADAS:
+        chave = _normalizar_nome(esperada)
+        if chave in normalizado_para_real:
+            mapa[esperada] = normalizado_para_real[chave]
+        else:
+            faltando.append(esperada)
+
+    if faltando:
+        raise ValueError(
+            "As seguintes abas obrigatórias não foram encontradas no arquivo: "
+            f"{', '.join(faltando)}. Abas presentes no arquivo enviado: "
+            f"{', '.join(abas_reais) if abas_reais else '(nenhuma)'}."
+        )
+    return mapa
+
+
+def _processar_excelfile(xls):
+    """Lê e processa as 5 abas obrigatórias a partir de um pd.ExcelFile já
+    aberto (seja de um caminho em disco ou de bytes em memória). Lança
+    ValueError com mensagem clara se algo estiver fora do esperado — nunca
+    deixa uma exceção genérica e opaca subir até a interface."""
+    mapa = _mapear_abas(xls)
+
+    try:
+        df_lojas = pd.read_excel(xls, sheet_name=mapa['Rede_de_Lojas'])
+        df_fila = pd.read_excel(xls, sheet_name=mapa['Fila_CallCenter'])
+        df_inaug = pd.read_excel(xls, sheet_name=mapa['Previsao_Inauguracao'])
+        df_instrutores = pd.read_excel(xls, sheet_name=mapa['Instrutores'])
+        df_rec = pd.read_excel(xls, sheet_name=mapa['Recomendacao_Deslocamento'])
+    except Exception as e:
+        raise ValueError(f"Erro ao ler o conteúdo das abas do arquivo: {e}")
+
+    for coluna, df, nome_df in [
+        ('PV Abadi', df_lojas, 'Rede_de_Lojas'),
+        ('PV_Abadi', df_fila, 'Fila_CallCenter'),
+        ('PV ABADI', df_inaug, 'Previsao_Inauguracao'),
+        ('PV_ABADI', df_rec, 'Recomendacao_Deslocamento'),
+    ]:
+        if coluna not in df.columns:
+            raise ValueError(
+                f"A aba '{nome_df}' não possui a coluna obrigatória '{coluna}'. "
+                f"Colunas encontradas: {', '.join(map(str, df.columns))}."
+            )
+        df[coluna] = pd.to_numeric(df[coluna], errors='coerce')
 
     # Garante que todas as colunas editáveis existam na aba de fila,
     # mesmo que o arquivo de origem ainda não as tenha.
@@ -226,6 +278,33 @@ def carregar_bases_do_disco(caminho):
         "instrutores": df_instrutores,
         "rec": df_rec,
     }
+
+
+def validar_bytes_excel(conteudo_bytes):
+    """Valida (sem tocar no disco) se os bytes de um .xlsx enviado têm a
+    estrutura esperada. Retorna (bases_dict, None) em caso de sucesso, ou
+    (None, mensagem_de_erro) em caso de falha — usado para checar o upload
+    ANTES de sobrescrever o arquivo em produção."""
+    try:
+        xls = pd.ExcelFile(io.BytesIO(conteudo_bytes), engine='openpyxl')
+        bases = _processar_excelfile(xls)
+        return bases, None
+    except Exception as e:
+        return None, str(e)
+
+
+@st.cache_data
+def carregar_bases_do_disco(caminho, assinatura=None):
+    """Lê as abas brutas do Excel do disco. Não faz merges nem preenchimentos
+    de valores padrão além dos mínimos — isso é feito à parte, para que os
+    dados brutos permaneçam limpos e fiéis ao arquivo de origem (essencial
+    para salvar corretamente de volta). O parâmetro `assinatura` (ex.: data
+    de modificação do arquivo) força o Streamlit a invalidar o cache quando
+    o arquivo muda, mesmo com o mesmo caminho."""
+    if not os.path.exists(caminho):
+        return None
+    xls = pd.ExcelFile(caminho, engine='openpyxl')
+    return _processar_excelfile(xls)
 
 
 def construir_base_unificada(df_lojas, df_fila, df_inaug):
@@ -300,22 +379,44 @@ def atualizar_fila(pv_abadi, campos: dict):
     salvar_fila_no_disco()
 
 
+def _bases_vazias():
+    return {
+        "lojas": pd.DataFrame(),
+        "fila": pd.DataFrame(columns=COLUNAS_FILA),
+        "inaug": pd.DataFrame(),
+        "instrutores": pd.DataFrame(),
+        "rec": pd.DataFrame(),
+    }
+
+
 def inicializar_estado():
     if 'bases' in st.session_state:
         return
-    bases = carregar_bases_do_disco(CAMINHO_ARQUIVO)
-    if bases is None:
-        bases = {
-            "lojas": pd.DataFrame(),
-            "fila": pd.DataFrame(columns=COLUNAS_FILA),
-            "inaug": pd.DataFrame(),
-            "instrutores": pd.DataFrame(),
-            "rec": pd.DataFrame(),
-        }
-    st.session_state['bases'] = bases
+    st.session_state.setdefault('erro_carga', None)
+    if not os.path.exists(CAMINHO_ARQUIVO):
+        st.session_state['bases'] = _bases_vazias()
+        return
+    try:
+        assinatura = os.path.getmtime(CAMINHO_ARQUIVO)
+        bases = carregar_bases_do_disco(CAMINHO_ARQUIVO, assinatura)
+        st.session_state['bases'] = bases if bases is not None else _bases_vazias()
+        st.session_state['erro_carga'] = None
+    except Exception as e:
+        # Nunca deixa uma falha de leitura derrubar o app inteiro: guarda o
+        # erro para mostrar na tela e segue com bases vazias, permitindo que
+        # o usuário faça um novo upload válido ou restaure o backup.
+        st.session_state['erro_carga'] = str(e)
+        st.session_state['bases'] = _bases_vazias()
 
 
 inicializar_estado()
+
+if st.session_state.get('erro_carga'):
+    st.error(
+        "⚠️ Não foi possível carregar `Base_Unificada_AmPm.xlsx`:\n\n"
+        f"{st.session_state['erro_carga']}\n\n"
+        "Envie um arquivo válido na barra lateral, ou restaure o último backup se houver um disponível."
+    )
 
 # --- SIDEBAR DE NAVEGAÇÃO, FILTROS GLOBAIS E UPLOAD ---
 with st.sidebar:
@@ -357,12 +458,24 @@ with st.sidebar:
     if uploaded_file is not None:
         try:
             if uploaded_file.name.endswith('.xlsx'):
-                with open(CAMINHO_ARQUIVO, "wb") as f:
-                    f.write(uploaded_file.getbuffer())
-                st.cache_data.clear()
-                del st.session_state['bases']
-                inicializar_estado()
-                st.success("✅ Banco de dados (arquivo completo) atualizado!")
+                conteudo = uploaded_file.getbuffer().tobytes()
+                # Valida a estrutura ANTES de tocar no arquivo em produção —
+                # isto evita sobrescrever uma base boa com um arquivo inválido
+                # e deixar o app quebrado até um novo upload.
+                bases_validadas, erro = validar_bytes_excel(conteudo)
+                if erro:
+                    st.error(f"❌ Arquivo rejeitado — a base atual foi mantida intacta.\n\n{erro}")
+                else:
+                    if os.path.exists(CAMINHO_ARQUIVO):
+                        with open(CAMINHO_ARQUIVO, "rb") as f_atual, open(CAMINHO_BACKUP, "wb") as f_bak:
+                            f_bak.write(f_atual.read())
+                    with open(CAMINHO_ARQUIVO, "wb") as f:
+                        f.write(conteudo)
+                    st.cache_data.clear()
+                    st.session_state['bases'] = bases_validadas
+                    st.session_state['erro_carga'] = None
+                    st.success("✅ Banco de dados (arquivo completo) atualizado! Backup do arquivo anterior guardado.")
+                    st.rerun()
             elif uploaded_file.name.endswith('.csv'):
                 df_csv = pd.read_csv(uploaded_file)
                 chave_map = {
@@ -380,9 +493,23 @@ with st.sidebar:
                             st.session_state['bases']['fila'][col] = pd.NA
                     salvar_fila_no_disco()
                 st.success(f"✅ Aba '{aba_destino_csv}' atualizada a partir do CSV!")
-            st.rerun()
+                st.rerun()
         except Exception as e:
             st.error(f"❌ Erro ao processar o arquivo: {e}")
+
+    if os.path.exists(CAMINHO_BACKUP):
+        if st.button("↩️ Restaurar último backup do Excel"):
+            try:
+                with open(CAMINHO_BACKUP, "rb") as f_bak, open(CAMINHO_ARQUIVO, "wb") as f_atual:
+                    f_atual.write(f_bak.read())
+                st.cache_data.clear()
+                if 'bases' in st.session_state:
+                    del st.session_state['bases']
+                inicializar_estado()
+                st.success("✅ Backup restaurado com sucesso!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"❌ Erro ao restaurar backup: {e}")
 
     st.divider()
 
@@ -890,3 +1017,4 @@ elif modulo == "📂 Relatórios & Exportação":
             file_name=f"Base_CRM_AmPm_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
