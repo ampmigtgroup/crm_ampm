@@ -4,6 +4,8 @@ import os
 from datetime import datetime, date
 import pydeck as pdk
 import io
+import time
+import requests
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(
@@ -817,6 +819,73 @@ def salvar_fila_no_disco():
         st.toast(f"⚠️ Erro ao salvar arquivo: {e}", icon="⚠️")
 
 
+def salvar_lojas_no_disco():
+    """Grava a aba Rede_de_Lojas (e SOMENTE ela) de volta no Excel,
+    preservando as demais abas — usada quando novas lojas são incorporadas
+    a partir de uma planilha gerencial externa."""
+    if not os.path.exists(CAMINHO_ARQUIVO):
+        st.toast("⚠️ Arquivo local não encontrado — alterações mantidas apenas na sessão.", icon="⚠️")
+        return
+    try:
+        df_lojas = st.session_state['bases']['lojas']
+        colunas_saida = list(ENTIDADES['lojas']['colunas'].keys())
+        colunas_saida = [c for c in colunas_saida if c in df_lojas.columns]
+        with pd.ExcelWriter(CAMINHO_ARQUIVO, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
+            df_lojas[colunas_saida].to_excel(writer, sheet_name='Rede_de_Lojas', index=False)
+        st.toast("💾 Rede de Lojas salva no arquivo Excel local com sucesso!", icon="✅")
+    except Exception as e:
+        st.toast(f"⚠️ Erro ao salvar arquivo: {e}", icon="⚠️")
+
+
+def buscar_telefone_google_places(endereco_completo, nome_loja, api_key, timeout=8):
+    """Consulta a API do Google Places (Find Place + Place Details) para
+    tentar localizar o telefone comercial de um posto a partir do seu
+    endereço. Retorna (telefone_ou_None, mensagem_status)."""
+    consulta = f"{nome_loja}, {endereco_completo}" if nome_loja else endereco_completo
+    try:
+        resp_busca = requests.get(
+            "https://maps.googleapis.com/maps/api/place/findplacefromtext/json",
+            params={
+                "input": consulta,
+                "inputtype": "textquery",
+                "fields": "place_id",
+                "language": "pt-BR",
+                "key": api_key,
+            },
+            timeout=timeout,
+        )
+        dados_busca = resp_busca.json()
+        status = dados_busca.get("status")
+        if status != "OK" or not dados_busca.get("candidates"):
+            return None, status or "SEM_RESULTADO"
+
+        place_id = dados_busca["candidates"][0]["place_id"]
+
+        resp_detalhes = requests.get(
+            "https://maps.googleapis.com/maps/api/place/details/json",
+            params={
+                "place_id": place_id,
+                "fields": "formatted_phone_number,international_phone_number",
+                "language": "pt-BR",
+                "key": api_key,
+            },
+            timeout=timeout,
+        )
+        dados_detalhes = resp_detalhes.json()
+        if dados_detalhes.get("status") != "OK":
+            return None, dados_detalhes.get("status", "ERRO_DETALHES")
+
+        resultado = dados_detalhes.get("result", {})
+        telefone = resultado.get("formatted_phone_number") or resultado.get("international_phone_number")
+        if telefone:
+            return telefone, "OK"
+        return None, "SEM_TELEFONE_CADASTRADO"
+    except requests.exceptions.RequestException as e:
+        return None, f"ERRO_REDE: {e}"
+    except Exception as e:
+        return None, f"ERRO: {e}"
+
+
 def atualizar_fila(pv_abadi, campos: dict):
     """Atualiza (ou cria, se ainda não existir) a linha correspondente ao PV
     na aba Fila_CallCenter em session_state, aplica os campos informados e
@@ -904,6 +973,7 @@ with st.sidebar:
             "📍 Calculadora & Otimizador de Custos",
             "📞 Call Center & Timeline WhatsApp",
             "👔 Equipe de Instrutores",
+            "📇 Enriquecimento de Rede",
             "📂 Relatórios & Exportação"
         ]
     )
@@ -1553,7 +1623,157 @@ elif modulo == "👔 Equipe de Instrutores":
         st.info("📭 Nenhum instrutor carregado ainda.")
 
 # ==========================================
-# MÓDULO 7: RELATÓRIOS & EXPORTAÇÃO
+# MÓDULO 7: ENRIQUECIMENTO DE REDE (GERENCIAL + TELEFONES)
+# ==========================================
+elif modulo == "📇 Enriquecimento de Rede":
+    render_section_header("📇", "Enriquecimento de Rede", "Traga lojas novas de uma planilha gerencial e busque telefones automaticamente")
+
+    aba1, aba2 = st.tabs(["🏪 Novas Lojas (Planilha Gerencial)", "☎️ Busca de Telefones (Google Places)"])
+
+    # --------------------------------------------------
+    # ABA 1 — Comparar planilha gerencial e trazer lojas novas
+    # --------------------------------------------------
+    with aba1:
+        st.markdown(
+            "Envie uma planilha gerencial (qualquer nome de aba/coluna — o sistema reconhece pelo conteúdo). "
+            "O CRM compara pelo **PV Abadi** e mostra quais lojas existem nela mas ainda não estão na Rede de Lojas do CRM."
+        )
+        arquivo_gerencial = st.file_uploader(
+            "Planilha gerencial (.xlsx ou .csv):", type=["xlsx", "csv"], key="upload_gerencial"
+        )
+
+        if arquivo_gerencial is not None:
+            try:
+                if arquivo_gerencial.name.endswith(".xlsx"):
+                    xls_ger = pd.ExcelFile(arquivo_gerencial, engine="openpyxl")
+                    bases_ger, relatorio_ger = detectar_entidades_no_workbook(xls_ger)
+                    df_ger_lojas = bases_ger.get("lojas", pd.DataFrame())
+                else:
+                    df_ger_bruto = pd.read_csv(arquivo_gerencial)
+                    rename_map, canonicas, ignoradas = _mapear_colunas_compativeis(df_ger_bruto, ENTIDADES["lojas"])
+                    df_ger_lojas = df_ger_bruto.rename(columns=rename_map)
+                    colunas_presentes = [c for c in ENTIDADES["lojas"]["colunas"].keys() if c in df_ger_lojas.columns]
+                    df_ger_lojas = df_ger_lojas[colunas_presentes].copy()
+
+                if df_ger_lojas.empty or "PV Abadi" not in df_ger_lojas.columns:
+                    st.error("❌ Não foi possível reconhecer dados de lojas nessa planilha (faltou identificar a coluna de PV Abadi).")
+                else:
+                    df_ger_lojas["PV Abadi"] = pd.to_numeric(df_ger_lojas["PV Abadi"], errors="coerce")
+                    df_lojas_atual = st.session_state['bases']['lojas']
+                    pvs_atuais = set(df_lojas_atual["PV Abadi"].dropna().tolist()) if "PV Abadi" in df_lojas_atual.columns else set()
+
+                    df_novas = df_ger_lojas[~df_ger_lojas["PV Abadi"].isin(pvs_atuais) & df_ger_lojas["PV Abadi"].notna()].copy()
+                    df_novas = df_novas.drop_duplicates(subset="PV Abadi")
+
+                    st.markdown(f"**{len(df_ger_lojas)}** lojas na planilha enviada · **{len(df_novas)}** ainda não existem na base atual do CRM.")
+
+                    if df_novas.empty:
+                        st.success("✅ Nenhuma loja nova encontrada — a base do CRM já está alinhada com essa planilha.")
+                    else:
+                        cols_preview = [c for c in ["PV Abadi", "Razão Social", "Municipio", "UF", "Status Loja"] if c in df_novas.columns]
+                        st.dataframe(df_novas[cols_preview], use_container_width=True, hide_index=True, height=280)
+
+                        if st.button(f"➕ Adicionar essas {len(df_novas)} lojas à Rede de Lojas do CRM"):
+                            colunas_lojas = list(ENTIDADES["lojas"]["colunas"].keys())
+                            for c in colunas_lojas:
+                                if c not in df_lojas_atual.columns:
+                                    df_lojas_atual[c] = pd.NA
+                                if c not in df_novas.columns:
+                                    df_novas[c] = pd.NA
+                            df_lojas_atualizada = pd.concat(
+                                [df_lojas_atual, df_novas[colunas_lojas]], ignore_index=True
+                            )
+                            st.session_state['bases']['lojas'] = df_lojas_atualizada
+                            salvar_lojas_no_disco()
+                            st.success(f"✅ {len(df_novas)} lojas adicionadas e salvas na base do CRM!")
+                            st.rerun()
+            except Exception as e:
+                st.error(f"❌ Erro ao processar a planilha gerencial: {e}")
+
+    # --------------------------------------------------
+    # ABA 2 — Busca automática de telefones via Google Places
+    # --------------------------------------------------
+    with aba2:
+        try:
+            api_key = st.secrets.get("GOOGLE_PLACES_API_KEY")
+        except Exception:
+            api_key = None
+
+        if not api_key:
+            st.warning("🔑 Nenhuma chave de API do Google Places configurada.")
+            with st.expander("📖 Como configurar (leva 5 minutos)", expanded=True):
+                st.markdown("""
+1. Acesse o [Google Cloud Console](https://console.cloud.google.com/) e crie (ou selecione) um projeto.
+2. No menu, vá em **APIs e Serviços → Biblioteca** e ative a **Places API**.
+3. Em **APIs e Serviços → Credenciais**, clique em **Criar credenciais → Chave de API**. Copie a chave gerada.
+4. No [Streamlit Cloud](https://share.streamlit.io/), abra seu app → **⋮ (menu) → Settings → Secrets** e adicione:
+   ```
+   GOOGLE_PLACES_API_KEY = "sua-chave-aqui"
+   ```
+5. Salve — o app reinicia sozinho e esta aba já habilita a busca automaticamente.
+                """)
+        else:
+            df_lojas_atual = st.session_state['bases']['lojas']
+            df_fila_atual = st.session_state['bases']['fila']
+
+            if df_lojas_atual.empty:
+                st.info("📭 Nenhuma loja carregada na base do CRM ainda.")
+            else:
+                telefones_atuais = df_fila_atual.set_index('PV_Abadi')['Telefone_Contato'] if 'PV_Abadi' in df_fila_atual.columns else pd.Series(dtype=object)
+
+                def _tem_telefone(pv):
+                    tel = telefones_atuais.get(pv) if pv in telefones_atuais.index else None
+                    return pd.notna(tel) and str(tel).strip() not in ("", "nan")
+
+                df_lojas_atual['_tem_telefone'] = df_lojas_atual['PV Abadi'].apply(_tem_telefone)
+                pendentes = df_lojas_atual[~df_lojas_atual['_tem_telefone']].copy()
+
+                c1, c2 = st.columns(2)
+                c1.metric("🏪 Total de lojas", len(df_lojas_atual))
+                c2.metric("☎️ Sem telefone cadastrado", len(pendentes))
+
+                if filtro_uf != "Todas" and 'UF' in pendentes.columns:
+                    pendentes = pendentes[pendentes['UF'] == filtro_uf]
+                    st.caption(f"Filtro de UF da barra lateral aplicado: {len(pendentes)} lojas nessa seleção.")
+
+                tamanho_lote = st.slider(
+                    "Quantas lojas buscar neste lote:", min_value=5, max_value=100, value=25, step=5,
+                    help="Buscas em lote evitam travar o app com milhares de chamadas de uma vez. Clique novamente para continuar de onde parou."
+                )
+
+                if st.button(f"🔍 Buscar telefone das próximas {tamanho_lote} lojas pendentes"):
+                    lote = pendentes.head(tamanho_lote)
+                    barra = st.progress(0, text="Iniciando busca...")
+                    sucesso, falha = 0, 0
+                    detalhes_falha = []
+
+                    for i, (_, loja) in enumerate(lote.iterrows()):
+                        endereco = ", ".join([
+                            str(loja.get(c, "")) for c in ["Endereço", "Municipio", "UF"]
+                            if pd.notna(loja.get(c)) and str(loja.get(c)).strip()
+                        ])
+                        nome = str(loja.get("Razão Social", "") or "")
+                        telefone, status = buscar_telefone_google_places(endereco, nome, api_key)
+
+                        if telefone:
+                            atualizar_fila(loja['PV Abadi'], {'Telefone_Contato': telefone})
+                            sucesso += 1
+                        else:
+                            falha += 1
+                            detalhes_falha.append(f"PV {loja.get('PV Abadi')} · {nome}: {status}")
+
+                        barra.progress((i + 1) / len(lote), text=f"Processando {i + 1}/{len(lote)}...")
+                        time.sleep(0.15)  # evita estourar limite de requisições por segundo da API
+
+                    barra.empty()
+                    st.success(f"✅ Lote concluído: {sucesso} telefones encontrados, {falha} sem resultado.")
+                    if detalhes_falha:
+                        with st.expander(f"Ver detalhes das {falha} lojas sem telefone encontrado"):
+                            st.write("\n".join(detalhes_falha[:200]))
+                    st.rerun()
+
+# ==========================================
+# MÓDULO 8: RELATÓRIOS & EXPORTAÇÃO
 # ==========================================
 elif modulo == "📂 Relatórios & Exportação":
     render_section_header("📂", "Relatórios & Exportação", "Baixe os dados operacionais atualizados em tempo real")
