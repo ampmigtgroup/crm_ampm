@@ -6,6 +6,7 @@ import pydeck as pdk
 import io
 import time
 import requests
+import json
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(
@@ -430,6 +431,172 @@ st.markdown("""
     ::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); }
     </style>
 """, unsafe_allow_html=True)
+
+
+# ============================================================
+# AUTENTICAÇÃO (LOGIN + AUTOCADASTRO) — bloqueia o app até o login
+# ============================================================
+import streamlit_authenticator as stauth
+
+CAMINHO_USUARIOS = "usuarios_ampm.json"
+
+
+def _secrets_para_dict(obj):
+    """Converte recursivamente o objeto de Secrets do Streamlit (que não é
+    um dicionário comum) em um dicionário Python normal e mutável. Isso é
+    necessário porque a biblioteca de login precisa poder alterar essa
+    estrutura internamente (para guardar as senhas já criptografadas)."""
+    if hasattr(obj, "items"):
+        return {chave: _secrets_para_dict(valor) for chave, valor in obj.items()}
+    return obj
+
+
+def carregar_usuarios_arquivo():
+    """Carrega as contas criadas por autocadastro, salvas em disco. Contas
+    vindas dos Secrets (se existirem) sempre têm prioridade sobre as do
+    arquivo em caso de mesmo usuário — garante que uma conta "mestra"
+    configurada pelo administrador nunca fique inacessível."""
+    if os.path.exists(CAMINHO_USUARIOS):
+        try:
+            with open(CAMINHO_USUARIOS, "r", encoding="utf-8") as f:
+                dados = json.load(f)
+            if isinstance(dados, dict) and "usernames" in dados:
+                return dados
+        except Exception:
+            pass
+    return {"usernames": {}}
+
+
+def salvar_usuarios_arquivo(credenciais_completas):
+    """Persiste no disco apenas as contas autocadastradas (não grava as que
+    vieram dos Secrets, para não duplicar a fonte da verdade delas)."""
+    try:
+        secrets_usernames = set()
+        try:
+            secrets_usernames = set(_secrets_para_dict(st.secrets["credentials"]).get("usernames", {}).keys())
+        except Exception:
+            pass
+        usernames_para_salvar = {
+            usuario: dados for usuario, dados in credenciais_completas.get("usernames", {}).items()
+            if usuario not in secrets_usernames
+        }
+        with open(CAMINHO_USUARIOS, "w", encoding="utf-8") as f:
+            json.dump({"usernames": usernames_para_salvar}, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        st.toast(f"⚠️ Erro ao salvar cadastro: {e}", icon="⚠️")
+
+
+def _tela_marca_login(subtitulo):
+    st.markdown(f"""
+        <div style="display:flex; justify-content:center; margin: 40px 0 24px 0;">
+            <div style="display:flex; align-items:center; gap:14px; background:var(--bg-surface);
+                        border:1px solid var(--border-subtle); border-radius:var(--radius-lg);
+                        padding:18px 28px; box-shadow:var(--shadow-md);">
+                <div class="logo-chip" style="width:46px; height:46px; font-size:1.4rem;">⛽</div>
+                <div>
+                    <div style="font-weight:800; font-size:1.35rem; color:var(--text-primary);">CRM AmPm</div>
+                    <div style="font-size:0.82rem; color:var(--text-tertiary);">{subtitulo}</div>
+                </div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+
+def exigir_login():
+    """Bloqueia o acesso ao restante do app até o login. Cada pessoa pode
+    criar a própria conta (aba "Criar conta"); as contas ficam salvas em
+    disco. Opcionalmente, uma conta "mestra" pode ser fixada nos Secrets do
+    Streamlit Cloud como garantia de acesso administrativo."""
+    try:
+        cookie_key = st.secrets["COOKIE_KEY"]
+    except Exception:
+        _tela_marca_login("Configuração de acesso pendente")
+        st.warning("🔒 O login ainda não foi configurado neste app.")
+        st.markdown(
+            "Configure a chave `COOKIE_KEY` em **⋮ → Settings → Secrets** no Streamlit Cloud "
+            "para habilitar o acesso (veja o guia que te enviei)."
+        )
+        st.stop()
+
+    credenciais_arquivo = carregar_usuarios_arquivo()
+    try:
+        credenciais_secrets = _secrets_para_dict(st.secrets["credentials"])
+    except Exception:
+        credenciais_secrets = {"usernames": {}}
+
+    credenciais = {
+        "usernames": {
+            **credenciais_arquivo.get("usernames", {}),
+            **credenciais_secrets.get("usernames", {}),  # Secrets sempre prevalece
+        }
+    }
+
+    try:
+        dominios_permitidos_raw = st.secrets.get("ALLOWED_EMAIL_DOMAINS", "")
+    except Exception:
+        dominios_permitidos_raw = ""
+    dominios_permitidos = [d.strip() for d in str(dominios_permitidos_raw).split(",") if d.strip()] or None
+
+    autenticador = stauth.Authenticate(
+        credenciais,
+        cookie_name="crm_ampm_auth",
+        cookie_key=cookie_key,
+        cookie_expiry_days=7,
+        auto_hash=True,
+    )
+
+    if not st.session_state.get("authentication_status"):
+        _tela_marca_login("Acesso restrito — faça login ou crie sua conta")
+        aba_login, aba_cadastro = st.tabs(["🔑 Entrar", "🆕 Criar conta"])
+
+        with aba_login:
+            autenticador.login(location="main", key="LoginPrincipal")
+
+        with aba_cadastro:
+            if dominios_permitidos:
+                st.caption(f"✉️ Cadastro liberado apenas para e-mails: {', '.join(dominios_permitidos)}")
+            try:
+                email_novo, usuario_novo, nome_novo = autenticador.register_user(
+                    location="main",
+                    domains=dominios_permitidos,
+                    password_hint=False,
+                    fields={
+                        "Form name": "Criar minha conta",
+                        "First name": "Nome",
+                        "Last name": "Sobrenome",
+                        "Email": "E-mail",
+                        "Username": "Usuário (para login)",
+                        "Password": "Senha",
+                        "Repeat password": "Repita a senha",
+                        "Register": "Criar conta",
+                    },
+                    captcha=False,
+                )
+                if email_novo:
+                    salvar_usuarios_arquivo(autenticador.authentication_controller.authentication_model.credentials)
+                    st.success(f"✅ Conta criada para **{nome_novo}**! Vá até a aba '🔑 Entrar' e faça login.")
+            except Exception as e:
+                msg = str(e)
+                if "domain" in msg.lower():
+                    st.error(f"❌ Esse e-mail não pertence a um domínio autorizado a se cadastrar ({', '.join(dominios_permitidos or [])}).")
+                elif "already taken" in msg.lower() or "already exists" in msg.lower():
+                    st.error("❌ Esse usuário ou e-mail já está cadastrado. Tente fazer login, ou use outro usuário.")
+                elif "match" in msg.lower():
+                    st.error("❌ As senhas digitadas não coincidem.")
+                else:
+                    st.error(f"❌ Não foi possível criar a conta: {msg}")
+
+    status_login = st.session_state.get("authentication_status")
+    if status_login is False:
+        st.error("❌ Usuário ou senha incorretos.")
+        st.stop()
+    elif status_login is None:
+        st.stop()
+
+    return autenticador
+
+
+AUTENTICADOR = exigir_login()
 
 
 # ============ HELPERS DE APRESENTAÇÃO ============
@@ -962,6 +1129,14 @@ with st.sidebar:
             </div>
         </div>
     """, unsafe_allow_html=True)
+
+    st.markdown(f"""
+        <div class="sidebar-metric" style="display:flex; align-items:center; justify-content:space-between;">
+            <span>👤 <b>{st.session_state.get('name', 'Usuário')}</b></span>
+        </div>
+    """, unsafe_allow_html=True)
+    AUTENTICADOR.logout("🚪 Sair", "sidebar")
+
     st.divider()
 
     modulo = st.radio(
