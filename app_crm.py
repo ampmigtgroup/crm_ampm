@@ -28,6 +28,7 @@ COLUNAS_FILA = [
     "Dias_desde_Ultimo_Treinamento", "Instrutor_Sugerido", "Semana_Sugerida",
     "Telefone_Contato", "Status_Contato", "Data_do_Contato", "Observacoes",
     "Nome_Contato", "Qtd_Funcionarios", "Material_Em_Loja", "Data_Agendada",
+    "Tipo_Pagamento", "Data_Pagamento", "Data_Liberacao_Treinamento",
 ]
 
 # --- ESTILIZAÇÃO CSS CUSTOMIZADA ---
@@ -870,10 +871,11 @@ def render_section_header(icone, titulo, subtitulo=""):
 
 STATUS_BADGE_MAP = {
     "A Contatar": ("badge-neutral", "⏳"),
+    "Recusado": ("badge-danger", "🚫"),
+    "Aguardando Pagamento": ("badge-warning", "💳"),
     "Em Negociação": ("badge-warning", "🤝"),
     "Agendado": ("badge-info-blue", "📅"),
     "Treinamento Realizado": ("badge-success", "✅"),
-    "Recusado": ("badge-danger", "🚫"),
 }
 
 def badge_status_html(status):
@@ -883,10 +885,11 @@ def badge_status_html(status):
 def status_css_class(status):
     mapa = {
         "A Contatar": "col-a-contatar",
+        "Recusado": "col-recusado",
+        "Aguardando Pagamento": "col-em-negociacao",
         "Em Negociação": "col-em-negociacao",
         "Agendado": "col-agendado",
         "Treinamento Realizado": "col-treinamento-realizado",
-        "Recusado": "col-recusado",
     }
     return mapa.get(status, "")
 
@@ -1496,6 +1499,25 @@ def buscar_telefone_google_places(endereco_completo, nome_loja, api_key, timeout
     except Exception as e:
         return None, f"ERRO: {e}"
 
+def calcular_liberacao_treinamento(data_pagamento):
+    """Calcula a data mínima para liberar o treinamento: pagamento + 7 dias."""
+    data = parse_data_flexivel(data_pagamento)
+    if data is None:
+        return None
+    return data + pd.Timedelta(days=7).date()
+
+
+def _data_exibicao_segura(valor):
+    data = parse_data_flexivel(valor)
+    return data.strftime("%d/%m/%Y") if data else ""
+
+
+def treinamento_liberado(data_pagamento):
+    """True somente a partir de 7 dias após o pagamento informado."""
+    data_liberacao = calcular_liberacao_treinamento(data_pagamento)
+    return bool(data_liberacao and date.today() >= data_liberacao)
+
+
 def atualizar_fila(pv_abadi, campos: dict):
     df_fila = st.session_state['bases']['fila']
     pv_abadi = float(pv_abadi) if pd.notna(pv_abadi) else pv_abadi
@@ -1854,12 +1876,29 @@ elif modulo == "📊 Dashboard Executivo":
                 st.bar_chart(df_base['Status_Contato'].value_counts(), color="#3B9EFF")
 
 elif modulo == "📋 Pipeline AmPm":
-    render_section_header("📋", "Pipeline AmPm", "Fluxo operacional de treinamentos")
-    colunas_pipeline = ["A Contatar", "Em Negociação", "Agendado", "Treinamento Realizado", "Recusado"]
+    render_section_header(
+        "📋",
+        "Pipeline AmPm",
+        "Fluxo operacional de treinamentos e liberação financeira"
+    )
+
+    # Ordem operacional solicitada: Recusado imediatamente ao lado de A Contatar.
+    colunas_pipeline = [
+        "A Contatar",
+        "Recusado",
+        "Aguardando Pagamento",
+        "Em Negociação",
+        "Agendado",
+        "Treinamento Realizado",
+    ]
     cols_k = st.columns(len(colunas_pipeline))
 
     for idx, status in enumerate(colunas_pipeline):
-        df_status = df_base[df_base['Status_Contato'] == status] if 'Status_Contato' in df_base.columns else pd.DataFrame()
+        df_status = (
+            df_base[df_base["Status_Contato"] == status]
+            if "Status_Contato" in df_base.columns
+            else pd.DataFrame()
+        )
         _, emoji_status = STATUS_BADGE_MAP.get(status, ("badge-neutral", "•"))
 
         with cols_k[idx]:
@@ -1872,19 +1911,148 @@ elif modulo == "📋 Pipeline AmPm":
                 </div>
             """, unsafe_allow_html=True)
 
-            for _, item in df_status.head(6).iterrows():
-                with st.expander(f"📍 PV {item.get('PV Abadi', '-')} | {str(item.get('Razão Social', ''))[:12]}..."):
-                    st.write(f"**Cidade:** {item.get('Municipio', '-')}/{item.get('UF', '-')}")
-                    st.write(f"**Necessidade:** {item.get('Tipo_Necessidade', '-')}")
-                    mudar_status = st.selectbox(
-                        "Alterar Status:", colunas_pipeline,
-                        index=colunas_pipeline.index(status),
-                        key=f"pipe_sel_{item.get('PV Abadi')}"
+            for _, item in df_status.head(10).iterrows():
+                pv = item.get("PV Abadi")
+                if pd.isna(pv):
+                    pv = item.get("PV_Abadi", "-")
+
+                razao = str(item.get("Razão Social", "") or item.get("Razao_Social", ""))
+                with st.expander(
+                    f"📍 PV {pv} | {razao[:18]}{'...' if len(razao) > 18 else ''}"
+                ):
+                    st.write(
+                        f"**Cidade:** {item.get('Municipio', '-')}/"
+                        f"{item.get('UF', '-')}"
                     )
+                    st.write(
+                        f"**Necessidade:** {item.get('Tipo_Necessidade', '-')}"
+                    )
+
+                    # -------------------------------
+                    # CONTROLE FINANCEIRO
+                    # -------------------------------
+                    if status == "Aguardando Pagamento":
+                        st.markdown("#### 💳 Liberação do treinamento")
+
+                        tipo_atual = str(
+                            item.get("Tipo_Pagamento", "") or ""
+                        ).strip()
+
+                        opcoes_pagamento = [
+                            "Primeira parcela",
+                            "Pagamento integral",
+                        ]
+                        tipo_idx = (
+                            opcoes_pagamento.index(tipo_atual)
+                            if tipo_atual in opcoes_pagamento else 0
+                        )
+
+                        tipo_pagamento = st.selectbox(
+                            "Pagamento considerado para a contagem:",
+                            opcoes_pagamento,
+                            index=tipo_idx,
+                            key=f"tipo_pag_{pv}",
+                        )
+
+                        data_pagamento_atual = parse_data_flexivel(
+                            item.get("Data_Pagamento")
+                        )
+                        data_pagamento = st.date_input(
+                            "Data do pagamento:",
+                            value=data_pagamento_atual or date.today(),
+                            key=f"data_pag_{pv}",
+                        )
+
+                        data_liberacao = calcular_liberacao_treinamento(
+                            data_pagamento
+                        )
+
+                        st.info(
+                            f"🗓️ **Treinamento liberado a partir de "
+                            f"{data_liberacao.strftime('%d/%m/%Y')}** "
+                            f"(7 dias após o pagamento)."
+                        )
+
+                        dias_restantes = (data_liberacao - date.today()).days
+                        if dias_restantes > 0:
+                            st.warning(
+                                f"⏳ Ainda faltam **{dias_restantes} dia(s)** "
+                                f"para liberar o treinamento."
+                            )
+                        else:
+                            st.success(
+                                "✅ Prazo financeiro cumprido. "
+                                "O treinamento está liberado para agendamento."
+                            )
+
+                        if st.button(
+                            "💾 Salvar pagamento",
+                            key=f"salvar_pag_{pv}",
+                            use_container_width=True,
+                        ):
+                            atualizar_fila(
+                                pv,
+                                {
+                                    "Tipo_Pagamento": tipo_pagamento,
+                                    "Data_Pagamento": data_pagamento,
+                                    "Data_Liberacao_Treinamento": data_liberacao,
+                                },
+                            )
+                            st.success("Pagamento e data de liberação salvos.")
+                            st.rerun()
+
+                    # -------------------------------
+                    # ALTERAÇÃO DE STATUS
+                    # -------------------------------
+                    indice_status = colunas_pipeline.index(status)
+                    mudar_status = st.selectbox(
+                        "Alterar Status:",
+                        colunas_pipeline,
+                        index=indice_status,
+                        key=f"pipe_sel_{pv}",
+                    )
+
                     if mudar_status != status:
-                        atualizar_fila(item['PV Abadi'], {'Status_Contato': mudar_status})
-                        st.success("Atualizado!")
-                        st.rerun()
+                        # Não permite liberar/agendar treinamento antes
+                        # de completar os 7 dias após o pagamento.
+                        if mudar_status == "Agendado":
+                            data_pagamento = item.get("Data_Pagamento")
+                            data_liberacao = calcular_liberacao_treinamento(
+                                data_pagamento
+                            )
+
+                            if not data_liberacao:
+                                st.error(
+                                    "🚫 Não é possível agendar ainda. "
+                                    "Informe a data da primeira parcela ou "
+                                    "do pagamento integral na coluna "
+                                    "**Aguardando Pagamento**."
+                                )
+                            elif date.today() < data_liberacao:
+                                faltam = (data_liberacao - date.today()).days
+                                st.error(
+                                    f"🚫 Agendamento bloqueado. "
+                                    f"O treinamento só poderá ser liberado "
+                                    f"a partir de **"
+                                    f"{data_liberacao.strftime('%d/%m/%Y')}** "
+                                    f"({faltam} dia(s) restantes)."
+                                )
+                            else:
+                                atualizar_fila(
+                                    pv,
+                                    {
+                                        "Status_Contato": mudar_status,
+                                        "Data_Liberacao_Treinamento": data_liberacao,
+                                    },
+                                )
+                                st.rerun()
+                        else:
+                            atualizar_fila(
+                                pv,
+                                {"Status_Contato": mudar_status}
+                            )
+                            st.rerun()
+
 
 elif modulo == "🔍 PROCV & Filtros Avançados":
     render_section_header("🔍", "PROCV & Filtros Avançados", "Consulta detalhada na rede")
