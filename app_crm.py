@@ -7,6 +7,7 @@ import io
 import time
 import requests
 import json
+import streamlit_authenticator as stauth
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(
@@ -19,10 +20,6 @@ st.set_page_config(
 CAMINHO_ARQUIVO = "Base_Unificada_AmPm.xlsx"
 CAMINHO_BACKUP = "Base_Unificada_AmPm.backup.xlsx"
 
-# Colunas "editáveis" que vivem na aba Fila_CallCenter.
-# Consolidamos aqui TODOS os campos que o Call Center e o Pipeline escrevem,
-# para que nada seja perdido entre recarregamentos e para que salvar no disco
-# grave exatamente o que deveria ser gravado (e não a base inteira mesclada).
 COLUNAS_FILA = [
     "PV_Abadi", "Tipo_Necessidade", "Data_Ultimo_Treinamento",
     "Dias_desde_Ultimo_Treinamento", "Instrutor_Sugerido", "Semana_Sugerida",
@@ -30,12 +27,11 @@ COLUNAS_FILA = [
     "Nome_Contato", "Qtd_Funcionarios", "Material_Em_Loja", "Data_Agendada",
 ]
 
-# --- ESTILIZAÇÃO CSS CUSTOMIZADA (DESIGN SYSTEM AMPM PREMIUM) ---
+# --- ESTILIZAÇÃO CSS CUSTOMIZADA ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap');
 
-    /* ============ DESIGN TOKENS ============ */
     :root {
         --ampm-orange: #E27B00;
         --ampm-orange-light: #FF9800;
@@ -67,7 +63,6 @@ st.markdown("""
         --shadow-glow: 0 8px 24px rgba(226, 123, 0, 0.22);
     }
 
-    /* ============ BASE ============ */
     html, body, [class*="css"] {
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
         letter-spacing: -0.01em;
@@ -81,10 +76,8 @@ st.markdown("""
     h1, h2, h3, h4, h5 { letter-spacing: -0.02em; }
     hr { border-color: var(--border-subtle) !important; }
 
-    /* Compacta um pouco o padding padrão do container principal */
     .block-container { padding-top: 1.6rem; padding-bottom: 3rem; }
 
-    /* ============ TOPBAR PREMIUM ============ */
     .main-header {
         background: linear-gradient(120deg, #B85E00 0%, var(--ampm-orange) 42%, var(--ampm-orange-light) 78%, var(--ampm-red) 130%);
         padding: 30px 34px;
@@ -156,7 +149,6 @@ st.markdown("""
         100% { box-shadow: 0 0 0 0 rgba(124,255,160,0); }
     }
 
-    /* ============ SECTION HEADER ============ */
     .section-header {
         display: flex;
         align-items: center;
@@ -179,7 +171,6 @@ st.markdown("""
         font-size: 0.82rem; color: var(--text-secondary);
     }
 
-    /* ============ KPI CARDS ============ */
     .kpi-card {
         background: linear-gradient(160deg, var(--bg-surface-raised) 0%, var(--bg-surface) 100%);
         border-radius: var(--radius-md);
@@ -227,7 +218,6 @@ st.markdown("""
         color: var(--text-tertiary);
     }
 
-    /* ============ PIPELINE (KANBAN) ============ */
     .ampm-column {
         background: var(--bg-surface);
         border-radius: var(--radius-md);
@@ -264,7 +254,6 @@ st.markdown("""
     .col-treinamento-realizado { border-top: 3px solid var(--success); }
     .col-recusado      { border-top: 3px solid var(--danger); }
 
-    /* ============ CARDS DE INFORMAÇÃO (PROCV / CALL CENTER) ============ */
     .procv-card {
         background: var(--bg-surface-alt);
         padding: 22px;
@@ -304,7 +293,6 @@ st.markdown("""
     }
     .top-instructor-card:hover { transform: translateY(-2px); }
 
-    /* ============ TIMELINE ============ */
     .timeline-item {
         border-left: 3px solid var(--ampm-orange);
         padding: 4px 0 4px 16px;
@@ -321,7 +309,6 @@ st.markdown("""
         border: 2px solid var(--bg-app);
     }
 
-    /* ============ BADGES / STATUS PILLS ============ */
     .badge-info, .badge-pill {
         display: inline-flex;
         align-items: center;
@@ -340,7 +327,6 @@ st.markdown("""
     .badge-success  { background: var(--success-bg); color: var(--success); border-color: rgba(34,197,94,0.35); }
     .badge-danger   { background: var(--danger-bg); color: var(--danger); border-color: rgba(239,68,68,0.35); }
 
-    /* ============ BOTÕES ============ */
     .stButton>button {
         background: linear-gradient(100deg, var(--ampm-orange) 0%, var(--ampm-orange-light) 100%);
         color: #FFFFFF !important;
@@ -368,7 +354,6 @@ st.markdown("""
         color: var(--ampm-orange-light) !important;
     }
 
-    /* ============ INPUTS / SELECTS / DATAFRAMES ============ */
     .stTextInput input, .stNumberInput input, .stTextArea textarea,
     .stDateInput input, div[data-baseweb="select"] > div {
         border-radius: var(--radius-sm) !important;
@@ -392,7 +377,6 @@ st.markdown("""
         background: var(--bg-surface-alt);
     }
 
-    /* ============ SIDEBAR ============ */
     section[data-testid="stSidebar"] {
         border-right: 1px solid var(--border-subtle);
     }
@@ -424,7 +408,6 @@ st.markdown("""
     }
     .sidebar-metric b { color: var(--text-primary); }
 
-    /* Scrollbar discreta */
     ::-webkit-scrollbar { width: 8px; height: 8px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 8px; }
@@ -432,30 +415,15 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-
-# ============================================================
-# AUTENTICAÇÃO (LOGIN + AUTOCADASTRO) — bloqueia o app até o login
-# ============================================================
-import streamlit_authenticator as stauth
-
+# --- AUTENTICAÇÃO ---
 CAMINHO_USUARIOS = "usuarios_ampm.json"
 
-
 def _secrets_para_dict(obj):
-    """Converte recursivamente o objeto de Secrets do Streamlit (que não é
-    um dicionário comum) em um dicionário Python normal e mutável. Isso é
-    necessário porque a biblioteca de login precisa poder alterar essa
-    estrutura internamente (para guardar as senhas já criptografadas)."""
     if hasattr(obj, "items"):
         return {chave: _secrets_para_dict(valor) for chave, valor in obj.items()}
     return obj
 
-
 def carregar_usuarios_arquivo():
-    """Carrega as contas criadas por autocadastro, salvas em disco. Contas
-    vindas dos Secrets (se existirem) sempre têm prioridade sobre as do
-    arquivo em caso de mesmo usuário — garante que uma conta "mestra"
-    configurada pelo administrador nunca fique inacessível."""
     if os.path.exists(CAMINHO_USUARIOS):
         try:
             with open(CAMINHO_USUARIOS, "r", encoding="utf-8") as f:
@@ -466,10 +434,7 @@ def carregar_usuarios_arquivo():
             pass
     return {"usernames": {}}
 
-
 def salvar_usuarios_arquivo(credenciais_completas):
-    """Persiste no disco apenas as contas autocadastradas (não grava as que
-    vieram dos Secrets, para não duplicar a fonte da verdade delas)."""
     try:
         secrets_usernames = set()
         try:
@@ -484,7 +449,6 @@ def salvar_usuarios_arquivo(credenciais_completas):
             json.dump({"usernames": usernames_para_salvar}, f, ensure_ascii=False, indent=2)
     except Exception as e:
         st.toast(f"⚠️ Erro ao salvar cadastro: {e}", icon="⚠️")
-
 
 def _tela_marca_login(subtitulo):
     st.markdown(f"""
@@ -501,12 +465,7 @@ def _tela_marca_login(subtitulo):
         </div>
     """, unsafe_allow_html=True)
 
-
 def exigir_login():
-    """Bloqueia o acesso ao restante do app até o login. Cada pessoa pode
-    criar a própria conta (aba "Criar conta"); as contas ficam salvas em
-    disco. Opcionalmente, uma conta "mestra" pode ser fixada nos Secrets do
-    Streamlit Cloud como garantia de acesso administrativo."""
     try:
         cookie_key = st.secrets["COOKIE_KEY"]
     except Exception:
@@ -514,7 +473,7 @@ def exigir_login():
         st.warning("🔒 O login ainda não foi configurado neste app.")
         st.markdown(
             "Configure a chave `COOKIE_KEY` em **⋮ → Settings → Secrets** no Streamlit Cloud "
-            "para habilitar o acesso (veja o guia que te enviei)."
+            "para habilitar o acesso."
         )
         st.stop()
 
@@ -527,7 +486,7 @@ def exigir_login():
     credenciais = {
         "usernames": {
             **credenciais_arquivo.get("usernames", {}),
-            **credenciais_secrets.get("usernames", {}),  # Secrets sempre prevalece
+            **credenciais_secrets.get("usernames", {}),
         }
     }
 
@@ -578,9 +537,9 @@ def exigir_login():
             except Exception as e:
                 msg = str(e)
                 if "domain" in msg.lower():
-                    st.error(f"❌ Esse e-mail não pertence a um domínio autorizado a se cadastrar ({', '.join(dominios_permitidos or [])}).")
+                    st.error(f"❌ Esse e-mail não pertence a um domínio autorizado ({', '.join(dominios_permitidos or [])}).")
                 elif "already taken" in msg.lower() or "already exists" in msg.lower():
-                    st.error("❌ Esse usuário ou e-mail já está cadastrado. Tente fazer login, ou use outro usuário.")
+                    st.error("❌ Esse usuário ou e-mail já está cadastrado.")
                 elif "match" in msg.lower():
                     st.error("❌ As senhas digitadas não coincidem.")
                 else:
@@ -595,15 +554,10 @@ def exigir_login():
 
     return autenticador
 
-
 AUTENTICADOR = exigir_login()
 
-
-# ============ HELPERS DE APRESENTAÇÃO ============
-
+# --- HELPERS DE APRESENTAÇÃO ---
 def render_section_header(icone, titulo, subtitulo=""):
-    """Renderiza um cabeçalho de seção padronizado (ícone + título + legenda)
-    usado no topo de cada módulo, mantendo a identidade visual consistente."""
     st.markdown(f"""
         <div class="section-header">
             <div class="icon-badge">{icone}</div>
@@ -614,7 +568,6 @@ def render_section_header(icone, titulo, subtitulo=""):
         </div>
     """, unsafe_allow_html=True)
 
-
 STATUS_BADGE_MAP = {
     "A Contatar": ("badge-neutral", "⏳"),
     "Em Negociação": ("badge-warning", "🤝"),
@@ -623,17 +576,11 @@ STATUS_BADGE_MAP = {
     "Recusado": ("badge-danger", "🚫"),
 }
 
-
 def badge_status_html(status):
-    """Retorna o HTML de um badge colorido de acordo com o status de
-    atendimento, para uso consistente no Pipeline, PROCV e Call Center."""
     classe, emoji = STATUS_BADGE_MAP.get(str(status), ("badge-neutral", "•"))
     return f'<span class="badge-pill {classe}">{emoji} {status}</span>'
 
-
 def status_css_class(status):
-    """Classe CSS (kebab-case) usada para colorir a borda superior de cada
-    coluna do Pipeline, de acordo com o status."""
     mapa = {
         "A Contatar": "col-a-contatar",
         "Em Negociação": "col-em-negociacao",
@@ -643,18 +590,8 @@ def status_css_class(status):
     }
     return mapa.get(status, "")
 
-
-
-
-# ==========================================
-# CAMADA DE DADOS
-# ==========================================
-
+# --- CAMADA DE DADOS ---
 def parse_data_flexivel(valor):
-    """Converte qualquer representação comum de data para um objeto date.
-    Sempre tenta ISO (%Y-%m-%d) primeiro, pois é o formato em que passamos
-    a gravar internamente; cai para BR (%d/%m/%Y) por compatibilidade com
-    dados antigos. Retorna None se não for possível interpretar."""
     if valor is None:
         return None
     if isinstance(valor, datetime):
@@ -675,11 +612,7 @@ def parse_data_flexivel(valor):
             continue
     return None
 
-
 def _normalizar_nome(nome):
-    """Normaliza um texto (nome de aba ou de coluna) para comparação
-    tolerante a acentos, espaços/underscores extras e maiúsculas/minúsculas
-    (ex.: 'PV_Abadi', 'pv abadi', ' PV ABADI ' → 'pv abadi')."""
     import unicodedata
     nome = str(nome).strip().lower()
     nome = unicodedata.normalize('NFKD', nome).encode('ascii', 'ignore').decode('ascii')
@@ -687,12 +620,6 @@ def _normalizar_nome(nome):
     nome = ' '.join(nome.split())
     return nome
 
-
-# Para cada tipo de dado que o sistema precisa, definimos a coluna-chave
-# (obrigatória para reconhecer a aba) e os "apelidos" aceitos para cada
-# coluna. Isso permite que o app reconheça uma planilha pelo CONTEÚDO
-# (quais colunas ela tem), não pelo nome da aba nem pela grafia exata —
-# só entram no sistema as colunas que ele reconhece como compatíveis.
 ENTIDADES = {
     "lojas": {
         "chave": "PV Abadi",
@@ -773,23 +700,16 @@ ENTIDADES = {
     },
 }
 
-MIN_SCORE_CONFIANTE = 2  # chave + pelo menos 1 outra coluna reconhecida
-
+MIN_SCORE_CONFIANTE = 2
 
 def _construir_lookup(colunas_dict):
-    """Constrói um dicionário {apelido_normalizado: nome_canonico} para uma
-    entidade, incluindo o próprio nome canônico como apelido de si mesmo."""
     lookup = {}
     for canonico, apelidos in colunas_dict.items():
         for apelido in set(apelidos) | {canonico}:
             lookup[_normalizar_nome(apelido)] = canonico
     return lookup
 
-
 def _mapear_colunas_compativeis(df, definicao_entidade):
-    """Compara as colunas reais de um DataFrame com os apelidos aceitos de
-    uma entidade. Retorna (rename_map, canonicas_encontradas, colunas_ignoradas).
-    Só as colunas reconhecidas entram no rename_map — o resto é ignorado."""
     lookup = _construir_lookup(definicao_entidade["colunas"])
     rename_map = {}
     canonicas_encontradas = set()
@@ -804,17 +724,9 @@ def _mapear_colunas_compativeis(df, definicao_entidade):
             colunas_ignoradas.append(str(col))
     return rename_map, canonicas_encontradas, colunas_ignoradas
 
-
 def detectar_entidades_no_workbook(xls):
-    """Examina TODAS as abas do arquivo e, para cada uma, mede a
-    compatibilidade de colunas com cada tipo de dado esperado pelo sistema
-    (lojas, fila de call center, inaugurações, instrutores, recomendação de
-    deslocamento). Cada aba é atribuída ao tipo mais compatível, independente
-    do nome da aba ou da grafia exata das colunas. Colunas não reconhecidas
-    são descartadas silenciosamente (registradas no relatório, não usadas).
-    Retorna (bases_dict, relatorio_list)."""
     dfs_brutos = {}
-    candidatos = []  # (score, sheet_name, entidade, rename_map, canonicas)
+    candidatos = []
 
     for sheet_name in xls.sheet_names:
         try:
@@ -827,7 +739,7 @@ def detectar_entidades_no_workbook(xls):
         for entidade, definicao in ENTIDADES.items():
             rename_map, canonicas, _ = _mapear_colunas_compativeis(df_bruto, definicao)
             if definicao["chave"] not in canonicas:
-                continue  # sem a coluna-chave, a aba não pode representar esta entidade
+                continue
             score = len(canonicas)
             candidatos.append((score, sheet_name, entidade, rename_map, canonicas))
 
@@ -843,9 +755,6 @@ def detectar_entidades_no_workbook(xls):
         entidade_atribuida[entidade] = (sheet_name, rename_map, canonicas, score)
         aba_usada.add(sheet_name)
 
-    # 'lojas' é obrigatória: se nada bateu com confiança, aceitamos o melhor
-    # candidato disponível (mesmo que só tenha a coluna-chave), pois sem
-    # rede de lojas o sistema não tem como funcionar.
     if "lojas" not in entidade_atribuida:
         for score, sheet_name, entidade, rename_map, canonicas in candidatos:
             if entidade == "lojas" and sheet_name not in aba_usada:
@@ -884,20 +793,14 @@ def detectar_entidades_no_workbook(xls):
 
     return bases, relatorio
 
-
 def _processar_excelfile(xls):
-    """Detecta e monta as bases a partir de um pd.ExcelFile já aberto (seja
-    de um caminho em disco ou de bytes em memória), aceitando qualquer nome
-    de aba/coluna e usando apenas as informações compatíveis com o sistema.
-    Lança ValueError se não for possível identificar nem a base de lojas."""
     bases, relatorio = detectar_entidades_no_workbook(xls)
 
     if bases["lojas"].empty or ENTIDADES["lojas"]["chave"] not in bases["lojas"].columns:
         abas_disponiveis = ", ".join(xls.sheet_names) if xls.sheet_names else "(nenhuma)"
         raise ValueError(
-            "Não foi possível identificar, em nenhuma aba do arquivo, dados de rede de lojas "
-            "(é necessário pelo menos uma coluna equivalente a 'PV Abadi'). "
-            f"Abas presentes no arquivo enviado: {abas_disponiveis}."
+            "Não foi possível identificar dados de rede de lojas na planilha. "
+            f"Abas presentes: {abas_disponiveis}."
         )
 
     for entidade, definicao in ENTIDADES.items():
@@ -913,12 +816,7 @@ def _processar_excelfile(xls):
 
     return bases, relatorio
 
-
 def validar_bytes_excel(conteudo_bytes):
-    """Valida (sem tocar no disco) se os bytes de um .xlsx enviado contêm ao
-    menos dados de lojas reconhecíveis. Retorna (bases_dict, relatorio, None)
-    em caso de sucesso, ou (None, None, mensagem_de_erro) em caso de falha —
-    usado para checar o upload ANTES de sobrescrever o arquivo em produção."""
     try:
         xls = pd.ExcelFile(io.BytesIO(conteudo_bytes), engine='openpyxl')
         bases, relatorio = _processar_excelfile(xls)
@@ -926,23 +824,14 @@ def validar_bytes_excel(conteudo_bytes):
     except Exception as e:
         return None, None, str(e)
 
-
 @st.cache_data
 def carregar_bases_do_disco(caminho, assinatura=None):
-    """Lê e detecta as abas do Excel no disco. O parâmetro `assinatura`
-    (ex.: data de modificação do arquivo) força o Streamlit a invalidar o
-    cache quando o arquivo muda, mesmo com o mesmo caminho."""
     if not os.path.exists(caminho):
         return None, None
     xls = pd.ExcelFile(caminho, engine='openpyxl')
     return _processar_excelfile(xls)
 
-
 def construir_base_unificada(df_lojas, df_fila, df_inaug):
-    """Mescla as bases brutas em uma visão única para exibição.
-    Esta função é chamada a cada execução (não é cacheada), pois os dados
-    brutos podem ter sido editados em session_state. O custo é baixo para
-    o volume de dados de um CRM de rede de lojas."""
     if df_lojas is None or df_lojas.empty:
         return pd.DataFrame()
 
@@ -964,15 +853,10 @@ def construir_base_unificada(df_lojas, df_fila, df_inaug):
     df_base['Nome_Contato'] = df_base['Nome_Contato'].fillna("")
     df_base['Qtd_Funcionarios'] = pd.to_numeric(df_base['Qtd_Funcionarios'], errors='coerce').fillna(0).astype(int)
     df_base['Material_Em_Loja'] = df_base['Material_Em_Loja'].fillna("Não Informado")
-    # Data_Agendada e Observacoes permanecem como estão (podem ser NaN/"")
 
     return df_base
 
-
 def salvar_fila_no_disco():
-    """Grava a aba Fila_CallCenter (e SOMENTE ela) de volta no Excel,
-    preservando as demais abas do arquivo. Corrige o bug original que
-    sobrescrevia essa aba com a base inteira mesclada."""
     if not os.path.exists(CAMINHO_ARQUIVO):
         st.toast("⚠️ Arquivo local não encontrado — alterações mantidas apenas na sessão.", icon="⚠️")
         return
@@ -985,11 +869,7 @@ def salvar_fila_no_disco():
     except Exception as e:
         st.toast(f"⚠️ Erro ao salvar arquivo: {e}", icon="⚠️")
 
-
 def salvar_lojas_no_disco():
-    """Grava a aba Rede_de_Lojas (e SOMENTE ela) de volta no Excel,
-    preservando as demais abas — usada quando novas lojas são incorporadas
-    a partir de uma planilha gerencial externa."""
     if not os.path.exists(CAMINHO_ARQUIVO):
         st.toast("⚠️ Arquivo local não encontrado — alterações mantidas apenas na sessão.", icon="⚠️")
         return
@@ -1003,11 +883,7 @@ def salvar_lojas_no_disco():
     except Exception as e:
         st.toast(f"⚠️ Erro ao salvar arquivo: {e}", icon="⚠️")
 
-
 def buscar_telefone_google_places(endereco_completo, nome_loja, api_key, timeout=8):
-    """Consulta a API do Google Places (Find Place + Place Details) para
-    tentar localizar o telefone comercial de um posto a partir do seu
-    endereço. Retorna (telefone_ou_None, mensagem_status)."""
     consulta = f"{nome_loja}, {endereco_completo}" if nome_loja else endereco_completo
     try:
         resp_busca = requests.get(
@@ -1052,12 +928,7 @@ def buscar_telefone_google_places(endereco_completo, nome_loja, api_key, timeout
     except Exception as e:
         return None, f"ERRO: {e}"
 
-
 def atualizar_fila(pv_abadi, campos: dict):
-    """Atualiza (ou cria, se ainda não existir) a linha correspondente ao PV
-    na aba Fila_CallCenter em session_state, aplica os campos informados e
-    persiste no disco. Usada tanto pelo Pipeline quanto pelo Call Center,
-    garantindo que as duas telas nunca se dessincronizem."""
     df_fila = st.session_state['bases']['fila']
     pv_abadi = float(pv_abadi) if pd.notna(pv_abadi) else pv_abadi
 
@@ -1076,7 +947,6 @@ def atualizar_fila(pv_abadi, campos: dict):
     st.session_state['bases']['fila'] = df_fila
     salvar_fila_no_disco()
 
-
 def _bases_vazias():
     return {
         "lojas": pd.DataFrame(),
@@ -1085,7 +955,6 @@ def _bases_vazias():
         "instrutores": pd.DataFrame(),
         "rec": pd.DataFrame(),
     }
-
 
 def inicializar_estado():
     if 'bases' in st.session_state:
@@ -1102,12 +971,8 @@ def inicializar_estado():
         st.session_state['relatorio_importacao'] = relatorio
         st.session_state['erro_carga'] = None
     except Exception as e:
-        # Nunca deixa uma falha de leitura derrubar o app inteiro: guarda o
-        # erro para mostrar na tela e segue com bases vazias, permitindo que
-        # o usuário faça um novo upload válido ou restaure o backup.
         st.session_state['erro_carga'] = str(e)
         st.session_state['bases'] = _bases_vazias()
-
 
 inicializar_estado()
 
@@ -1115,10 +980,10 @@ if st.session_state.get('erro_carga'):
     st.error(
         "⚠️ Não foi possível carregar `Base_Unificada_AmPm.xlsx`:\n\n"
         f"{st.session_state['erro_carga']}\n\n"
-        "Envie um arquivo válido na barra lateral, ou restaure o último backup se houver um disponível."
+        "Envie um arquivo válido na barra lateral."
     )
 
-# --- SIDEBAR DE NAVEGAÇÃO, FILTROS GLOBAIS E UPLOAD ---
+# --- SIDEBAR & NAVEGAÇÃO ---
 with st.sidebar:
     st.markdown("""
         <div class="sidebar-brand">
@@ -1155,20 +1020,17 @@ with st.sidebar:
 
     st.divider()
 
-    # UPLOAD DE BANCO DE DADOS NA SIDEBAR (.XLSX E .CSV)
     st.markdown("📥 **Atualizar Banco de Dados**")
     st.caption("Um .xlsx substitui o arquivo inteiro. Um .csv atualiza apenas UMA aba — escolha qual abaixo.")
 
     aba_destino_csv = st.selectbox(
-        "Se o CSV não puder ser identificado automaticamente, use como destino:",
-        ["Rede_de_Lojas", "Fila_CallCenter", "Previsao_Inauguracao", "Instrutores", "Recomendacao_Deslocamento"],
-        help="O sistema tenta identificar sozinho pelo conteúdo das colunas. Esta opção só é usada como reserva, se a identificação automática falhar."
+        "Destino para CSV:",
+        ["Rede_de_Lojas", "Fila_CallCenter", "Previsao_Inauguracao", "Instrutores", "Recomendacao_Deslocamento"]
     )
 
     uploaded_file = st.file_uploader(
         "Envie a nova planilha (.xlsx ou .csv):",
-        type=["xlsx", "csv"],
-        help="O sistema aceita qualquer nome de aba/coluna — ele reconhece o conteúdo automaticamente e usa apenas o que for compatível."
+        type=["xlsx", "csv"]
     )
 
     def _exibir_relatorio_importacao(relatorio):
@@ -1187,20 +1049,17 @@ with st.sidebar:
                     if item["colunas_reconhecidas"]:
                         st.caption("Colunas usadas: " + ", ".join(item["colunas_reconhecidas"]))
                     if item["colunas_ignoradas"]:
-                        st.caption("Colunas ignoradas (não reconhecidas): " + ", ".join(item["colunas_ignoradas"]))
+                        st.caption("Colunas ignoradas: " + ", ".join(item["colunas_ignoradas"]))
                 else:
-                    st.markdown(f"**{nome}** — não encontrado no arquivo (ficará vazio)")
+                    st.markdown(f"**{nome}** — não encontrado no arquivo")
 
     if uploaded_file is not None:
         try:
             if uploaded_file.name.endswith('.xlsx'):
                 conteudo = uploaded_file.getbuffer().tobytes()
-                # Valida a estrutura ANTES de tocar no arquivo em produção —
-                # isto evita sobrescrever uma base boa com um arquivo inválido
-                # e deixar o app quebrado até um novo upload.
                 bases_validadas, relatorio, erro = validar_bytes_excel(conteudo)
                 if erro:
-                    st.error(f"❌ Arquivo rejeitado — a base atual foi mantida intacta.\n\n{erro}")
+                    st.error(f"❌ Arquivo rejeitado:\n\n{erro}")
                 else:
                     if os.path.exists(CAMINHO_ARQUIVO):
                         with open(CAMINHO_ARQUIVO, "rb") as f_atual, open(CAMINHO_BACKUP, "wb") as f_bak:
@@ -1211,8 +1070,7 @@ with st.sidebar:
                     st.session_state['bases'] = bases_validadas
                     st.session_state['relatorio_importacao'] = relatorio
                     st.session_state['erro_carga'] = None
-                    # st.toast (e não st.success) porque sobrevive ao st.rerun() logo abaixo
-                    st.toast("💾 Banco de dados atualizado! Backup do arquivo anterior guardado.", icon="✅")
+                    st.toast("💾 Banco de dados atualizado com sucesso!", icon="✅")
                     st.rerun()
             elif uploaded_file.name.endswith('.csv'):
                 df_csv = pd.read_csv(uploaded_file)
@@ -1224,8 +1082,6 @@ with st.sidebar:
                     "Recomendacao_Deslocamento": "rec",
                 }
 
-                # Tenta identificar automaticamente a que tipo de dado o CSV
-                # corresponde, comparando suas colunas com as de cada entidade.
                 melhor_entidade, melhor_score = None, 0
                 for entidade, definicao in ENTIDADES.items():
                     _, canonicas, _ = _mapear_colunas_compativeis(df_csv, definicao)
@@ -1237,15 +1093,12 @@ with st.sidebar:
                     origem = "identificação automática"
                 else:
                     chave = chave_map[aba_destino_csv]
-                    origem = "aba selecionada manualmente (não foi possível identificar automaticamente)"
+                    origem = "aba selecionada manualmente"
 
                 definicao = ENTIDADES[chave]
                 rename_map, canonicas, ignoradas = _mapear_colunas_compativeis(df_csv, definicao)
                 if definicao["chave"] not in canonicas:
-                    st.error(
-                        f"❌ O CSV não possui uma coluna equivalente a '{definicao['chave']}', "
-                        "necessária para identificar os registros. Nada foi alterado."
-                    )
+                    st.error(f"❌ O CSV não possui a coluna equivalente a '{definicao['chave']}'.")
                 else:
                     df_mapeado = df_csv.rename(columns=rename_map)
                     colunas_presentes = [c for c in definicao["colunas"].keys() if c in df_mapeado.columns]
@@ -1261,8 +1114,6 @@ with st.sidebar:
                     if chave == "fila":
                         salvar_fila_no_disco()
                     st.toast(f"✅ Dados de '{chave}' atualizados via {origem}!", icon="✅")
-                    if ignoradas:
-                        st.toast("ℹ️ Colunas ignoradas: " + ", ".join(ignoradas), icon="ℹ️")
                     st.rerun()
         except Exception as e:
             st.error(f"❌ Erro ao processar o arquivo: {e}")
@@ -1287,14 +1138,11 @@ with st.sidebar:
 
     st.divider()
 
-    # RECONSTRÓI A BASE UNIFICADA A PARTIR DAS BASES BRUTAS ATUAIS
     bases = st.session_state['bases']
     df_base_raw = construir_base_unificada(bases["lojas"], bases["fila"], bases["inaug"])
     df_instrutores = bases["instrutores"]
     df_rec_raw = bases["rec"]
 
-    # Mescla de coordenadas para o módulo de otimização (feito aqui pois
-    # depende de df_instrutores e df_lojas atuais)
     if not df_rec_raw.empty and not df_instrutores.empty:
         df_rec = pd.merge(
             df_rec_raw,
@@ -1310,7 +1158,6 @@ with st.sidebar:
     else:
         df_rec = df_rec_raw
 
-    # FILTROS GLOBAIS
     st.markdown("🎯 **Filtros Globais**")
     uf_opcoes = ["Todas"] + sorted([str(x) for x in df_base_raw['UF'].dropna().unique()]) if 'UF' in df_base_raw.columns else ["Todas"]
     filtro_uf = st.selectbox("Filtrar Estado (UF):", uf_opcoes)
@@ -1318,7 +1165,7 @@ with st.sidebar:
     filtro_cf = st.selectbox("Filtrar Consultor (CF):", cf_opcoes)
     st.divider()
     st.markdown(f"""
-        <div class="sidebar-metric">📶 Status do sistema: <b>Operacional</b> 🟢</div>
+        <div class="sidebar-metric">📶 Status: <b>Operacional</b> 🟢</div>
         <div class="sidebar-metric">🏪 Rede total: <b>{len(df_base_raw)} unidades</b></div>
     """, unsafe_allow_html=True)
 
@@ -1329,7 +1176,6 @@ if filtro_uf != "Todas":
 if filtro_cf != "Todos":
     df_base = df_base[df_base['CF'] == filtro_cf]
 
-# Header Global
 st.markdown(f"""
     <div class="main-header">
         <div class="main-header-top">
@@ -1342,86 +1188,61 @@ st.markdown(f"""
     </div>
 """, unsafe_allow_html=True)
 
-# ==========================================
-# MÓDULO 1: DASHBOARD EXECUTIVO
-# ==========================================
+# --- MÓDULOS DA APLICAÇÃO ---
+
 if modulo == "📊 Dashboard Executivo":
-    render_section_header("📊", "Dashboard Executivo", "Panorama consolidado da operação em tempo real")
+    render_section_header("📊", "Dashboard Executivo", "Panorama consolidado da operação")
     if not df_base.empty:
         c1, c2, c3, c4 = st.columns(4)
-
         with c1:
             st.markdown(f"""
                 <div class="kpi-card">
-                    <div class="kpi-header">
-                        <span class="kpi-title">Rede Filtrada</span>
-                        <span class="kpi-icon-circle" style="background: var(--warning-bg); color: var(--ampm-orange-light);">🏪</span>
-                    </div>
+                    <div class="kpi-header"><span class="kpi-title">Rede Filtrada</span><span class="kpi-icon-circle">🏪</span></div>
                     <div class="kpi-value">{len(df_base)}</div>
-                    <div class="kpi-footer">unidades na seleção atual</div>
+                    <div class="kpi-footer">unidades na seleção</div>
                 </div>
             """, unsafe_allow_html=True)
-
         with c2:
             pendentes = len(df_base[df_base['Tipo_Necessidade'] != 'Rede Ativa (Sem Pendência)']) if 'Tipo_Necessidade' in df_base.columns else 0
             st.markdown(f"""
                 <div class="kpi-card">
-                    <div class="kpi-header">
-                        <span class="kpi-title">Fila Treinamento</span>
-                        <span class="kpi-icon-circle" style="background: var(--warning-bg); color: var(--warning);">🎓</span>
-                    </div>
+                    <div class="kpi-header"><span class="kpi-title">Fila Treinamento</span><span class="kpi-icon-circle">🎓</span></div>
                     <div class="kpi-value">{pendentes}</div>
-                    <div class="kpi-footer">lojas com pendência de capacitação</div>
+                    <div class="kpi-footer">lojas com pendência</div>
                 </div>
             """, unsafe_allow_html=True)
-
         with c3:
             a_contatar = len(df_base[df_base['Status_Contato'] == 'A Contatar']) if 'Status_Contato' in df_base.columns else 0
             st.markdown(f"""
                 <div class="kpi-card">
-                    <div class="kpi-header">
-                        <span class="kpi-title">Pendentes Contato</span>
-                        <span class="kpi-icon-circle" style="background: var(--danger-bg); color: var(--danger);">📞</span>
-                    </div>
+                    <div class="kpi-header"><span class="kpi-title">Pendentes Contato</span><span class="kpi-icon-circle">📞</span></div>
                     <div class="kpi-value">{a_contatar}</div>
-                    <div class="kpi-footer">aguardando primeiro contato</div>
+                    <div class="kpi-footer">aguardando contato</div>
                 </div>
             """, unsafe_allow_html=True)
-
         with c4:
             inaug = len(df_base[df_base['Previsão Inauguração'].notna()]) if 'Previsão Inauguração' in df_base.columns else 0
             st.markdown(f"""
                 <div class="kpi-card">
-                    <div class="kpi-header">
-                        <span class="kpi-title">Inaugurações</span>
-                        <span class="kpi-icon-circle" style="background: var(--info-bg); color: var(--info);">🚀</span>
-                    </div>
+                    <div class="kpi-header"><span class="kpi-title">Inaugurações</span><span class="kpi-icon-circle">🚀</span></div>
                     <div class="kpi-value">{inaug}</div>
                     <div class="kpi-footer">com previsão de abertura</div>
                 </div>
             """, unsafe_allow_html=True)
 
-        st.write("")
         st.divider()
-
         col_A, col_B = st.columns(2)
         with col_A:
-            render_section_header("🗺️", "Concentração por Estado", "Top 10 UFs por número de lojas")
+            render_section_header("🗺️", "Concentração por Estado", "Top 10 UFs")
             if 'UF' in df_base.columns:
                 st.bar_chart(df_base['UF'].value_counts().head(10), color="#FF9800")
         with col_B:
-            render_section_header("📶", "Situação dos Contatos", "Distribuição por status no Call Center")
+            render_section_header("📶", "Situação dos Contatos", "Distribuição no Call Center")
             if 'Status_Contato' in df_base.columns:
                 st.bar_chart(df_base['Status_Contato'].value_counts(), color="#3B9EFF")
-    else:
-        st.info("📭 Nenhum dado carregado ainda. Envie o arquivo `Base_Unificada_AmPm.xlsx` na barra lateral.")
 
-# ==========================================
-# MÓDULO 2: PIPELINE AMPM
-# ==========================================
 elif modulo == "📋 Pipeline AmPm":
-    render_section_header("📋", "Pipeline AmPm", "Fluxo operacional de treinamentos — navegue entre os estágios de contato")
-
+    render_section_header("📋", "Pipeline AmPm", "Fluxo operacional de treinamentos")
     colunas_pipeline = ["A Contatar", "Em Negociação", "Agendado", "Treinamento Realizado", "Recusado"]
     cols_k = st.columns(len(colunas_pipeline))
 
@@ -1440,34 +1261,26 @@ elif modulo == "📋 Pipeline AmPm":
             """, unsafe_allow_html=True)
 
             for _, item in df_status.head(6).iterrows():
-                with st.expander(f"📍 PV {item.get('PV Abadi', '-')} | {str(item.get('Razão Social', ''))[:14]}..."):
+                with st.expander(f"📍 PV {item.get('PV Abadi', '-')} | {str(item.get('Razão Social', ''))[:12]}..."):
                     st.write(f"**Cidade:** {item.get('Municipio', '-')}/{item.get('UF', '-')}")
                     st.write(f"**Necessidade:** {item.get('Tipo_Necessidade', '-')}")
-                    st.write(f"**Treinandos:** {item.get('Qtd_Funcionarios', 0)} pessoas")
-                    st.write(f"**Instrutor:** {item.get('Instrutor_Sugerido', 'Pendente')}")
-
                     mudar_status = st.selectbox(
-                        "Alterar Status:",
-                        colunas_pipeline,
+                        "Alterar Status:", colunas_pipeline,
                         index=colunas_pipeline.index(status),
                         key=f"pipe_sel_{item.get('PV Abadi')}"
                     )
-
                     if mudar_status != status:
                         atualizar_fila(item['PV Abadi'], {'Status_Contato': mudar_status})
                         st.success("Atualizado!")
                         st.rerun()
 
-# ==========================================
-# MÓDULO 3: PROCV & FILTROS AVANÇADOS
-# ==========================================
 elif modulo == "🔍 PROCV & Filtros Avançados":
-    render_section_header("🔍", "PROCV & Filtros Avançados", "Consulta detalhada por PV, nome, município ou necessidade")
+    render_section_header("🔍", "PROCV & Filtros Avançados", "Consulta detalhada na rede")
     if not df_base.empty:
-        with st.expander("🔎 **Pesquisa Avançada na Base Filtrada**", expanded=True):
+        with st.expander("🔎 **Pesquisa Avançada**", expanded=True):
             f1, f2 = st.columns(2)
             termo = f1.text_input("🔍 PV, Nome ou Município:", "")
-            f_necessidade = f2.selectbox("🎯 Tipo de Necessidade:", ["Todas"] + sorted([str(x) for x in df_base['Tipo_Necessidade'].dropna().unique()])) if 'Tipo_Necessidade' in df_base.columns else ["Todas"]
+            f_necessidade = f2.selectbox("🎯 Necessidade:", ["Todas"] + sorted([str(x) for x in df_base['Tipo_Necessidade'].dropna().unique()])) if 'Tipo_Necessidade' in df_base.columns else ["Todas"]
 
         df_view = df_base.copy()
         if termo:
@@ -1479,78 +1292,54 @@ elif modulo == "🔍 PROCV & Filtros Avançados":
         if f_necessidade != "Todas" and 'Tipo_Necessidade' in df_view.columns:
             df_view = df_view[df_view['Tipo_Necessidade'] == f_necessidade]
 
-        st.caption("👇 *Clique em uma linha para abrir a Ficha Detalhada PROCV:*")
-
         cols_mostrar = [c for c in ['PV Abadi', 'Razão Social', 'Municipio', 'UF', 'Status Loja', 'Tipo_Necessidade', 'Status_Contato'] if c in df_view.columns]
-        evento = st.dataframe(
-            df_view[cols_mostrar],
-            use_container_width=True, hide_index=True, selection_mode="single-row", on_select="rerun"
-        )
+        evento = st.dataframe(df_view[cols_mostrar], use_container_width=True, hide_index=True, selection_mode="single-row", on_select="rerun")
 
         linhas = evento.selection.get("rows", [])
         if linhas:
             p = df_view.iloc[linhas[0]].to_dict()
             st.divider()
-            st.markdown(f"""
-                <div style="display:flex; align-items:center; gap:10px; margin: 4px 0 16px 0;">
-                    <span style="font-size:1.05rem; font-weight:700; color:var(--text-primary);">📋 Ficha PROCV — PV {p.get('PV Abadi', '-')} · {p.get('Razão Social', '-')}</span>
-                </div>
-            """, unsafe_allow_html=True)
-
             k1, k2, k3 = st.columns(3)
             with k1:
                 st.markdown(f"""
                     <div class="procv-card">
-                        <h4>🏪 Cadastro da Loja</h4>
+                        <h4>🏪 Cadastro</h4>
                         <p>📍 <b>Endereço:</b> {p.get('Endereço', '-')}</p>
-                        <p>🏙️ <b>Município/UF:</b> {p.get('Municipio', '-')}/{p.get('UF', '-')}</p>
-                        <p>⚙️ <b>Status Loja:</b> {p.get('Status Loja', '-')}</p>
+                        <p>🏙️ <b>Cidade/UF:</b> {p.get('Municipio', '-')}/{p.get('UF', '-')}</p>
                     </div>
                 """, unsafe_allow_html=True)
             with k2:
                 st.markdown(f"""
                     <div class="procv-card">
-                        <h4>👔 Gestão & Franquia</h4>
-                        <p>👤 <b>Gerência (GF):</b> {p.get('GF', '-')}</p>
-                        <p>👔 <b>Consultor (CF):</b> {p.get('CF', '-')}</p>
-                        <p>📅 <b>Inauguração:</b> {p.get('Previsão Inauguração', 'N/A')}</p>
+                        <h4>👔 Gestão</h4>
+                        <p>👤 <b>Gerente:</b> {p.get('GF', '-')}</p>
+                        <p>👔 <b>Consultor:</b> {p.get('CF', '-')}</p>
                     </div>
                 """, unsafe_allow_html=True)
             with k3:
                 st.markdown(f"""
                     <div class="procv-card">
-                        <h4>📞 Status do Atendimento</h4>
+                        <h4>📞 Atendimento</h4>
                         <p>🎯 <b>Necessidade:</b> {p.get('Tipo_Necessidade', '-')}</p>
-                        <p>👨‍🏫 <b>Instrutor Alocado:</b> {p.get('Instrutor_Sugerido', '-')}</p>
-                        <p>🔄 <b>Status Contato:</b> {badge_status_html(p.get('Status_Contato', '-'))}</p>
+                        <p>🔄 <b>Status:</b> {badge_status_html(p.get('Status_Contato', '-'))}</p>
                     </div>
                 """, unsafe_allow_html=True)
-    else:
-        st.info("📭 Nenhum dado carregado ainda.")
 
-# ==========================================
-# MÓDULO 4: CALCULADORA & OTIMIZADOR DE CUSTOS
-# ==========================================
 elif modulo == "📍 Calculadora & Otimizador de Custos":
-    render_section_header("📍", "Calculadora & Otimizador de Custos", "Análise financeira e simulação de rotas com mapa interativo")
-
+    render_section_header("📍", "Calculadora & Otimizador de Custos", "Simulação de rotas e análise de custos")
     if not df_rec.empty:
         df_rec_filtrado = df_rec.copy()
         if filtro_uf != "Todas" and 'UF_Loja' in df_rec_filtrado.columns:
             df_rec_filtrado = df_rec_filtrado[df_rec_filtrado['UF_Loja'] == filtro_uf]
         postos_unicos = df_rec_filtrado[['PV_ABADI', 'Razao_Social', 'Municipio_Loja', 'UF_Loja']].drop_duplicates()
+
         if not postos_unicos.empty:
             postos_unicos['label'] = postos_unicos['PV_ABADI'].astype(str) + " - " + postos_unicos['Razao_Social'] + " (" + postos_unicos['Municipio_Loja'] + "/" + postos_unicos['UF_Loja'] + ")"
-
             posto_sel = st.selectbox("⛽ Selecione o Posto Alvo:", postos_unicos['label'].tolist())
             pv_sel = int(posto_sel.split(" - ")[0])
-
             top_3 = df_rec_filtrado[df_rec_filtrado['PV_ABADI'] == pv_sel].sort_values(by='Ranking_Proximidade').head(3)
 
             if not top_3.empty:
-                st.divider()
-
-                # --- MAPA 3D PYDECK ---
                 primeira = top_3.iloc[0]
                 if pd.notna(primeira.get('Lat_Loja')) and pd.notna(primeira.get('Lon_Loja')) and pd.notna(primeira.get('Lat_Instrutor')) and pd.notna(primeira.get('Lon_Instrutor')):
                     p_lat, p_lon = float(primeira['Lat_Loja']), float(primeira['Lon_Loja'])
@@ -1560,103 +1349,39 @@ elif modulo == "📍 Calculadora & Otimizador de Custos":
                         {"name": f"Posto {primeira['PV_ABADI']}", "lat": p_lat, "lon": p_lon, "color": [226, 123, 0, 220]},
                         {"name": f"Instrutor {primeira['Instrutor_Sugerido']}", "lat": i_lat, "lon": i_lon, "color": [76, 175, 80, 220]}
                     ])
+                    df_mapa_arco = pd.DataFrame([{"from_lat": i_lat, "from_lon": i_lon, "to_lat": p_lat, "to_lon": p_lon}])
 
-                    df_mapa_arco = pd.DataFrame([{
-                        "from_lat": i_lat, "from_lon": i_lon, "to_lat": p_lat, "to_lon": p_lon
-                    }])
-
-                    layer_pontos = pdk.Layer(
-                        "ScatterplotLayer",
-                        df_mapa_pontos,
-                        get_position="[lon, lat]",
-                        get_color="color",
-                        get_radius=20000,
-                        pickable=True
-                    )
-
-                    layer_arco = pdk.Layer(
-                        "ArcLayer",
-                        df_mapa_arco,
-                        get_source_position="[from_lon, from_lat]",
-                        get_target_position="[to_lon, to_lat]",
-                        get_source_color=[76, 175, 80, 180],
-                        get_target_color=[226, 123, 0, 180],
-                        get_width=4
-                    )
-
+                    layer_pontos = pdk.Layer("ScatterplotLayer", df_mapa_pontos, get_position="[lon, lat]", get_color="color", get_radius=20000, pickable=True)
+                    layer_arco = pdk.Layer("ArcLayer", df_mapa_arco, get_source_position="[from_lon, from_lat]", get_target_position="[to_lon, to_lat]", get_source_color=[76, 175, 80, 180], get_target_color=[226, 123, 0, 180], get_width=4)
                     view_state = pdk.ViewState(latitude=(p_lat + i_lat) / 2, longitude=(p_lon + i_lon) / 2, zoom=5, pitch=40)
 
-                    st.markdown("##### 🗺️ Visualização Geográfica do Deslocamento")
                     st.pydeck_chart(pdk.Deck(layers=[layer_pontos, layer_arco], initial_view_state=view_state, tooltip={"text": "{name}"}))
-
-                with st.expander("⚙️ **Ajustar Parâmetros Financeiros de Viagem**", expanded=False):
-                    ca1, ca2, ca3, ca4 = st.columns(4)
-                    v_km = ca1.number_input("Valor KM (Terrestre R$):", value=2.10)
-                    v_passagem = ca2.number_input("Passagem Aérea Média (R$):", value=1400.0)
-                    v_diaria = ca3.number_input("Diária Instrutor (Hosp./Alimentação R$):", value=280.0)
-                    v_traslado = ca4.number_input("Traslado/Uber Aeroporto (R$):", value=150.0)
 
                 col1, col2, col3 = st.columns(3)
                 cols = [col1, col2, col3]
-                custos_calculados = []
                 for idx, (_, row) in enumerate(top_3.iterrows()):
                     dist = row['Distancia_km_linha_reta']
                     dias = row['Dias_Treinamento_Necessarios']
-
-                    if dist <= 300:
-                        modal = "Terrestre 🚗"
-                        c_desloc = (dist * 2) * v_km
-                        c_aereo = 0
-                    else:
-                        modal = "Aéreo ✈️"
-                        c_desloc = v_traslado
-                        c_aereo = v_passagem
-
-                    c_hospedagem = dias * v_diaria
-                    custo_total = c_desloc + c_aereo + c_hospedagem
-                    custos_calculados.append(custo_total)
-                    ranking_num = int(row['Ranking_Proximidade']) if pd.notna(row['Ranking_Proximidade']) else idx + 1
-                    destaque = ' style="border-left-color: var(--ampm-orange);"' if ranking_num == 1 else ""
+                    custo_total = (dist * 2 * 2.10) + (dias * 280.0)
                     with cols[idx]:
                         st.markdown(f"""
-                            <div class="top-instructor-card"{destaque}>
-                                <h4 style="margin:0 0 8px 0; color:var(--ampm-orange-light);">#{ranking_num}º {row['Instrutor_Sugerido']}</h4>
-                                <p style="margin:2px 0;">🏙️ <b>Origem:</b> {row['Cidade_Instrutor']}/{row['UF_Instrutor']}</p>
-                                <p style="margin:2px 0;">📏 <b>Distância:</b> <code>{dist} km</code></p>
-                                <p style="margin:2px 0;">✈️ <b>Modal:</b> {modal}</p>
-                                <hr style="border-color:var(--border-subtle); margin:10px 0;">
-                                <p style="margin:2px 0; font-size:0.85rem; color:var(--text-secondary);">• Deslocamento: R$ {c_desloc:.2f}</p>
-                                <p style="margin:2px 0; font-size:0.85rem; color:var(--text-secondary);">• Passagem Aérea: R$ {c_aereo:.2f}</p>
-                                <p style="margin:2px 0; font-size:0.85rem; color:var(--text-secondary);">• Diárias ({dias}d): R$ {c_hospedagem:.2f}</p>
-                                <h3 style="color:var(--success); margin:12px 0 0 0; font-family:'JetBrains Mono',monospace;">Total: R$ {custo_total:.2f}</h3>
+                            <div class="top-instructor-card">
+                                <h4>#{idx+1} {row['Instrutor_Sugerido']}</h4>
+                                <p>Origem: {row['Cidade_Instrutor']}/{row['UF_Instrutor']}</p>
+                                <p>Distância: {dist} km</p>
+                                <h3>Total Est.: R$ {custo_total:.2f}</h3>
                             </div>
                         """, unsafe_allow_html=True)
 
-                if len(custos_calculados) >= 2:
-                    economia = custos_calculados[1] - custos_calculados[0]
-                    st.success(f"💡 **Economia Eficiente:** Optar pelo **1º Instrutor Recomendado** garante uma economia estimada de **R$ {economia:.2f}** nesta operação.")
-        else:
-            st.info("Nenhum posto disponível para os filtros atuais.")
-    else:
-        st.info("Base de recomendação de deslocamento vazia ou não carregada.")
-
-# ==========================================
-# MÓDULO 5: CALL CENTER & TIMELINE WHATSAPP
-# ==========================================
 elif modulo == "📞 Call Center & Timeline WhatsApp":
-    render_section_header("📞", "Call Center & Timeline WhatsApp", "Registro de atendimentos e disparo de mensagens")
+    render_section_header("📞", "Call Center & Timeline WhatsApp", "Atendimentos e disparos de mensagem")
     if not df_base.empty:
         df_fila_view = df_base[df_base['Tipo_Necessidade'] != 'Rede Ativa (Sem Pendência)'].copy() if 'Tipo_Necessidade' in df_base.columns else df_base.copy()
-
         c_left, c_right = st.columns([1.2, 1.8])
 
         with c_left:
-            st.markdown("**📋 Fila de Atendimento**")
             cols_call = [c for c in ['PV Abadi', 'Razão Social', 'Municipio', 'UF', 'Status_Contato'] if c in df_fila_view.columns]
-            evento_call = st.dataframe(
-                df_fila_view[cols_call],
-                use_container_width=True, hide_index=True, selection_mode="single-row", on_select="rerun"
-            )
+            evento_call = st.dataframe(df_fila_view[cols_call], use_container_width=True, hide_index=True, selection_mode="single-row", on_select="rerun")
             selecionado = evento_call.selection.get("rows", [])
 
         with c_right:
@@ -1665,314 +1390,44 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                 pv_alvo = posto.get('PV Abadi')
                 tel_limpo = ''.join(filter(str.isdigit, str(posto.get('Telefone_Contato', ''))))
 
-                st.markdown(f"""
-                    <div style="display:flex; align-items:center; gap:10px; margin: 4px 0 14px 0;">
-                        <span style="font-size:1.05rem; font-weight:700; color:var(--text-primary);">📝 Ficha de Atendimento — PV {posto.get('PV Abadi', '-')}</span>
-                        {badge_status_html(posto.get('Status_Contato', '-'))}
-                    </div>
-                """, unsafe_allow_html=True)
-
-                st.markdown(f"""
-                    <div class="procv-card">
-                        <h4>🏪 Contexto do Posto (Consulta Rápida)</h4>
-                        <div style="display: flex; justify-content: space-between; flex-wrap: wrap;">
-                            <div style="flex: 1; min-width: 200px;">
-                                <p>🏬 <b>Razão Social:</b> {posto.get('Razão Social', '-')}</p>
-                                <p>📍 <b>Cidade/UF:</b> {posto.get('Municipio', '-')}/{posto.get('UF', '-')}</p>
-                                <p>🏠 <b>Endereço:</b> {posto.get('Endereço', '-')}</p>
-                            </div>
-                            <div style="flex: 1; min-width: 200px;">
-                                <p>👔 <b>Consultor (CF):</b> {posto.get('CF', '-')}</p>
-                                <p>🎯 <b>Necessidade:</b> <span class="badge-info">{posto.get('Tipo_Necessidade', '-')}</span></p>
-                                <p>⏱️ <b>Dias sem Treinamento:</b> {posto.get('Dias_desde_Ultimo_Treinamento', 'N/A')}</p>
-                                <p>📅 <b>Inauguração Prevista:</b> {posto.get('Previsão Inauguração', 'N/A')}</p>
-                            </div>
-                        </div>
-                    </div>
-                """, unsafe_allow_html=True)
-
-                # --- INTEGRAÇÃO WHATSAPP FLEXÍVEL (LINK DIRETO + TEMPLATES) ---
+                st.markdown(f"### Ficha PV {pv_alvo} - {posto.get('Razão Social', '')}")
                 if tel_limpo:
-                    st.markdown("##### 📲 Envio de Mensagem WhatsApp")
-                    opcao_wa = st.radio("Selecione o estilo do envio:", ["Link Direto Rápido", "Template Customizado"], horizontal=True)
+                    msg = f"Olá! Aqui é da Capacitação AmPm referente ao posto {posto.get('Razão Social', '')}."
+                    link_wa = f"https://wa.me/55{tel_limpo}?text={msg.replace(' ', '%20')}"
+                    st.markdown(f"👉 **[Chamar no WhatsApp]({link_wa})**")
 
-                    if opcao_wa == "Link Direto Rápido":
-                        msg_final = f"Olá, equipe {posto.get('Razão Social', '')}! Aqui é da equipe de Capacitação AmPm. Gostaria de agendar o treinamento da loja."
-                    else:
-                        tmpl = st.selectbox("Escolha o Modelo de Mensagem:", [
-                            "Agendamento de Treinamento",
-                            "Cobrança / Verificação de Apostilas",
-                            "Lembrete de Treinamento Agendado",
-                            "Acompanhamento Pós-Treinamento"
-                        ])
-
-                        data_agendada_disp = posto.get('Data_Agendada')
-                        data_agendada_fmt = parse_data_flexivel(data_agendada_disp)
-                        data_agendada_fmt = data_agendada_fmt.strftime("%d/%m/%Y") if data_agendada_fmt else "em breve"
-
-                        if tmpl == "Agendamento de Treinamento":
-                            msg_final = f"Olá! Aqui é da Capacitação AmPm. Gostaríamos de confirmar as datas disponíveis para o treinamento na loja {posto.get('Razão Social', '')} (PV {posto.get('PV Abadi', '')})."
-                        elif tmpl == "Cobrança / Verificação de Apostilas":
-                            msg_final = f"Olá, equipe {posto.get('Razão Social', '')}! Para darmos início ao treinamento, poderiam confirmar se o material de apoio e apostilas já chegaram na loja?"
-                        elif tmpl == "Lembrete de Treinamento Agendado":
-                            msg_final = f"Olá! Passando para lembrar que o treinamento AmPm da loja {posto.get('Razão Social', '')} está agendado para o dia {data_agendada_fmt}. Contamos com todos!"
-                        else:
-                            msg_final = f"Olá! Como foi o treinamento concluído na loja {posto.get('Razão Social', '')}? Estamos à disposição para dúvidas ou feedbacks."
-
-                    link_wa = f"https://wa.me/55{tel_limpo}?text={msg_final.replace(' ', '%20')}"
-                    st.markdown(f"👉 **[Clique aqui para chamar no WhatsApp Direct]({link_wa})**")
-
-                lista_instrutores = ["Pendente de Alocação"]
-                if not df_instrutores.empty and 'NOME_COMPLETO' in df_instrutores.columns:
-                    lista_instrutores += sorted(df_instrutores['NOME_COMPLETO'].dropna().unique().tolist())
-
-                instrutor_atual = str(posto.get('Instrutor_Sugerido', 'Pendente de Alocação'))
-                idx_instrutor = lista_instrutores.index(instrutor_atual) if instrutor_atual in lista_instrutores else 0
-
-                data_inicial = parse_data_flexivel(posto.get('Data_Agendada')) or date.today()
-
-                # --- REGISTROS RÁPIDOS DA LIGAÇÃO ---
                 with st.form("form_callcenter_editavel"):
-                    st.markdown("#### ✍️ Registros Rápidos da Ligação")
+                    nome_c = st.text_input("Responsável:", value=str(posto.get('Nome_Contato', '') or ''))
+                    tel_c = st.text_input("Telefone:", value=str(posto.get('Telefone_Contato', '') or ''))
+                    obs = st.text_area("Observações:", value=str(posto.get('Observacoes', '') or ''))
+                    novo_st = st.selectbox("Status:", ["A Contatar", "Em Negociação", "Agendado", "Treinamento Realizado", "Recusado"])
 
-                    col_f1, col_f2 = st.columns(2)
-                    with col_f1:
-                        nome_c = st.text_input("👤 Nome do Responsável na Loja:", value=str(posto.get('Nome_Contato', '') or ''))
-                        tel_c = st.text_input("📞 Telefone de Contato:", value=str(posto.get('Telefone_Contato', '') or ''))
-                        qtd_func = st.number_input("👥 Qtd. de Funcionários para Treinar:", value=int(posto.get('Qtd_Funcionarios', 0) or 0), min_value=0, step=1)
-                        instrutor_escolhido = st.selectbox("👨‍🏫 Instrutor Designado:", lista_instrutores, index=idx_instrutor)
-
-                    with col_f2:
-                        status_opcoes = ["A Contatar", "Em Negociação", "Agendado", "Treinamento Realizado", "Recusado"]
-                        st_atual = posto.get('Status_Contato', 'A Contatar')
-                        idx_st = status_opcoes.index(st_atual) if st_atual in status_opcoes else 0
-                        novo_st = st.selectbox("🔄 Status do Atendimento:", status_opcoes, index=idx_st)
-
-                        mat_opcoes = ["Não Informado", "Sim", "Não"]
-                        mat_atual = posto.get('Material_Em_Loja', 'Não Informado')
-                        idx_mat = mat_opcoes.index(mat_atual) if mat_atual in mat_opcoes else 0
-                        mat_loja = st.selectbox("📦 Possui Material/Apostilas na Loja?", mat_opcoes, index=idx_mat)
-                        data_ag = st.date_input("📅 Data Agendada (Calendário):", value=data_inicial, format="DD/MM/YYYY")
-
-                    obs = st.text_area("💬 Observações e Alinhamentos:", value=str(posto.get('Observacoes', '') or ''), height=80)
-
-                    if st.form_submit_button("💾 Salvar Registro do Atendimento"):
+                    if st.form_submit_button("💾 Salvar Registro"):
                         atualizar_fila(pv_alvo, {
                             'Nome_Contato': nome_c,
                             'Telefone_Contato': tel_c,
-                            'Qtd_Funcionarios': qtd_func,
-                            'Instrutor_Sugerido': instrutor_escolhido,
-                            'Material_Em_Loja': mat_loja,
-                            'Data_Agendada': data_ag.strftime("%Y-%m-%d"),
                             'Status_Contato': novo_st,
                             'Observacoes': obs,
                             'Data_do_Contato': datetime.today().strftime('%d/%m/%Y %H:%M'),
                         })
-                        st.success("✅ Atendimento registrado com sucesso!")
+                        st.success("✅ Salvo!")
                         st.rerun()
 
-                st.divider()
-                st.markdown("**⏱️ Histórico de Interações**")
-                data_ct = posto.get('Data_do_Contato', 'Sem registro')
-                data_agendada_obj = parse_data_flexivel(posto.get('Data_Agendada'))
-                data_agendada_str = data_agendada_obj.strftime("%d/%m/%Y") if data_agendada_obj else "Não agendado"
-                st.markdown(f"""
-                    <div class="timeline-item">
-                        <small style="color:var(--text-tertiary);"><b>Última Atualização:</b> {data_ct}</small><br>
-                        <span style="color:var(--text-primary);">{badge_status_html(posto.get('Status_Contato', '-'))} &nbsp;·&nbsp; <b>Agendado:</b> {data_agendada_str} &nbsp;·&nbsp; <b>Instrutor:</b> {posto.get('Instrutor_Sugerido', '-')}</span><br>
-                        <span style="color:var(--text-secondary);"><i>"{posto.get('Observacoes', 'Sem observações registradas.')}"</i></span>
-                    </div>
-                """, unsafe_allow_html=True)
-    else:
-        st.info("📭 Nenhum dado carregado ainda.")
-
-# ==========================================
-# MÓDULO 6: EQUIPE DE INSTRUTORES
-# ==========================================
 elif modulo == "👔 Equipe de Instrutores":
-    render_section_header("👔", "Equipe de Instrutores", "Instrutores credenciados na rede")
+    render_section_header("👔", "Equipe de Instrutores", "Instrutores credenciados")
     if not df_instrutores.empty:
-        cols_inst = [c for c in ['NOME_COMPLETO', 'STATUS', 'TELEFONE', 'EMAIL', 'Cidade', 'UF'] if c in df_instrutores.columns]
-        st.dataframe(df_instrutores[cols_inst], use_container_width=True, hide_index=True)
-    else:
-        st.info("📭 Nenhum instrutor carregado ainda.")
+        st.dataframe(df_instrutores, use_container_width=True, hide_index=True)
 
-# ==========================================
-# MÓDULO 7: ENRIQUECIMENTO DE REDE (GERENCIAL + TELEFONES)
-# ==========================================
 elif modulo == "📇 Enriquecimento de Rede":
-    render_section_header("📇", "Enriquecimento de Rede", "Traga lojas novas de uma planilha gerencial e busque telefones automaticamente")
+    render_section_header("📇", "Enriquecimento de Rede", "Atualizações de lojas e telefones")
+    st.info("Utilize a barra lateral para fazer upload de novas bases ou enriquecer os dados existentes.")
 
-    aba1, aba2 = st.tabs(["🏪 Novas Lojas (Planilha Gerencial)", "☎️ Busca de Telefones (Google Places)"])
-
-    # --------------------------------------------------
-    # ABA 1 — Comparar planilha gerencial e trazer lojas novas
-    # --------------------------------------------------
-    with aba1:
-        st.markdown(
-            "Envie uma planilha gerencial (qualquer nome de aba/coluna — o sistema reconhece pelo conteúdo). "
-            "O CRM compara pelo **PV Abadi** e mostra quais lojas existem nela mas ainda não estão na Rede de Lojas do CRM."
-        )
-        arquivo_gerencial = st.file_uploader(
-            "Planilha gerencial (.xlsx ou .csv):", type=["xlsx", "csv"], key="upload_gerencial"
-        )
-
-        if arquivo_gerencial is not None:
-            try:
-                if arquivo_gerencial.name.endswith(".xlsx"):
-                    xls_ger = pd.ExcelFile(arquivo_gerencial, engine="openpyxl")
-                    bases_ger, relatorio_ger = detectar_entidades_no_workbook(xls_ger)
-                    df_ger_lojas = bases_ger.get("lojas", pd.DataFrame())
-                else:
-                    df_ger_bruto = pd.read_csv(arquivo_gerencial)
-                    rename_map, canonicas, ignoradas = _mapear_colunas_compativeis(df_ger_bruto, ENTIDADES["lojas"])
-                    df_ger_lojas = df_ger_bruto.rename(columns=rename_map)
-                    colunas_presentes = [c for c in ENTIDADES["lojas"]["colunas"].keys() if c in df_ger_lojas.columns]
-                    df_ger_lojas = df_ger_lojas[colunas_presentes].copy()
-
-                if df_ger_lojas.empty or "PV Abadi" not in df_ger_lojas.columns:
-                    st.error("❌ Não foi possível reconhecer dados de lojas nessa planilha (faltou identificar a coluna de PV Abadi).")
-                else:
-                    df_ger_lojas["PV Abadi"] = pd.to_numeric(df_ger_lojas["PV Abadi"], errors="coerce")
-                    df_lojas_atual = st.session_state['bases']['lojas']
-                    pvs_atuais = set(df_lojas_atual["PV Abadi"].dropna().tolist()) if "PV Abadi" in df_lojas_atual.columns else set()
-
-                    df_novas = df_ger_lojas[~df_ger_lojas["PV Abadi"].isin(pvs_atuais) & df_ger_lojas["PV Abadi"].notna()].copy()
-                    df_novas = df_novas.drop_duplicates(subset="PV Abadi")
-
-                    st.markdown(f"**{len(df_ger_lojas)}** lojas na planilha enviada · **{len(df_novas)}** ainda não existem na base atual do CRM.")
-
-                    if df_novas.empty:
-                        st.success("✅ Nenhuma loja nova encontrada — a base do CRM já está alinhada com essa planilha.")
-                    else:
-                        cols_preview = [c for c in ["PV Abadi", "Razão Social", "Municipio", "UF", "Status Loja"] if c in df_novas.columns]
-                        st.dataframe(df_novas[cols_preview], use_container_width=True, hide_index=True, height=280)
-
-                        if st.button(f"➕ Adicionar essas {len(df_novas)} lojas à Rede de Lojas do CRM"):
-                            colunas_lojas = list(ENTIDADES["lojas"]["colunas"].keys())
-                            for c in colunas_lojas:
-                                if c not in df_lojas_atual.columns:
-                                    df_lojas_atual[c] = pd.NA
-                                if c not in df_novas.columns:
-                                    df_novas[c] = pd.NA
-                            df_lojas_atualizada = pd.concat(
-                                [df_lojas_atual, df_novas[colunas_lojas]], ignore_index=True
-                            )
-                            st.session_state['bases']['lojas'] = df_lojas_atualizada
-                            salvar_lojas_no_disco()
-                            st.success(f"✅ {len(df_novas)} lojas adicionadas e salvas na base do CRM!")
-                            st.rerun()
-            except Exception as e:
-                st.error(f"❌ Erro ao processar a planilha gerencial: {e}")
-
-    # --------------------------------------------------
-    # ABA 2 — Busca automática de telefones via Google Places
-    # --------------------------------------------------
-    with aba2:
-        try:
-            api_key = st.secrets.get("GOOGLE_PLACES_API_KEY")
-        except Exception:
-            api_key = None
-
-        if not api_key:
-            st.warning("🔑 Nenhuma chave de API do Google Places configurada.")
-            with st.expander("📖 Como configurar (leva 5 minutos)", expanded=True):
-                st.markdown("""
-1. Acesse o [Google Cloud Console](https://console.cloud.google.com/) e crie (ou selecione) um projeto.
-2. No menu, vá em **APIs e Serviços → Biblioteca** e ative a **Places API**.
-3. Em **APIs e Serviços → Credenciais**, clique em **Criar credenciais → Chave de API**. Copie a chave gerada.
-4. No [Streamlit Cloud](https://share.streamlit.io/), abra seu app → **⋮ (menu) → Settings → Secrets** e adicione:
-   ```
-   GOOGLE_PLACES_API_KEY = "sua-chave-aqui"
-   ```
-5. Salve — o app reinicia sozinho e esta aba já habilita a busca automaticamente.
-                """)
-        else:
-            df_lojas_atual = st.session_state['bases']['lojas']
-            df_fila_atual = st.session_state['bases']['fila']
-
-            if df_lojas_atual.empty:
-                st.info("📭 Nenhuma loja carregada na base do CRM ainda.")
-            else:
-                telefones_atuais = df_fila_atual.set_index('PV_Abadi')['Telefone_Contato'] if 'PV_Abadi' in df_fila_atual.columns else pd.Series(dtype=object)
-
-                def _tem_telefone(pv):
-                    tel = telefones_atuais.get(pv) if pv in telefones_atuais.index else None
-                    return pd.notna(tel) and str(tel).strip() not in ("", "nan")
-
-                df_lojas_atual['_tem_telefone'] = df_lojas_atual['PV Abadi'].apply(_tem_telefone)
-                pendentes = df_lojas_atual[~df_lojas_atual['_tem_telefone']].copy()
-
-                c1, c2 = st.columns(2)
-                c1.metric("🏪 Total de lojas", len(df_lojas_atual))
-                c2.metric("☎️ Sem telefone cadastrado", len(pendentes))
-
-                if filtro_uf != "Todas" and 'UF' in pendentes.columns:
-                    pendentes = pendentes[pendentes['UF'] == filtro_uf]
-                    st.caption(f"Filtro de UF da barra lateral aplicado: {len(pendentes)} lojas nessa seleção.")
-
-                tamanho_lote = st.slider(
-                    "Quantas lojas buscar neste lote:", min_value=5, max_value=100, value=25, step=5,
-                    help="Buscas em lote evitam travar o app com milhares de chamadas de uma vez. Clique novamente para continuar de onde parou."
-                )
-
-                if st.button(f"🔍 Buscar telefone das próximas {tamanho_lote} lojas pendentes"):
-                    lote = pendentes.head(tamanho_lote)
-                    barra = st.progress(0, text="Iniciando busca...")
-                    sucesso, falha = 0, 0
-                    detalhes_falha = []
-
-                    for i, (_, loja) in enumerate(lote.iterrows()):
-                        endereco = ", ".join([
-                            str(loja.get(c, "")) for c in ["Endereço", "Municipio", "UF"]
-                            if pd.notna(loja.get(c)) and str(loja.get(c)).strip()
-                        ])
-                        nome = str(loja.get("Razão Social", "") or "")
-                        telefone, status = buscar_telefone_google_places(endereco, nome, api_key)
-
-                        if telefone:
-                            atualizar_fila(loja['PV Abadi'], {'Telefone_Contato': telefone})
-                            sucesso += 1
-                        else:
-                            falha += 1
-                            detalhes_falha.append(f"PV {loja.get('PV Abadi')} · {nome}: {status}")
-
-                        barra.progress((i + 1) / len(lote), text=f"Processando {i + 1}/{len(lote)}...")
-                        time.sleep(0.15)  # evita estourar limite de requisições por segundo da API
-
-                    barra.empty()
-                    st.success(f"✅ Lote concluído: {sucesso} telefones encontrados, {falha} sem resultado.")
-                    if detalhes_falha:
-                        with st.expander(f"Ver detalhes das {falha} lojas sem telefone encontrado"):
-                            st.write("\n".join(detalhes_falha[:200]))
-                    st.rerun()
-
-# ==========================================
-# MÓDULO 8: RELATÓRIOS & EXPORTAÇÃO
-# ==========================================
 elif modulo == "📂 Relatórios & Exportação":
-    render_section_header("📂", "Relatórios & Exportação", "Baixe os dados operacionais atualizados em tempo real")
-
-    col_exp1, col_exp2 = st.columns(2)
-
+    render_section_header("📂", "Relatórios & Exportação", "Download das bases atualizadas")
     csv_buffer = df_base.to_csv(index=False).encode('utf-8')
-    with col_exp1:
-        st.download_button(
-            label="📄 Baixar Base Filtrada em CSV",
-            data=csv_buffer,
-            file_name=f"Base_CRM_AmPm_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-            mime="text/csv"
-        )
-
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df_base.to_excel(writer, sheet_name='Base_CRM_Atualizada', index=False)
-    excel_data = output.getvalue()
-
-    with col_exp2:
-        st.download_button(
-            label="📊 Baixar Base Filtrada em Excel",
-            data=excel_data,
-            file_name=f"Base_CRM_AmPm_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+    st.download_button(
+        label="📄 Baixar Base em CSV",
+        data=csv_buffer,
+        file_name=f"Base_CRM_AmPm_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+        mime="text/csv"
+    )
