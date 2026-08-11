@@ -7,6 +7,9 @@ import io
 import time
 import requests
 import json
+import re
+import unicodedata
+from difflib import SequenceMatcher
 import streamlit_authenticator as stauth
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
@@ -613,12 +616,32 @@ def parse_data_flexivel(valor):
     return None
 
 def _normalizar_nome(nome):
-    import unicodedata
-    nome = str(nome).strip().lower()
-    nome = unicodedata.normalize('NFKD', nome).encode('ascii', 'ignore').decode('ascii')
-    nome = nome.replace('_', ' ').replace('-', ' ')
-    nome = ' '.join(nome.split())
-    return nome
+    """Normaliza nomes de colunas para comparação robusta.
+    Aceita acentos, pontuação, underscores, hífens e diferenças de caixa.
+    """
+    texto = "" if nome is None else str(nome).strip().lower()
+    texto = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode("ascii")
+    texto = re.sub(r"[^a-z0-9]+", " ", texto)
+    return " ".join(texto.split())
+
+
+def _similaridade_coluna(a, b):
+    """Calcula similaridade entre dois nomes de coluna.
+    Além da comparação textual, considera palavras em comum.
+    """
+    a_norm = _normalizar_nome(a)
+    b_norm = _normalizar_nome(b)
+    if not a_norm or not b_norm:
+        return 0.0
+    if a_norm == b_norm:
+        return 1.0
+    tokens_a = set(a_norm.split())
+    tokens_b = set(b_norm.split())
+    inter = len(tokens_a & tokens_b)
+    cobertura = inter / max(len(tokens_a), len(tokens_b), 1)
+    sequencia = SequenceMatcher(None, a_norm, b_norm).ratio()
+    return max(sequencia, cobertura * 0.92)
+
 
 ENTIDADES = {
     "lojas": {
@@ -692,7 +715,7 @@ ENTIDADES = {
             "UF_Loja": ["uf loja", "uf", "estado loja"],
             "Instrutor_Sugerido": ["instrutor sugerido", "instrutor"],
             "Cidade_Instrutor": ["cidade instrutor", "cidade do instrutor"],
-            "UF_Instrutor": ["uf instrutor", "uf do instrutor"],
+            "UF_Instrutor": ["uf instrutor", "uf do instrutor", "estado instrutor"],
             "Ranking_Proximidade": ["ranking proximidade", "ranking", "posicao ranking"],
             "Distancia_km_linha_reta": ["distancia km linha reta", "distancia km", "distancia", "distancia linha reta"],
             "Dias_Treinamento_Necessarios": ["dias treinamento necessarios", "dias necessarios", "dias de treinamento"],
@@ -701,6 +724,8 @@ ENTIDADES = {
 }
 
 MIN_SCORE_CONFIANTE = 2
+FUZZY_THRESHOLD = 0.82
+
 
 def _construir_lookup(colunas_dict):
     lookup = {}
@@ -709,22 +734,107 @@ def _construir_lookup(colunas_dict):
             lookup[_normalizar_nome(apelido)] = canonico
     return lookup
 
+
 def _mapear_colunas_compativeis(df, definicao_entidade):
+    """Reconhece colunas por nome exato, apelido e similaridade.
+    Colunas novas que não existem no dicionário são preservadas como colunas dinâmicas.
+    """
     lookup = _construir_lookup(definicao_entidade["colunas"])
     rename_map = {}
     canonicas_encontradas = set()
     colunas_ignoradas = []
+    colunas_novas = []
+
     for col in df.columns:
-        chave_norm = _normalizar_nome(col)
+        original = str(col)
+        chave_norm = _normalizar_nome(original)
         canonico = lookup.get(chave_norm)
+
+        if canonico is None and chave_norm:
+            melhor = None
+            melhor_score = 0.0
+            for alias_norm, destino in lookup.items():
+                score = _similaridade_coluna(chave_norm, alias_norm)
+                if score > melhor_score and destino not in canonicas_encontradas:
+                    melhor = destino
+                    melhor_score = score
+            if melhor is not None and melhor_score >= FUZZY_THRESHOLD:
+                canonico = melhor
+
         if canonico and canonico not in canonicas_encontradas:
-            rename_map[col] = canonico
+            rename_map[original] = canonico
             canonicas_encontradas.add(canonico)
         else:
-            colunas_ignoradas.append(str(col))
-    return rename_map, canonicas_encontradas, colunas_ignoradas
+            colunas_novas.append(original)
+
+    return rename_map, canonicas_encontradas, colunas_novas
+
+
+def _normalizar_chave_dataframe(df, chave, numerica=True):
+    df = df.copy()
+    if chave not in df.columns:
+        return df
+    if numerica:
+        df[chave] = pd.to_numeric(df[chave], errors="coerce")
+    else:
+        df[chave] = df[chave].astype("string").str.strip()
+    return df
+
+
+def _coluna_dinamica_segura(nome, existentes):
+    base = str(nome).strip()
+    if not base:
+        return None
+    if base in existentes:
+        return base
+    candidato = base
+    contador = 2
+    while candidato in existentes:
+        candidato = f"{base}_{contador}"
+        contador += 1
+    return candidato
+
+
+def _preparar_dataframe_entidade(df_bruto, definicao):
+    """Converte uma tabela externa para o modelo interno sem descartar informação nova."""
+    rename_map, canonicas, colunas_novas = _mapear_colunas_compativeis(df_bruto, definicao)
+    df_mapeado = df_bruto.rename(columns=rename_map).copy()
+    existentes = set(df_mapeado.columns)
+
+    # Mantém colunas novas em vez de descartá-las. Isso permite ao CRM aprender
+    # campos adicionais sem exigir alteração de código para cada nova planilha.
+    for coluna in list(colunas_novas):
+        if coluna not in df_mapeado.columns:
+            continue
+        nova = _coluna_dinamica_segura(coluna, existentes)
+        if nova and nova != coluna:
+            df_mapeado.rename(columns={coluna: nova}, inplace=True)
+            existentes.add(nova)
+
+    return df_mapeado, rename_map, canonicas, colunas_novas
+
+
+def _score_aba_para_entidade(df, sheet_name, entidade, definicao):
+    _, canonicas, _ = _mapear_colunas_compativeis(df, definicao)
+    chave = definicao["chave"]
+    if chave not in canonicas:
+        return -1, canonicas
+
+    score = len(canonicas)
+    nome_aba = _normalizar_nome(sheet_name)
+    pistas = {
+        "lojas": ["loja", "rede", "posto", "base", "cadastro"],
+        "fila": ["fila", "call", "contato", "treinamento"],
+        "inaug": ["inaug", "abertura", "pipeline"],
+        "instrutores": ["instrutor", "equipe", "professor"],
+        "rec": ["recomend", "desloc", "rota", "proximidade"],
+    }
+    score += sum(1 for pista in pistas.get(entidade, []) if pista in nome_aba)
+    return score, canonicas
+
 
 def detectar_entidades_no_workbook(xls):
+    """Lê todas as abas e identifica o tipo pelo conteúdo, não pelo nome da aba."""
     dfs_brutos = {}
     candidatos = []
 
@@ -735,51 +845,56 @@ def detectar_entidades_no_workbook(xls):
             continue
         if df_bruto is None or len(df_bruto.columns) == 0:
             continue
+        df_bruto = df_bruto.dropna(axis=0, how="all").dropna(axis=1, how="all")
+        if df_bruto.empty:
+            continue
         dfs_brutos[sheet_name] = df_bruto
+
         for entidade, definicao in ENTIDADES.items():
-            rename_map, canonicas, _ = _mapear_colunas_compativeis(df_bruto, definicao)
-            if definicao["chave"] not in canonicas:
-                continue
-            score = len(canonicas)
-            candidatos.append((score, sheet_name, entidade, rename_map, canonicas))
+            score, canonicas = _score_aba_para_entidade(df_bruto, sheet_name, entidade, definicao)
+            if score >= 1 and definicao["chave"] in canonicas:
+                candidatos.append((score, sheet_name, entidade, canonicas))
 
-    candidatos.sort(key=lambda x: -x[0])
-
+    prioridade = {"lojas": 5, "fila": 4, "inaug": 3, "instrutores": 2, "rec": 1}
+    candidatos.sort(key=lambda x: (-x[0], -prioridade.get(x[2], 0), x[1]))
     entidade_atribuida = {}
     aba_usada = set()
-    for score, sheet_name, entidade, rename_map, canonicas in candidatos:
-        if score < MIN_SCORE_CONFIANTE:
-            continue
+
+    for score, sheet_name, entidade, _ in candidatos:
         if entidade in entidade_atribuida or sheet_name in aba_usada:
             continue
-        entidade_atribuida[entidade] = (sheet_name, rename_map, canonicas, score)
+        entidade_atribuida[entidade] = sheet_name
         aba_usada.add(sheet_name)
 
+    # Rede de lojas é a âncora do CRM. Se houver mais de uma candidata,
+    # escolhemos a que tiver mais campos reconhecidos.
     if "lojas" not in entidade_atribuida:
-        for score, sheet_name, entidade, rename_map, canonicas in candidatos:
-            if entidade == "lojas" and sheet_name not in aba_usada:
-                entidade_atribuida["lojas"] = (sheet_name, rename_map, canonicas, score)
-                aba_usada.add(sheet_name)
-                break
+        raise ValueError("Nenhuma aba com uma chave de loja/PV foi reconhecida.")
 
     bases = {}
     relatorio = []
+
     for entidade, definicao in ENTIDADES.items():
         colunas_canonicas = list(definicao["colunas"].keys())
-        if entidade in entidade_atribuida:
-            sheet_name, rename_map, canonicas, score = entidade_atribuida[entidade]
+        sheet_name = entidade_atribuida.get(entidade)
+
+        if sheet_name:
             df_bruto = dfs_brutos[sheet_name]
-            df_mapeado = df_bruto.rename(columns=rename_map)
-            colunas_presentes = [c for c in colunas_canonicas if c in df_mapeado.columns]
-            df_final = df_mapeado[colunas_presentes].copy()
-            colunas_ignoradas = [c for c in df_bruto.columns if c not in rename_map]
+            df_final, rename_map, canonicas, colunas_novas = _preparar_dataframe_entidade(df_bruto, definicao)
+            df_final = _normalizar_chave_dataframe(
+                df_final,
+                definicao["chave"],
+                definicao.get("chave_numerica", True),
+            )
             bases[entidade] = df_final
             relatorio.append({
                 "entidade": entidade,
                 "aba_origem": sheet_name,
-                "confianca": "alta" if score >= MIN_SCORE_CONFIANTE else "baixa",
-                "colunas_reconhecidas": colunas_presentes,
-                "colunas_ignoradas": colunas_ignoradas,
+                "confianca": "alta" if len(canonicas) >= MIN_SCORE_CONFIANTE else "média",
+                "colunas_reconhecidas": [c for c in colunas_canonicas if c in df_final.columns],
+                "colunas_novas": [c for c in df_final.columns if c not in colunas_canonicas],
+                "colunas_ignoradas": [],
+                "linhas_lidas": len(df_final),
             })
         else:
             bases[entidade] = pd.DataFrame(columns=colunas_canonicas)
@@ -788,27 +903,10 @@ def detectar_entidades_no_workbook(xls):
                 "aba_origem": None,
                 "confianca": "n/a",
                 "colunas_reconhecidas": [],
+                "colunas_novas": [],
                 "colunas_ignoradas": [],
+                "linhas_lidas": 0,
             })
-
-    return bases, relatorio
-
-def _processar_excelfile(xls):
-    bases, relatorio = detectar_entidades_no_workbook(xls)
-
-    if bases["lojas"].empty or ENTIDADES["lojas"]["chave"] not in bases["lojas"].columns:
-        abas_disponiveis = ", ".join(xls.sheet_names) if xls.sheet_names else "(nenhuma)"
-        raise ValueError(
-            "Não foi possível identificar dados de rede de lojas na planilha. "
-            f"Abas presentes: {abas_disponiveis}."
-        )
-
-    for entidade, definicao in ENTIDADES.items():
-        chave = definicao["chave"]
-        df = bases[entidade]
-        if definicao.get("chave_numerica", True) and chave in df.columns:
-            df[chave] = pd.to_numeric(df[chave], errors="coerce")
-        bases[entidade] = df
 
     for col in COLUNAS_FILA:
         if col not in bases["fila"].columns:
@@ -816,72 +914,245 @@ def _processar_excelfile(xls):
 
     return bases, relatorio
 
+
+def _valor_preenchido(valor):
+    if valor is None:
+        return False
+    try:
+        if pd.isna(valor):
+            return False
+    except Exception:
+        pass
+    return str(valor).strip().lower() not in ("", "nan", "nat", "none", "null")
+
+
+def mesclar_entidade_existente(df_atual, df_novo, definicao):
+    """UPSERT inteligente: atualiza registros existentes e adiciona registros novos.
+    Valores vazios do arquivo novo nunca apagam informação existente.
+    """
+    chave = definicao["chave"]
+    numerica = definicao.get("chave_numerica", True)
+    atual = _normalizar_chave_dataframe(df_atual if df_atual is not None else pd.DataFrame(), chave, numerica)
+    novo = _normalizar_chave_dataframe(df_novo if df_novo is not None else pd.DataFrame(), chave, numerica)
+
+    if novo.empty:
+        return atual, 0, 0, []
+    if chave not in novo.columns:
+        return atual, 0, 0, []
+
+    # Remove chaves vazias: não existe forma segura de fazer upsert sem identificador.
+    novo = novo[novo[chave].notna()].copy()
+    if novo.empty:
+        return atual, 0, 0, []
+
+    # Mantém todas as colunas existentes e acrescenta as novas.
+    for coluna in novo.columns:
+        if coluna not in atual.columns:
+            atual[coluna] = pd.NA
+    for coluna in atual.columns:
+        if coluna not in novo.columns:
+            novo[coluna] = pd.NA
+    novo = novo[atual.columns.tolist() + [c for c in novo.columns if c not in atual.columns]]
+
+    if atual.empty:
+        resultado = novo.drop_duplicates(subset=[chave], keep="last").reset_index(drop=True)
+        return resultado, 0, len(resultado), [c for c in novo.columns if c not in definicao["colunas"]]
+
+    atual = atual.reset_index(drop=True)
+    novo = novo.reset_index(drop=True)
+    indice_atual = {}
+    for idx, valor in atual[chave].items():
+        if _valor_preenchido(valor):
+            indice_atual[str(valor)] = idx
+
+    atualizados = 0
+    adicionados = 0
+    novas_colunas = [c for c in novo.columns if c not in definicao["colunas"]]
+
+    for _, linha in novo.iterrows():
+        chave_linha = str(linha[chave])
+        if chave_linha in indice_atual:
+            idx = indice_atual[chave_linha]
+            mudou = False
+            for coluna, valor in linha.items():
+                if coluna == chave:
+                    continue
+                if _valor_preenchido(valor):
+                    valor_atual = atual.at[idx, coluna]
+                    if not _valor_preenchido(valor_atual) or str(valor_atual) != str(valor):
+                        atual.at[idx, coluna] = valor
+                        mudou = True
+            if mudou:
+                atualizados += 1
+        else:
+            nova_linha = {col: pd.NA for col in atual.columns}
+            for coluna, valor in linha.items():
+                if coluna in nova_linha:
+                    nova_linha[coluna] = valor
+            atual = pd.concat([atual, pd.DataFrame([nova_linha])], ignore_index=True)
+            indice_atual[chave_linha] = len(atual) - 1
+            adicionados += 1
+
+    return atual, atualizados, adicionados, novas_colunas
+
+
+def mesclar_bases(bases_atuais, bases_novas):
+    """Aplica UPSERT em todas as entidades reconhecidas."""
+    resultado = dict(bases_atuais or _bases_vazias())
+    estatisticas = []
+
+    for entidade, definicao in ENTIDADES.items():
+        atual = resultado.get(entidade, pd.DataFrame(columns=list(definicao["colunas"].keys())))
+        novo = bases_novas.get(entidade, pd.DataFrame())
+        combinado, atualizados, adicionados, novas_colunas = mesclar_entidade_existente(atual, novo, definicao)
+        resultado[entidade] = combinado
+        estatisticas.append({
+            "entidade": entidade,
+            "atualizados": atualizados,
+            "adicionados": adicionados,
+            "novas_colunas": novas_colunas,
+        })
+
+    for col in COLUNAS_FILA:
+        if col not in resultado["fila"].columns:
+            resultado["fila"][col] = pd.NA
+
+    return resultado, estatisticas
+
+
+def _processar_excelfile(xls, exigir_lojas=False):
+    bases, relatorio = detectar_entidades_no_workbook(xls)
+    if exigir_lojas and (bases["lojas"].empty or ENTIDADES["lojas"]["chave"] not in bases["lojas"].columns):
+        abas_disponiveis = ", ".join(xls.sheet_names) if xls.sheet_names else "(nenhuma)"
+        raise ValueError(
+            "Não foi possível identificar uma base de lojas no banco principal. "
+            f"Abas presentes: {abas_disponiveis}. "
+            "A base principal precisa conter uma coluna equivalente a PV."
+        )
+    return bases, relatorio
+
+
+def _ler_csv_flexivel(uploaded_file):
+    """Lê CSV com diferentes codificações e separadores comuns no Brasil."""
+    dados = uploaded_file.getvalue()
+    ultimo_erro = None
+    for encoding in ("utf-8-sig", "utf-8", "cp1252", "latin1"):
+        for sep in (None, ";", ",", "\t", "|"):
+            try:
+                kwargs = {"encoding": encoding}
+                if sep is None:
+                    kwargs.update({"sep": None, "engine": "python"})
+                else:
+                    kwargs["sep"] = sep
+                df = pd.read_csv(io.BytesIO(dados), **kwargs)
+                if len(df.columns) > 1:
+                    return df
+            except Exception as exc:
+                ultimo_erro = exc
+    raise ValueError(f"Não foi possível interpretar o CSV: {ultimo_erro}")
+
+
 def validar_bytes_excel(conteudo_bytes):
     try:
-        xls = pd.ExcelFile(io.BytesIO(conteudo_bytes), engine='openpyxl')
-        bases, relatorio = _processar_excelfile(xls)
+        xls = pd.ExcelFile(io.BytesIO(conteudo_bytes), engine="openpyxl")
+        bases, relatorio = _processar_excelfile(xls, exigir_lojas=False)
         return bases, relatorio, None
     except Exception as e:
         return None, None, str(e)
+
 
 @st.cache_data
 def carregar_bases_do_disco(caminho, assinatura=None):
     if not os.path.exists(caminho):
         return None, None
-    xls = pd.ExcelFile(caminho, engine='openpyxl')
-    return _processar_excelfile(xls)
+    xls = pd.ExcelFile(caminho, engine="openpyxl")
+    return _processar_excelfile(xls, exigir_lojas=True)
+
 
 def construir_base_unificada(df_lojas, df_fila, df_inaug):
     if df_lojas is None or df_lojas.empty:
         return pd.DataFrame()
 
-    df_base = pd.merge(
-        df_lojas,
-        df_fila[[c for c in COLUNAS_FILA if c in df_fila.columns]],
-        left_on='PV Abadi', right_on='PV_Abadi', how='left'
-    )
+    df_base = df_lojas.copy()
 
-    df_base = pd.merge(
-        df_base,
-        df_inaug[['PV ABADI', 'Previsão Inauguração', 'Pipeline', 'Consultor_Possivel_Instrutor']],
-        left_on='PV Abadi', right_on='PV ABADI', how='left'
-    )
+    if df_fila is not None and not df_fila.empty and "PV_Abadi" in df_fila.columns:
+        colunas_fila = [c for c in df_fila.columns if c != "PV_Abadi"]
+        df_fila_merge = df_fila[["PV_Abadi"] + colunas_fila].copy()
+        df_base = pd.merge(df_base, df_fila_merge, left_on="PV Abadi", right_on="PV_Abadi", how="left")
 
-    df_base['Status_Contato'] = df_base['Status_Contato'].fillna('A Contatar')
-    df_base['Tipo_Necessidade'] = df_base['Tipo_Necessidade'].fillna('Rede Ativa (Sem Pendência)')
-    df_base['Instrutor_Sugerido'] = df_base['Instrutor_Sugerido'].fillna('Pendente de Alocação')
-    df_base['Nome_Contato'] = df_base['Nome_Contato'].fillna("")
-    df_base['Qtd_Funcionarios'] = pd.to_numeric(df_base['Qtd_Funcionarios'], errors='coerce').fillna(0).astype(int)
-    df_base['Material_Em_Loja'] = df_base['Material_Em_Loja'].fillna("Não Informado")
+    if df_inaug is not None and not df_inaug.empty and "PV ABADI" in df_inaug.columns:
+        colunas_inaug = [c for c in df_inaug.columns if c != "PV ABADI"]
+        df_inaug_merge = df_inaug[["PV ABADI"] + colunas_inaug].copy()
+        df_base = pd.merge(df_base, df_inaug_merge, left_on="PV Abadi", right_on="PV ABADI", how="left")
+
+    defaults = {
+        "Status_Contato": "A Contatar",
+        "Tipo_Necessidade": "Rede Ativa (Sem Pendência)",
+        "Instrutor_Sugerido": "Pendente de Alocação",
+        "Nome_Contato": "",
+        "Material_Em_Loja": "Não Informado",
+    }
+    for coluna, valor in defaults.items():
+        if coluna in df_base.columns:
+            df_base[coluna] = df_base[coluna].fillna(valor)
+
+    if "Qtd_Funcionarios" in df_base.columns:
+        df_base["Qtd_Funcionarios"] = pd.to_numeric(df_base["Qtd_Funcionarios"], errors="coerce").fillna(0).astype(int)
 
     return df_base
+
+
+def salvar_bases_combinadas_no_disco(bases, caminho=CAMINHO_ARQUIVO):
+    """Persiste as entidades no Excel preservando abas que não pertencem ao CRM."""
+    if os.path.exists(caminho):
+        with pd.ExcelFile(caminho, engine="openpyxl") as xls:
+            abas_originais = {}
+            for aba in xls.sheet_names:
+                try:
+                    abas_originais[aba] = pd.read_excel(xls, sheet_name=aba)
+                except Exception:
+                    pass
+    else:
+        abas_originais = {}
+
+    nomes_entidades = {
+        "lojas": "Rede_de_Lojas",
+        "fila": "Fila_CallCenter",
+        "inaug": "Previsao_Inauguracao",
+        "instrutores": "Instrutores",
+        "rec": "Recomendacao_Deslocamento",
+    }
+
+    for entidade, nome_aba in nomes_entidades.items():
+        abas_originais[nome_aba] = bases.get(entidade, pd.DataFrame())
+
+    with pd.ExcelWriter(caminho, engine="openpyxl", mode="w") as writer:
+        for nome_aba, df in abas_originais.items():
+            nome_seguro = str(nome_aba)[:31] or "Dados"
+            df.to_excel(writer, sheet_name=nome_seguro, index=False)
+
 
 def salvar_fila_no_disco():
     if not os.path.exists(CAMINHO_ARQUIVO):
         st.toast("⚠️ Arquivo local não encontrado — alterações mantidas apenas na sessão.", icon="⚠️")
         return
     try:
-        df_fila = st.session_state['bases']['fila']
-        colunas_saida = [c for c in COLUNAS_FILA if c in df_fila.columns]
-        with pd.ExcelWriter(CAMINHO_ARQUIVO, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
-            df_fila[colunas_saida].to_excel(writer, sheet_name='Fila_CallCenter', index=False)
-        st.toast("💾 Dados salvos no arquivo Excel local com sucesso!", icon="✅")
+        bases = st.session_state["bases"]
+        salvar_bases_combinadas_no_disco(bases)
+        st.toast("💾 Banco de dados salvo com sucesso!", icon="✅")
     except Exception as e:
-        st.toast(f"⚠️ Erro ao salvar arquivo: {e}", icon="⚠️")
+        st.toast(f"⚠️ Erro ao salvar banco de dados: {e}", icon="⚠️")
+
 
 def salvar_lojas_no_disco():
     if not os.path.exists(CAMINHO_ARQUIVO):
         st.toast("⚠️ Arquivo local não encontrado — alterações mantidas apenas na sessão.", icon="⚠️")
         return
     try:
-        df_lojas = st.session_state['bases']['lojas']
-        colunas_saida = list(ENTIDADES['lojas']['colunas'].keys())
-        colunas_saida = [c for c in colunas_saida if c in df_lojas.columns]
-        with pd.ExcelWriter(CAMINHO_ARQUIVO, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
-            df_lojas[colunas_saida].to_excel(writer, sheet_name='Rede_de_Lojas', index=False)
-        st.toast("💾 Rede de Lojas salva no arquivo Excel local com sucesso!", icon="✅")
+        salvar_bases_combinadas_no_disco(st.session_state["bases"])
+        st.toast("💾 Rede de Lojas salva no banco de dados!", icon="✅")
     except Exception as e:
-        st.toast(f"⚠️ Erro ao salvar arquivo: {e}", icon="⚠️")
+        st.toast(f"⚠️ Erro ao salvar banco de dados: {e}", icon="⚠️")
 
 def buscar_telefone_google_places(endereco_completo, nome_loja, api_key, timeout=8):
     consulta = f"{nome_loja}, {endereco_completo}" if nome_loja else endereco_completo
@@ -1021,7 +1292,7 @@ with st.sidebar:
     st.divider()
 
     st.markdown("📥 **Atualizar Banco de Dados**")
-    st.caption("Um .xlsx substitui o arquivo inteiro. Um .csv atualiza apenas UMA aba — escolha qual abaixo.")
+    st.caption("O CRM interpreta o conteúdo, reconhece colunas parecidas e faz atualização incremental: registros novos entram e registros existentes são atualizados sem apagar dados válidos.")
 
     aba_destino_csv = st.selectbox(
         "Destino para CSV:",
@@ -1048,6 +1319,10 @@ with st.sidebar:
                     st.markdown(f"**{nome}** — encontrado na aba `{item['aba_origem']}`")
                     if item["colunas_reconhecidas"]:
                         st.caption("Colunas usadas: " + ", ".join(item["colunas_reconhecidas"]))
+                    if item.get("colunas_novas"):
+                        st.caption("🆕 Colunas novas armazenadas: " + ", ".join(item["colunas_novas"]))
+                    if item.get("linhas_lidas") is not None:
+                        st.caption(f"Linhas lidas: {item['linhas_lidas']}")
                     if item["colunas_ignoradas"]:
                         st.caption("Colunas ignoradas: " + ", ".join(item["colunas_ignoradas"]))
                 else:
@@ -1055,25 +1330,35 @@ with st.sidebar:
 
     if uploaded_file is not None:
         try:
-            if uploaded_file.name.endswith('.xlsx'):
+            if uploaded_file.name.lower().endswith(".xlsx"):
                 conteudo = uploaded_file.getbuffer().tobytes()
                 bases_validadas, relatorio, erro = validar_bytes_excel(conteudo)
                 if erro:
                     st.error(f"❌ Arquivo rejeitado:\n\n{erro}")
                 else:
+                    bases_atuais = st.session_state.get("bases", _bases_vazias())
+                    bases_combinadas, estatisticas = mesclar_bases(bases_atuais, bases_validadas)
+
                     if os.path.exists(CAMINHO_ARQUIVO):
                         with open(CAMINHO_ARQUIVO, "rb") as f_atual, open(CAMINHO_BACKUP, "wb") as f_bak:
                             f_bak.write(f_atual.read())
-                    with open(CAMINHO_ARQUIVO, "wb") as f:
-                        f.write(conteudo)
+
+                    salvar_bases_combinadas_no_disco(bases_combinadas)
                     st.cache_data.clear()
-                    st.session_state['bases'] = bases_validadas
-                    st.session_state['relatorio_importacao'] = relatorio
-                    st.session_state['erro_carga'] = None
-                    st.toast("💾 Banco de dados atualizado com sucesso!", icon="✅")
+                    st.session_state["bases"] = bases_combinadas
+                    st.session_state["relatorio_importacao"] = relatorio
+                    st.session_state["estatisticas_importacao"] = estatisticas
+                    st.session_state["erro_carga"] = None
+                    total_novos = sum(x["adicionados"] for x in estatisticas)
+                    total_atualizados = sum(x["atualizados"] for x in estatisticas)
+                    st.toast(
+                        f"💾 Importação concluída: {total_novos} novos e {total_atualizados} atualizados.",
+                        icon="✅",
+                    )
                     st.rerun()
-            elif uploaded_file.name.endswith('.csv'):
-                df_csv = pd.read_csv(uploaded_file)
+
+            elif uploaded_file.name.lower().endswith(".csv"):
+                df_csv = _ler_csv_flexivel(uploaded_file)
                 chave_map = {
                     "Rede_de_Lojas": "lojas",
                     "Fila_CallCenter": "fila",
@@ -1082,41 +1367,55 @@ with st.sidebar:
                     "Recomendacao_Deslocamento": "rec",
                 }
 
-                melhor_entidade, melhor_score = None, 0
+                candidatos_csv = []
                 for entidade, definicao in ENTIDADES.items():
-                    _, canonicas, _ = _mapear_colunas_compativeis(df_csv, definicao)
-                    if definicao["chave"] in canonicas and len(canonicas) > melhor_score:
-                        melhor_entidade, melhor_score = entidade, len(canonicas)
+                    score, canonicas = _score_aba_para_entidade(df_csv, uploaded_file.name, entidade, definicao)
+                    if definicao["chave"] in canonicas:
+                        candidatos_csv.append((score, entidade))
+                candidatos_csv.sort(reverse=True)
 
-                if melhor_entidade and melhor_score >= MIN_SCORE_CONFIANTE:
-                    chave = melhor_entidade
+                if candidatos_csv and candidatos_csv[0][0] >= MIN_SCORE_CONFIANTE:
+                    chave = candidatos_csv[0][1]
                     origem = "identificação automática"
                 else:
                     chave = chave_map[aba_destino_csv]
-                    origem = "aba selecionada manualmente"
+                    origem = "destino selecionado"
 
                 definicao = ENTIDADES[chave]
-                rename_map, canonicas, ignoradas = _mapear_colunas_compativeis(df_csv, definicao)
+                df_preparado, _, canonicas, _ = _preparar_dataframe_entidade(df_csv, definicao)
                 if definicao["chave"] not in canonicas:
-                    st.error(f"❌ O CSV não possui a coluna equivalente a '{definicao['chave']}'.")
+                    st.error(f"❌ O arquivo não possui uma coluna equivalente a '{definicao['chave']}'.")
                 else:
-                    df_mapeado = df_csv.rename(columns=rename_map)
-                    colunas_presentes = [c for c in definicao["colunas"].keys() if c in df_mapeado.columns]
-                    df_final = df_mapeado[colunas_presentes].copy()
-                    df_final[definicao["chave"]] = pd.to_numeric(df_final[definicao["chave"]], errors='coerce')
+                    bases_atuais = st.session_state.get("bases", _bases_vazias())
+                    bases_novas = _bases_vazias()
+                    bases_novas[chave] = df_preparado
+                    bases_combinadas, estatisticas = mesclar_bases(bases_atuais, bases_novas)
 
-                    if chave == "fila":
-                        for col in COLUNAS_FILA:
-                            if col not in df_final.columns:
-                                df_final[col] = pd.NA
+                    if os.path.exists(CAMINHO_ARQUIVO):
+                        with open(CAMINHO_ARQUIVO, "rb") as f_atual, open(CAMINHO_BACKUP, "wb") as f_bak:
+                            f_bak.write(f_atual.read())
 
-                    st.session_state['bases'][chave] = df_final
-                    if chave == "fila":
-                        salvar_fila_no_disco()
-                    st.toast(f"✅ Dados de '{chave}' atualizados via {origem}!", icon="✅")
+                    salvar_bases_combinadas_no_disco(bases_combinadas)
+                    st.cache_data.clear()
+                    st.session_state["bases"] = bases_combinadas
+                    st.session_state["relatorio_importacao"] = [{
+                        "entidade": chave,
+                        "aba_origem": uploaded_file.name,
+                        "confianca": "alta" if origem == "identificação automática" else "manual",
+                        "colunas_reconhecidas": [c for c in definicao["colunas"] if c in df_preparado.columns],
+                        "colunas_novas": [c for c in df_preparado.columns if c not in definicao["colunas"]],
+                        "colunas_ignoradas": [],
+                        "linhas_lidas": len(df_preparado),
+                    }]
+                    st.session_state["estatisticas_importacao"] = estatisticas
+                    st.toast(
+                        f"✅ CSV incorporado ({origem}): {estatisticas[[x['entidade'] for x in estatisticas].index(chave)]['adicionados']} novos / "
+                        f"{estatisticas[[x['entidade'] for x in estatisticas].index(chave)]['atualizados']} atualizados.",
+                        icon="✅",
+                    )
                     st.rerun()
         except Exception as e:
-            st.error(f"❌ Erro ao processar o arquivo: {e}")
+            st.error(f"❌ Erro ao interpretar/incorporar o arquivo: {e}")
 
     if os.path.exists(CAMINHO_BACKUP):
         if st.button("↩️ Restaurar último backup do Excel"):
@@ -1135,6 +1434,16 @@ with st.sidebar:
 
     if st.session_state.get('relatorio_importacao'):
         _exibir_relatorio_importacao(st.session_state['relatorio_importacao'])
+
+    if st.session_state.get('estatisticas_importacao'):
+        with st.expander("📊 Resumo da última integração", expanded=False):
+            for item in st.session_state["estatisticas_importacao"]:
+                if item["atualizados"] or item["adicionados"] or item["novas_colunas"]:
+                    st.write(
+                        f"**{item['entidade']}** — "
+                        f"{item['adicionados']} novos, {item['atualizados']} atualizados"
+                        + (f" | novas colunas: {', '.join(item['novas_colunas'])}" if item["novas_colunas"] else "")
+                    )
 
     st.divider()
 
@@ -1431,3 +1740,4 @@ elif modulo == "📂 Relatórios & Exportação":
         file_name=f"Base_CRM_AmPm_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
         mime="text/csv"
     )
+
