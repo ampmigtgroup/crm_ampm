@@ -1740,4 +1740,3 @@ elif modulo == "📂 Relatórios & Exportação":
         file_name=f"Base_CRM_AmPm_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
         mime="text/csv"
     )
-
