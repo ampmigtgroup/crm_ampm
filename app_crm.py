@@ -2248,11 +2248,60 @@ elif modulo == "📇 Enriquecimento de Rede":
     st.info("Utilize a barra lateral para fazer upload de novas bases ou enriquecer os dados existentes.")
 
 elif modulo == "📂 Relatórios & Exportação":
-    render_section_header("📂", "Relatórios & Exportação", "Download das bases atualizadas")
-    csv_buffer = df_base.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label="📄 Baixar Base em CSV",
-        data=csv_buffer,
-        file_name=f"Base_CRM_AmPm_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-        mime="text/csv"
+    render_section_header(
+        "📂",
+        "Relatórios & Exportação",
+        "Download das bases atualizadas"
+    )
+
+    st.markdown("### 📥 Exportar base do CRM")
+
+    # CSV: formato simples e compatível com praticamente qualquer sistema.
+    csv_buffer = df_base.to_csv(index=False).encode("utf-8-sig")
+
+    # Excel: gera um .xlsx real em memória, sem criar arquivo temporário no servidor.
+    # O openpyxl é usado pelo pandas para gravar o arquivo Excel.
+    excel_buffer = io.BytesIO()
+    with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
+        df_base.to_excel(writer, index=False, sheet_name="Base CRM")
+
+        # Ajustes simples de apresentação da planilha.
+        worksheet = writer.sheets["Base CRM"]
+        worksheet.freeze_panes = "A2"
+        worksheet.auto_filter.ref = worksheet.dimensions
+
+        # Limita a largura automática para evitar colunas gigantes.
+        for coluna in worksheet.columns:
+            max_len = 0
+            letra = coluna[0].column_letter
+            for celula in coluna[:200]:
+                valor = "" if celula.value is None else str(celula.value)
+                max_len = max(max_len, len(valor))
+            worksheet.column_dimensions[letra].width = min(max(max_len + 2, 10), 45)
+
+    excel_buffer.seek(0)
+
+    col_csv, col_excel = st.columns(2)
+
+    with col_csv:
+        st.download_button(
+            label="📄 Baixar Base em CSV",
+            data=csv_buffer,
+            file_name=f"Base_CRM_AmPm_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+
+    with col_excel:
+        st.download_button(
+            label="📊 Baixar Base em Excel",
+            data=excel_buffer.getvalue(),
+            file_name=f"Base_CRM_AmPm_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
+
+    st.caption(
+        f"Base pronta para exportação: {len(df_base):,} registros e "
+        f"{len(df_base.columns):,} colunas."
     )
