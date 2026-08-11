@@ -557,7 +557,145 @@ def exigir_login():
 
     return autenticador
 
+
 AUTENTICADOR = exigir_login()
+
+
+def _usuario_atual():
+    """Retorna o username/nome atualmente autenticado, de forma tolerante."""
+    return (
+        st.session_state.get("username")
+        or st.session_state.get("user")
+        or st.session_state.get("name")
+        or ""
+    )
+
+
+def _lista_admins_configurada():
+    """
+    Lista de usuários administradores.
+    Configure no Streamlit Secrets:
+        ADMIN_USERNAMES = "admin,outro_usuario"
+    Também aceita uma lista/dicionário em st.secrets.
+    """
+    try:
+        bruto = st.secrets.get("ADMIN_USERNAMES", "")
+    except Exception:
+        bruto = ""
+
+    if isinstance(bruto, str):
+        return {
+            item.strip().lower()
+            for item in bruto.replace(";", ",").split(",")
+            if item.strip()
+        }
+
+    if isinstance(bruto, (list, tuple, set)):
+        return {str(item).strip().lower() for item in bruto if str(item).strip()}
+
+    if isinstance(bruto, dict):
+        return {
+            str(chave).strip().lower()
+            for chave, valor in bruto.items()
+            if valor and str(chave).strip()
+        }
+
+    return set()
+
+
+def usuario_e_admin():
+    """Somente usuários explicitamente cadastrados como administradores."""
+    usuario = str(_usuario_atual()).strip().lower()
+    return bool(usuario) and usuario in _lista_admins_configurada()
+
+
+def _texto_seguro_instrutor(valor):
+    if valor is None:
+        return ""
+    try:
+        resultado = pd.isna(valor)
+        if isinstance(resultado, bool) and resultado:
+            return ""
+        if not isinstance(resultado, bool) and bool(resultado.all()):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return str(valor)
+
+
+def filtrar_instrutores_ativos(df):
+    """
+    Exibe somente instrutores cujo STATUS esteja marcado como ativo.
+    Mantém o banco completo, incluindo históricos de instrutores que saíram.
+    """
+    if df is None or df.empty:
+        return pd.DataFrame(columns=list(df.columns) if df is not None else [])
+
+    if "STATUS" not in df.columns:
+        return df.copy()
+
+    status_normalizado = (
+        df["STATUS"]
+        .map(_texto_seguro_instrutor)
+        .str.strip()
+        .str.casefold()
+    )
+
+    # Apenas status explicitamente ativo entra na equipe operacional.
+    return df.loc[status_normalizado.eq("ativo")].copy()
+
+
+def adicionar_instrutor_admin(nome, telefone="", email="", cidade="", uf=""):
+    """Adiciona ou atualiza um instrutor como ATIVO no banco, somente após validação de admin."""
+    if not usuario_e_admin():
+        raise PermissionError("Somente administradores podem cadastrar instrutores.")
+
+    nome = str(nome or "").strip()
+    if not nome:
+        raise ValueError("Informe o nome completo do instrutor.")
+
+    bases = st.session_state["bases"]
+    df = bases.get("instrutores", pd.DataFrame()).copy()
+
+    colunas_padrao = ["NOME_COMPLETO", "STATUS", "TELEFONE", "EMAIL", "Cidade", "UF"]
+    for coluna in colunas_padrao:
+        if coluna not in df.columns:
+            df[coluna] = ""
+
+    # Garante que novos cadastros entrem como ativos.
+    dados_novo = {
+        "NOME_COMPLETO": nome,
+        "STATUS": "Ativo",
+        "TELEFONE": str(telefone or "").strip(),
+        "EMAIL": str(email or "").strip(),
+        "Cidade": str(cidade or "").strip(),
+        "UF": str(uf or "").strip().upper(),
+    }
+
+    nomes_existentes = (
+        df["NOME_COMPLETO"]
+        .map(_texto_seguro_instrutor)
+        .str.strip()
+        .str.casefold()
+    )
+    mask = nomes_existentes.eq(nome.casefold())
+
+    if mask.any():
+        # Se já existe, atualiza o cadastro e reativa o instrutor.
+        idx = df.index[mask][0]
+        for coluna, valor in dados_novo.items():
+            df.at[idx, coluna] = valor
+        acao = "atualizado e reativado"
+    else:
+        df = pd.concat([df, pd.DataFrame([dados_novo])], ignore_index=True)
+        acao = "adicionado"
+
+    bases["instrutores"] = df
+    st.session_state["bases"] = bases
+    salvar_bases_combinadas_no_disco(bases)
+    st.cache_data.clear()
+
+    return acao
 
 # --- HELPERS DE APRESENTAÇÃO ---
 def render_section_header(icone, titulo, subtitulo=""):
@@ -1838,9 +1976,107 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
         st.info("📭 Nenhum dado carregado ainda.")
 
 elif modulo == "👔 Equipe de Instrutores":
-    render_section_header("👔", "Equipe de Instrutores", "Instrutores credenciados")
-    if not df_instrutores.empty:
-        st.dataframe(df_instrutores, use_container_width=True, hide_index=True)
+    render_section_header(
+        "👔",
+        "Equipe de Instrutores",
+        "Instrutores atualmente em atividade"
+    )
+
+    instrutores_ativos = filtrar_instrutores_ativos(df_instrutores)
+
+    # O banco continua contendo também os instrutores que já saíram.
+    # Aqui exibimos somente quem está explicitamente com STATUS = Ativo.
+    if "STATUS" not in df_instrutores.columns and not df_instrutores.empty:
+        st.warning(
+            "⚠️ A base de instrutores não possui a coluna `STATUS`. "
+            "Por segurança, os registros estão sendo exibidos, mas "
+            "adicione essa coluna com `Ativo` ou o status correspondente."
+        )
+
+    total_base = len(df_instrutores) if df_instrutores is not None else 0
+    total_ativos = len(instrutores_ativos)
+
+    col_m1, col_m2 = st.columns(2)
+    with col_m1:
+        st.metric("👔 Instrutores em atividade", total_ativos)
+    with col_m2:
+        st.metric("📚 Registros no banco", total_base)
+
+    if not instrutores_ativos.empty:
+        st.dataframe(
+            instrutores_ativos,
+            use_container_width=True,
+            hide_index=True
+        )
+    else:
+        st.info("📭 Nenhum instrutor com STATUS = Ativo foi encontrado.")
+
+    st.divider()
+
+    # Somente usuários explicitamente definidos em ADMIN_USERNAMES
+    # conseguem abrir o formulário de cadastro.
+    if usuario_e_admin():
+        st.markdown("### ➕ Cadastrar novo instrutor")
+        st.caption(
+            "Somente administradores podem adicionar instrutores. "
+            "O novo cadastro será gravado com STATUS = Ativo."
+        )
+
+        with st.form("form_novo_instrutor", clear_on_submit=True):
+            col1, col2 = st.columns(2)
+
+            with col1:
+                novo_nome = st.text_input(
+                    "Nome completo *",
+                    placeholder="Ex.: João da Silva"
+                )
+                novo_telefone = st.text_input(
+                    "Telefone",
+                    placeholder="(00) 00000-0000"
+                )
+                novo_email = st.text_input(
+                    "E-mail",
+                    placeholder="instrutor@empresa.com"
+                )
+
+            with col2:
+                nova_cidade = st.text_input(
+                    "Cidade",
+                    placeholder="Ex.: Rio de Janeiro"
+                )
+                nova_uf = st.text_input(
+                    "UF",
+                    max_chars=2,
+                    placeholder="RJ"
+                )
+                st.text_input(
+                    "Status",
+                    value="Ativo",
+                    disabled=True
+                )
+
+            cadastrar = st.form_submit_button(
+                "💾 Cadastrar Instrutor",
+                use_container_width=True
+            )
+
+        if cadastrar:
+            try:
+                acao = adicionar_instrutor_admin(
+                    novo_nome,
+                    novo_telefone,
+                    novo_email,
+                    nova_cidade,
+                    nova_uf,
+                )
+                st.success(f"✅ Instrutor {acao} com STATUS = Ativo.")
+                st.rerun()
+            except PermissionError as exc:
+                st.error(f"🚫 {exc}")
+            except Exception as exc:
+                st.error(f"❌ Não foi possível cadastrar o instrutor: {exc}")
+    else:
+        st.caption("🔒 Cadastro de novos instrutores disponível somente para administradores.")
 
 elif modulo == "📇 Enriquecimento de Rede":
     render_section_header("📇", "Enriquecimento de Rede", "Atualizações de lojas e telefones")
