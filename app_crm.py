@@ -571,17 +571,35 @@ def _usuario_atual():
     )
 
 
+CAMINHO_PERMISSOES = "permissoes_usuarios_ampm.json"
+
+MODULOS_PERMISSOES = {
+    "dashboard": "📊 Dashboard Executivo",
+    "pipeline": "📋 Pipeline AmPm",
+    "procv": "🔍 PROCV & Filtros Avançados",
+    "custos": "📍 Calculadora & Otimizador de Custos",
+    "callcenter": "📞 Call Center & Timeline WhatsApp",
+    "instrutores": "👔 Equipe de Instrutores",
+    "enriquecimento": "📇 Enriquecimento de Rede",
+    "relatorios": "📂 Relatórios & Exportação",
+}
+
+
+def _usuario_atual():
+    return (
+        st.session_state.get("username")
+        or st.session_state.get("user")
+        or st.session_state.get("name")
+        or ""
+    )
+
+
 def _lista_admins_configurada():
-    """
-    Lista de usuários administradores.
-    Configure no Streamlit Secrets:
-        ADMIN_USERNAMES = "admin,outro_usuario"
-    Também aceita uma lista/dicionário em st.secrets.
-    """
+    """Administradores definidos no Streamlit Secrets, nunca por senha no código."""
     try:
-        bruto = st.secrets.get("ADMIN_USERNAMES", "")
+        bruto = st.secrets.get("ADMIN_USERNAMES", "admin")
     except Exception:
-        bruto = ""
+        bruto = "admin"
 
     if isinstance(bruto, str):
         return {
@@ -589,24 +607,165 @@ def _lista_admins_configurada():
             for item in bruto.replace(";", ",").split(",")
             if item.strip()
         }
-
     if isinstance(bruto, (list, tuple, set)):
         return {str(item).strip().lower() for item in bruto if str(item).strip()}
-
-    if isinstance(bruto, dict):
-        return {
-            str(chave).strip().lower()
-            for chave, valor in bruto.items()
-            if valor and str(chave).strip()
-        }
-
-    return set()
+    return {"admin"}
 
 
 def usuario_e_admin():
-    """Somente usuários explicitamente cadastrados como administradores."""
-    usuario = str(_usuario_atual()).strip().lower()
-    return bool(usuario) and usuario in _lista_admins_configurada()
+    return str(_usuario_atual()).strip().lower() in _lista_admins_configurada()
+
+
+def carregar_permissoes_usuarios():
+    padrao = {"admins": {}, "usuarios": {}}
+    if not os.path.exists(CAMINHO_PERMISSOES):
+        return padrao
+    try:
+        with open(CAMINHO_PERMISSOES, "r", encoding="utf-8") as f:
+            dados = json.load(f)
+        if not isinstance(dados, dict):
+            return padrao
+        dados.setdefault("admins", {})
+        dados.setdefault("usuarios", {})
+        return dados
+    except Exception:
+        return padrao
+
+
+def salvar_permissoes_usuarios(permissoes):
+    """Persiste apenas permissões; senhas nunca são armazenadas aqui."""
+    with open(CAMINHO_PERMISSOES, "w", encoding="utf-8") as f:
+        json.dump(permissoes, f, ensure_ascii=False, indent=2)
+
+
+def permissoes_do_usuario(username=None):
+    username = str(username or _usuario_atual()).strip().lower()
+    if not username:
+        return set()
+    if usuario_e_admin() and username == str(_usuario_atual()).strip().lower():
+        return set(MODULOS_PERMISSOES.keys())
+
+    dados = carregar_permissoes_usuarios()
+    registro = dados.get("usuarios", {}).get(username, {})
+    if isinstance(registro, dict):
+        return {
+            chave for chave, permitido in registro.items()
+            if chave in MODULOS_PERMISSOES and bool(permitido)
+        }
+    return set()
+
+
+def usuario_tem_permissao(chave):
+    return usuario_e_admin() or chave in permissoes_do_usuario()
+
+
+def garantir_usuario_no_controle(username):
+    username = str(username or "").strip().lower()
+    if not username:
+        return
+    dados = carregar_permissoes_usuarios()
+    usuarios = dados.setdefault("usuarios", {})
+    if username not in usuarios:
+        usuarios[username] = {chave: False for chave in MODULOS_PERMISSOES}
+        salvar_permissoes_usuarios(dados)
+
+
+def listar_usuarios_cadastrados():
+    """Lê os usernames do arquivo local e dos Secrets, sem retornar senhas."""
+    encontrados = set()
+    arquivo = carregar_usuarios_arquivo()
+    encontrados.update(arquivo.get("usernames", {}).keys())
+    try:
+        secrets_cred = _secrets_para_dict(st.secrets.get("credentials", {}))
+        encontrados.update(secrets_cred.get("usernames", {}).keys())
+    except Exception:
+        pass
+    return sorted(str(u).strip().lower() for u in encontrados if str(u).strip())
+
+
+def salvar_permissoes_admin(username, novas_permissoes):
+    if not usuario_e_admin():
+        raise PermissionError("Somente administradores podem alterar permissões.")
+
+    username = str(username or "").strip().lower()
+    if not username:
+        raise ValueError("Usuário inválido.")
+
+    if username in _lista_admins_configurada():
+        # Admins continuam com acesso total e não podem ser bloqueados por flags.
+        return
+
+    dados = carregar_permissoes_usuarios()
+    dados.setdefault("usuarios", {})[username] = {
+        chave: bool(novas_permissoes.get(chave, False))
+        for chave in MODULOS_PERMISSOES
+    }
+    salvar_permissoes_usuarios(dados)
+
+
+def render_administracao():
+    if not usuario_e_admin():
+        st.error("🚫 Acesso negado. Esta área é exclusiva para administradores.")
+        st.stop()
+
+    render_section_header(
+        "🛡️",
+        "Administração",
+        "Controle de usuários e permissões do CRM"
+    )
+
+    st.info(
+        "🔐 Os administradores possuem acesso total. "
+        "Para usuários comuns, marque nas caixas abaixo exatamente quais módulos "
+        "eles podem acessar. Senhas não são exibidas nem armazenadas neste arquivo."
+    )
+
+    usuarios = listar_usuarios_cadastrados()
+    if not usuarios:
+        st.warning("Nenhum usuário cadastrado foi encontrado.")
+        return
+
+    usuario_selecionado = st.selectbox(
+        "👤 Usuário para configurar",
+        usuarios,
+        format_func=lambda u: f"{u} {'(ADMIN)' if u in _lista_admins_configurada() else ''}"
+    )
+
+    if usuario_selecionado in _lista_admins_configurada():
+        st.success("🛡️ Este usuário é administrador e possui acesso total.")
+        st.caption(
+            "Acesso de administrador é definido em ADMIN_USERNAMES nos Secrets."
+        )
+        return
+
+    garantir_usuario_no_controle(usuario_selecionado)
+    atuais = permissoes_do_usuario(usuario_selecionado)
+
+    st.markdown("### 🔑 Permissões de acesso")
+
+    with st.form(f"form_permissoes_{usuario_selecionado}"):
+        novas = {}
+        cols = st.columns(2)
+        for i, (chave, nome) in enumerate(MODULOS_PERMISSOES.items()):
+            with cols[i % 2]:
+                novas[chave] = st.checkbox(
+                    nome,
+                    value=chave in atuais,
+                    key=f"perm_{usuario_selecionado}_{chave}"
+                )
+
+        salvar = st.form_submit_button(
+            "💾 Salvar permissões",
+            use_container_width=True
+        )
+
+    if salvar:
+        try:
+            salvar_permissoes_admin(usuario_selecionado, novas)
+            st.success(f"✅ Permissões de **{usuario_selecionado}** atualizadas.")
+            st.rerun()
+        except Exception as exc:
+            st.error(f"❌ Não foi possível salvar as permissões: {exc}")
 
 
 def _texto_seguro_instrutor(valor):
@@ -1413,18 +1572,21 @@ with st.sidebar:
 
     st.divider()
 
+    opcoes_modulos = [
+        (chave, nome) for chave, nome in MODULOS_PERMISSOES.items()
+        if usuario_tem_permissao(chave)
+    ]
+
+    if usuario_e_admin():
+        opcoes_modulos.append(("administracao", "🛡️ Administração"))
+
+    if not opcoes_modulos:
+        st.warning("🔒 Seu usuário ainda não possui módulos liberados.")
+        st.stop()
+
     modulo = st.radio(
         "📌 **Módulos do Sistema:**",
-        [
-            "📊 Dashboard Executivo",
-            "📋 Pipeline AmPm",
-            "🔍 PROCV & Filtros Avançados",
-            "📍 Calculadora & Otimizador de Custos",
-            "📞 Call Center & Timeline WhatsApp",
-            "👔 Equipe de Instrutores",
-            "📇 Enriquecimento de Rede",
-            "📂 Relatórios & Exportação"
-        ]
+        [nome for _, nome in opcoes_modulos]
     )
 
     st.divider()
@@ -1637,7 +1799,10 @@ st.markdown(f"""
 
 # --- MÓDULOS DA APLICAÇÃO ---
 
-if modulo == "📊 Dashboard Executivo":
+if modulo == "🛡️ Administração":
+    render_administracao()
+
+elif modulo == "📊 Dashboard Executivo":
     render_section_header("📊", "Dashboard Executivo", "Panorama consolidado da operação")
     if not df_base.empty:
         c1, c2, c3, c4 = st.columns(4)
