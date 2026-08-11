@@ -1683,14 +1683,31 @@ elif modulo == "📍 Calculadora & Otimizador de Custos":
                         """, unsafe_allow_html=True)
 
 elif modulo == "📞 Call Center & Timeline WhatsApp":
-    render_section_header("📞", "Call Center & Timeline WhatsApp", "Atendimentos e disparos de mensagem")
+    def _texto_seguro_callcenter(valor):
+        if valor is None:
+            return ""
+        try:
+            resultado = pd.isna(valor)
+            if isinstance(resultado, bool) and resultado:
+                return ""
+            if not isinstance(resultado, bool) and bool(resultado.all()):
+                return ""
+        except (TypeError, ValueError):
+            pass
+        return str(valor)
+    render_section_header("📞", "Call Center & Timeline WhatsApp", "Registro de atendimentos e disparo de mensagens")
     if not df_base.empty:
         df_fila_view = df_base[df_base['Tipo_Necessidade'] != 'Rede Ativa (Sem Pendência)'].copy() if 'Tipo_Necessidade' in df_base.columns else df_base.copy()
+
         c_left, c_right = st.columns([1.2, 1.8])
 
         with c_left:
+            st.markdown("**📋 Fila de Atendimento**")
             cols_call = [c for c in ['PV Abadi', 'Razão Social', 'Municipio', 'UF', 'Status_Contato'] if c in df_fila_view.columns]
-            evento_call = st.dataframe(df_fila_view[cols_call], use_container_width=True, hide_index=True, selection_mode="single-row", on_select="rerun")
+            evento_call = st.dataframe(
+                df_fila_view[cols_call],
+                use_container_width=True, hide_index=True, selection_mode="single-row", on_select="rerun"
+            )
             selecionado = evento_call.selection.get("rows", [])
 
         with c_right:
@@ -1699,50 +1716,126 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                 pv_alvo = posto.get('PV Abadi')
                 tel_limpo = ''.join(filter(str.isdigit, str(posto.get('Telefone_Contato', ''))))
 
-                st.markdown(f"### Ficha PV {pv_alvo} - {posto.get('Razão Social', '')}")
+                st.markdown(f"""
+                    <div style="display:flex; align-items:center; gap:10px; margin: 4px 0 14px 0;">
+                        <span style="font-size:1.05rem; font-weight:700; color:var(--text-primary);">📝 Ficha de Atendimento — PV {posto.get('PV Abadi', '-')}</span>
+                        {badge_status_html(posto.get('Status_Contato', '-'))}
+                    </div>
+                """, unsafe_allow_html=True)
+
+                st.markdown(f"""
+                    <div class="procv-card">
+                        <h4>🏪 Contexto do Posto (Consulta Rápida)</h4>
+                        <div style="display: flex; justify-content: space-between; flex-wrap: wrap;">
+                            <div style="flex: 1; min-width: 200px;">
+                                <p>🏬 <b>Razão Social:</b> {posto.get('Razão Social', '-')}</p>
+                                <p>📍 <b>Cidade/UF:</b> {posto.get('Municipio', '-')}/{posto.get('UF', '-')}</p>
+                                <p>🏠 <b>Endereço:</b> {posto.get('Endereço', '-')}</p>
+                            </div>
+                            <div style="flex: 1; min-width: 200px;">
+                                <p>👔 <b>Consultor (CF):</b> {posto.get('CF', '-')}</p>
+                                <p>🎯 <b>Necessidade:</b> <span class="badge-info">{posto.get('Tipo_Necessidade', '-')}</span></p>
+                                <p>⏱️ <b>Dias sem Treinamento:</b> {posto.get('Dias_desde_Ultimo_Treinamento', 'N/A')}</p>
+                                <p>📅 <b>Inauguração Prevista:</b> {posto.get('Previsão Inauguração', 'N/A')}</p>
+                            </div>
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
+
+                # --- INTEGRAÇÃO WHATSAPP FLEXÍVEL (LINK DIRETO + TEMPLATES) ---
                 if tel_limpo:
-                    msg = f"Olá! Aqui é da Capacitação AmPm referente ao posto {posto.get('Razão Social', '')}."
-                    link_wa = f"https://wa.me/55{tel_limpo}?text={msg.replace(' ', '%20')}"
-                    st.markdown(f"👉 **[Chamar no WhatsApp]({link_wa})**")
+                    st.markdown("##### 📲 Envio de Mensagem WhatsApp")
+                    opcao_wa = st.radio("Selecione o estilo do envio:", ["Link Direto Rápido", "Template Customizado"], horizontal=True)
 
+                    if opcao_wa == "Link Direto Rápido":
+                        msg_final = f"Olá, equipe {posto.get('Razão Social', '')}! Aqui é da equipe de Capacitação AmPm. Gostaria de agendar o treinamento da loja."
+                    else:
+                        tmpl = st.selectbox("Escolha o Modelo de Mensagem:", [
+                            "Agendamento de Treinamento",
+                            "Cobrança / Verificação de Apostilas",
+                            "Lembrete de Treinamento Agendado",
+                            "Acompanhamento Pós-Treinamento"
+                        ])
+
+                        data_agendada_disp = posto.get('Data_Agendada')
+                        data_agendada_fmt = parse_data_flexivel(data_agendada_disp)
+                        data_agendada_fmt = data_agendada_fmt.strftime("%d/%m/%Y") if data_agendada_fmt else "em breve"
+
+                        if tmpl == "Agendamento de Treinamento":
+                            msg_final = f"Olá! Aqui é da Capacitação AmPm. Gostaríamos de confirmar as datas disponíveis para o treinamento na loja {posto.get('Razão Social', '')} (PV {posto.get('PV Abadi', '')})."
+                        elif tmpl == "Cobrança / Verificação de Apostilas":
+                            msg_final = f"Olá, equipe {posto.get('Razão Social', '')}! Para darmos início ao treinamento, poderiam confirmar se o material de apoio e apostilas já chegaram na loja?"
+                        elif tmpl == "Lembrete de Treinamento Agendado":
+                            msg_final = f"Olá! Passando para lembrar que o treinamento AmPm da loja {posto.get('Razão Social', '')} está agendado para o dia {data_agendada_fmt}. Contamos com todos!"
+                        else:
+                            msg_final = f"Olá! Como foi o treinamento concluído na loja {posto.get('Razão Social', '')}? Estamos à disposição para dúvidas ou feedbacks."
+
+                    link_wa = f"https://wa.me/55{tel_limpo}?text={msg_final.replace(' ', '%20')}"
+                    st.markdown(f"👉 **[Clique aqui para chamar no WhatsApp Direct]({link_wa})**")
+
+                lista_instrutores = ["Pendente de Alocação"]
+                if not df_instrutores.empty and 'NOME_COMPLETO' in df_instrutores.columns:
+                    lista_instrutores += sorted(df_instrutores['NOME_COMPLETO'].dropna().unique().tolist())
+
+                instrutor_atual = str(posto.get('Instrutor_Sugerido', 'Pendente de Alocação'))
+                idx_instrutor = lista_instrutores.index(instrutor_atual) if instrutor_atual in lista_instrutores else 0
+
+                data_inicial = parse_data_flexivel(posto.get('Data_Agendada')) or date.today()
+
+                # --- REGISTROS RÁPIDOS DA LIGAÇÃO ---
                 with st.form("form_callcenter_editavel"):
-                    # Pandas pode representar células vazias como pd.NA.
-                    # Nunca usamos "valor or ''" diretamente sobre pd.NA,
-                    # pois isso dispara TypeError: boolean value of NA is ambiguous.
-                    def _texto_seguro(valor):
-                        if valor is None:
-                            return ""
-                        try:
-                            if pd.isna(valor):
-                                return ""
-                        except (TypeError, ValueError):
-                            pass
-                        return str(valor)
+                    st.markdown("#### ✍️ Registros Rápidos da Ligação")
 
-                    nome_c = st.text_input(
-                        "Responsável:",
-                        value=_texto_seguro(posto.get('Nome_Contato', ''))
-                    )
-                    tel_c = st.text_input(
-                        "Telefone:",
-                        value=_texto_seguro(posto.get('Telefone_Contato', ''))
-                    )
-                    obs = st.text_area(
-                        "Observações:",
-                        value=_texto_seguro(posto.get('Observacoes', ''))
-                    )
-                    novo_st = st.selectbox("Status:", ["A Contatar", "Em Negociação", "Agendado", "Treinamento Realizado", "Recusado"])
+                    col_f1, col_f2 = st.columns(2)
+                    with col_f1:
+                        nome_c = st.text_input("👤 Nome do Responsável na Loja:", value=_texto_seguro_callcenter(posto.get('Nome_Contato', '')))
+                        tel_c = st.text_input("📞 Telefone de Contato:", value=_texto_seguro_callcenter(posto.get('Telefone_Contato', '')))
+                        qtd_func = st.number_input("👥 Qtd. de Funcionários para Treinar:", value=int(posto.get('Qtd_Funcionarios', 0) or 0), min_value=0, step=1)
+                        instrutor_escolhido = st.selectbox("👨‍🏫 Instrutor Designado:", lista_instrutores, index=idx_instrutor)
 
-                    if st.form_submit_button("💾 Salvar Registro"):
+                    with col_f2:
+                        status_opcoes = ["A Contatar", "Em Negociação", "Agendado", "Treinamento Realizado", "Recusado"]
+                        st_atual = posto.get('Status_Contato', 'A Contatar')
+                        idx_st = status_opcoes.index(st_atual) if st_atual in status_opcoes else 0
+                        novo_st = st.selectbox("🔄 Status do Atendimento:", status_opcoes, index=idx_st)
+
+                        mat_opcoes = ["Não Informado", "Sim", "Não"]
+                        mat_atual = posto.get('Material_Em_Loja', 'Não Informado')
+                        idx_mat = mat_opcoes.index(mat_atual) if mat_atual in mat_opcoes else 0
+                        mat_loja = st.selectbox("📦 Possui Material/Apostilas na Loja?", mat_opcoes, index=idx_mat)
+                        data_ag = st.date_input("📅 Data Agendada (Calendário):", value=data_inicial, format="DD/MM/YYYY")
+
+                    obs = st.text_area("💬 Observações e Alinhamentos:", value=_texto_seguro_callcenter(posto.get('Observacoes', '')), height=80)
+
+                    if st.form_submit_button("💾 Salvar Registro do Atendimento"):
                         atualizar_fila(pv_alvo, {
                             'Nome_Contato': nome_c,
                             'Telefone_Contato': tel_c,
+                            'Qtd_Funcionarios': qtd_func,
+                            'Instrutor_Sugerido': instrutor_escolhido,
+                            'Material_Em_Loja': mat_loja,
+                            'Data_Agendada': data_ag.strftime("%Y-%m-%d"),
                             'Status_Contato': novo_st,
                             'Observacoes': obs,
                             'Data_do_Contato': datetime.today().strftime('%d/%m/%Y %H:%M'),
                         })
-                        st.success("✅ Salvo!")
+                        st.success("✅ Atendimento registrado com sucesso!")
                         st.rerun()
+
+                st.divider()
+                st.markdown("**⏱️ Histórico de Interações**")
+                data_ct = posto.get('Data_do_Contato', 'Sem registro')
+                data_agendada_obj = parse_data_flexivel(posto.get('Data_Agendada'))
+                data_agendada_str = data_agendada_obj.strftime("%d/%m/%Y") if data_agendada_obj else "Não agendado"
+                st.markdown(f"""
+                    <div class="timeline-item">
+                        <small style="color:var(--text-tertiary);"><b>Última Atualização:</b> {data_ct}</small><br>
+                        <span style="color:var(--text-primary);">{badge_status_html(posto.get('Status_Contato', '-'))} &nbsp;·&nbsp; <b>Agendado:</b> {data_agendada_str} &nbsp;·&nbsp; <b>Instrutor:</b> {posto.get('Instrutor_Sugerido', '-')}</span><br>
+                        <span style="color:var(--text-secondary);"><i>"{posto.get('Observacoes', 'Sem observações registradas.')}"</i></span>
+                    </div>
+                """, unsafe_allow_html=True)
+    else:
+        st.info("📭 Nenhum dado carregado ainda.")
 
 elif modulo == "👔 Equipe de Instrutores":
     render_section_header("👔", "Equipe de Instrutores", "Instrutores credenciados")
