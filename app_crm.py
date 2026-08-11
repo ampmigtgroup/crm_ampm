@@ -1706,9 +1706,31 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                     st.markdown(f"👉 **[Chamar no WhatsApp]({link_wa})**")
 
                 with st.form("form_callcenter_editavel"):
-                    nome_c = st.text_input("Responsável:", value=str(posto.get('Nome_Contato', '') or ''))
-                    tel_c = st.text_input("Telefone:", value=str(posto.get('Telefone_Contato', '') or ''))
-                    obs = st.text_area("Observações:", value=str(posto.get('Observacoes', '') or ''))
+                    # Pandas pode representar células vazias como pd.NA.
+                    # Nunca usamos "valor or ''" diretamente sobre pd.NA,
+                    # pois isso dispara TypeError: boolean value of NA is ambiguous.
+                    def _texto_seguro(valor):
+                        if valor is None:
+                            return ""
+                        try:
+                            if pd.isna(valor):
+                                return ""
+                        except (TypeError, ValueError):
+                            pass
+                        return str(valor)
+
+                    nome_c = st.text_input(
+                        "Responsável:",
+                        value=_texto_seguro(posto.get('Nome_Contato', ''))
+                    )
+                    tel_c = st.text_input(
+                        "Telefone:",
+                        value=_texto_seguro(posto.get('Telefone_Contato', ''))
+                    )
+                    obs = st.text_area(
+                        "Observações:",
+                        value=_texto_seguro(posto.get('Observacoes', ''))
+                    )
                     novo_st = st.selectbox("Status:", ["A Contatar", "Em Negociação", "Agendado", "Treinamento Realizado", "Recusado"])
 
                     if st.form_submit_button("💾 Salvar Registro"):
