@@ -1966,6 +1966,174 @@ if st.session_state.get('erro_carga'):
         "Envie um arquivo válido na barra lateral."
     )
 
+
+# ============================================================
+# v21 — IMPORTADOR INTELIGENTE DE PLANILHAS
+# ============================================================
+IMPORTADOR_CAMPOS = {
+    "PV_Abadi": ["pv","pv abadi","pv_abadi","codigo pv","codigo loja","numero pv","nº pv","n pv","posto","codigo posto"],
+    "CNPJ": ["cnpj","cnpj loja","cnpj da loja","cnpj posto","documento cnpj","cnpj do posto"],
+    "Razão Social": ["razao social","razão social","empresa","nome empresa","nome da empresa","razao_social"],
+    "Nome_Contato": ["nome contato","nome do contato","contato","responsavel","responsável","nome responsavel","nome responsável"],
+    "Telefone_Contato": ["telefone","telefone contato","telefone do contato","celular","whatsapp","fone","telefone celular"],
+    "Email_Contato": ["email","e mail","e-mail","email contato","e mail contato","e-mail contato","correio eletronico","correio eletrônico"],
+    "Qtd_Funcionarios": ["qtd funcionarios","qtd funcionários","quantidade funcionarios","quantidade funcionários","numero funcionarios","n funcionarios","funcionarios","funcionários","qtd de funcionarios"],
+    "Tem_Funcionarios": ["tem funcionarios","tem funcionários","ha funcionarios","há funcionários","possui funcionarios","possui funcionários","funcionarios para treinar","funcionários para treinar"],
+    "Instrutor_Treinamento": ["instrutor","instrutor treinamento","instrutor do treinamento","instrutor treinou","instrutor responsavel","instrutor responsável"],
+    "Instrutor_Inauguracao": ["instrutor inauguracao","instrutor inauguração","instrutor da inauguracao","instrutor da inauguração","instrutor inaugurou","responsavel inauguracao"],
+    "Municipio": ["municipio","município","cidade","cidade loja","localidade"],
+    "UF": ["uf","estado","sigla estado","estado uf"],
+    "Tipo_Necessidade": ["tipo necessidade","necessidade","tipo de necessidade","motivo","tipo"],
+    "Data_Ultimo_Treinamento": ["data ultimo treinamento","data último treinamento","ultimo treinamento","último treinamento","data treinamento"],
+    "Status_Contato": ["status contato","status do contato","status atendimento","status","situacao contato","situação contato"],
+    "Data_do_Contato": ["data contato","data do contato","ultimo contato","último contato"],
+    "Observacoes": ["observacoes","observações","observacao","observação","comentarios","comentários"],
+    "Material_Em_Loja": ["material em loja","material loja","apostila","materiais"],
+    "Data_Agendada": ["data agendada","data agendamento","agendamento","data treinamento agendado"],
+}
+
+def _imp_norm(valor):
+    import unicodedata
+    s = "" if valor is None else str(valor).strip().lower()
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(ch for ch in s if not unicodedata.combining(ch))
+    s = re.sub(r"[^a-z0-9]+", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+def _imp_similarity(a,b):
+    a,b=_imp_norm(a),_imp_norm(b)
+    if not a or not b:return 0.0
+    if a==b:return 1.0
+    if a in b or b in a:return 0.90
+    aa,bb=set(a.split()),set(b.split())
+    if aa and bb:
+        u=len(aa|bb); i=len(aa&bb)
+        if u:return 0.55+0.35*(i/u)
+    prev=list(range(len(b)+1))
+    for i,ca in enumerate(a,1):
+        cur=[i]
+        for j,cb in enumerate(b,1):cur.append(min(cur[-1]+1,prev[j]+1,prev[j-1]+(ca!=cb)))
+        prev=cur
+    return max(0.0,1.0-prev[-1]/max(len(a),len(b),1))
+
+def _imp_sugerir_campo(coluna):
+    melhor=(None,0.0)
+    for campo,aliases in IMPORTADOR_CAMPOS.items():
+        for alias in [campo]+aliases:
+            score=_imp_similarity(coluna,alias)
+            if score>melhor[1]:melhor=(campo,score)
+    return melhor
+
+def _imp_ler_planilha(arquivo):
+    xls=pd.ExcelFile(arquivo); abas={}
+    for aba in xls.sheet_names:
+        try:
+            df=pd.read_excel(arquivo,sheet_name=aba).dropna(axis=0,how="all").dropna(axis=1,how="all")
+            if not df.empty:abas[aba]=df
+        except Exception:pass
+    return abas
+
+def _imp_normalizar_valor(campo,valor):
+    if pd.isna(valor):return pd.NA
+    if campo=="Qtd_Funcionarios":
+        try:return max(0,int(float(valor)))
+        except Exception:return 0
+    if campo=="Tem_Funcionarios":
+        s=_imp_norm(valor)
+        if s in {"sim","s","yes","y","true","1","tem","possui"}:return "Sim"
+        if s in {"nao","não","n","no","false","0","nao possui","não possui"}:return "Não"
+    return valor
+
+def _imp_chave_linha(linha,mapeamento):
+    pv_col=next((c for c,f in mapeamento.items() if f=="PV_Abadi"),None)
+    cnpj_col=next((c for c,f in mapeamento.items() if f=="CNPJ"),None)
+    if pv_col is not None and not pd.isna(linha.get(pv_col)):
+        v=str(linha.get(pv_col)).strip()
+        if v and v.lower() not in {"nan","none"}:return "PV",_imp_norm(v)
+    if cnpj_col is not None and not pd.isna(linha.get(cnpj_col)):
+        v=re.sub(r"\D","",str(linha.get(cnpj_col)))
+        if v:return "CNPJ",v
+    return None,None
+
+def _imp_processar_df(df,mapeamento):
+    registros=[]
+    for _,linha in df.iterrows():
+        kt,k=_imp_chave_linha(linha,mapeamento); dados={}
+        for col,campo in mapeamento.items():
+            if not campo or col not in df.columns:continue
+            v=_imp_normalizar_valor(campo,linha.get(col))
+            if campo=="Qtd_Funcionarios":dados[campo]=v;dados["Tem_Funcionarios"]="Sim" if int(v or 0)>0 else "Não"
+            elif campo=="Tem_Funcionarios" and "Qtd_Funcionarios" not in dados:dados[campo]=v
+            else:dados[campo]=v
+        registros.append({"chave_tipo":kt,"chave":k,"dados":dados})
+    return registros
+
+def _imp_merge_com_base(base_df,registros):
+    df=base_df.copy() if isinstance(base_df,pd.DataFrame) else pd.DataFrame(); ins=atu=0
+    def localizar(tipo,chave):
+        if not chave:return None
+        if tipo=="PV" and "PV_Abadi" in df.columns:
+            s=df["PV_Abadi"].astype(str).map(_imp_norm); x=s[s==chave].index
+            if len(x):return x[0]
+        if tipo=="CNPJ" and "CNPJ" in df.columns:
+            s=df["CNPJ"].astype(str).map(lambda x:re.sub(r"\D","",x)); x=s[s==chave].index
+            if len(x):return x[0]
+        return None
+    for reg in registros:
+        if not reg["chave"]:continue
+        idx=localizar(reg["chave_tipo"],reg["chave"]); dados=reg["dados"]
+        if idx is None:
+            novo={c:pd.NA for c in df.columns}
+            for c,v in dados.items():
+                if c not in df.columns:df[c]=pd.NA
+                novo[c]=v
+            df=pd.concat([df,pd.DataFrame([novo])],ignore_index=True);ins+=1
+        else:
+            for c,v in dados.items():
+                if c not in df.columns:df[c]=pd.NA
+                if not pd.isna(v) and str(v).strip() not in {"","nan","None"}:df.at[idx,c]=v
+            atu+=1
+    if "Qtd_Funcionarios" in df.columns:
+        q=pd.to_numeric(df["Qtd_Funcionarios"],errors="coerce").fillna(0).clip(lower=0).astype(int)
+        df["Qtd_Funcionarios"]=q;df["Tem_Funcionarios"]=q.gt(0).map({True:"Sim",False:"Não"})
+    return df,ins,atu
+
+def render_importador_inteligente():
+    st.markdown("## 📥 Importador Inteligente de Planilhas")
+    st.caption("Upload de Excel, leitura de múltiplas abas, sugestão automática de campos, revisão e merge por PV/CNPJ.")
+    arquivo=st.file_uploader("Escolha um arquivo Excel",type=["xlsx","xls"],key="importador_inteligente_upload")
+    if not arquivo:
+        st.info("Envie uma planilha para iniciar a análise automática.");return
+    try:abas=_imp_ler_planilha(arquivo)
+    except Exception as e:st.error(f"Não foi possível ler a planilha: {e}");return
+    if not abas:st.warning("Nenhuma aba com dados utilizáveis foi encontrada.");return
+    aba=st.selectbox("📑 Aba para importar",list(abas.keys()));df_imp=abas[aba]
+    st.markdown(f"**Prévia:** {len(df_imp)} registros × {len(df_imp.columns)} colunas")
+    st.dataframe(df_imp.head(10),use_container_width=True,hide_index=True)
+    opcoes=["— Não importar esta coluna —"]+list(IMPORTADOR_CAMPOS.keys());mapa={}
+    for coluna in df_imp.columns:
+        sug,score=_imp_sugerir_campo(str(coluna));idx=opcoes.index(sug) if sug in opcoes else 0
+        escolha=st.selectbox(f"`{coluna}`",opcoes,index=idx,key=f"imp_map_{_imp_norm(aba)}_{_imp_norm(coluna)}");mapa[coluna]=None if escolha.startswith("—") else escolha
+        if mapa[coluna]:
+            pct=round(score*100);st.caption(("🟢" if pct>=85 else "🟡" if pct>=65 else "🔴")+f" Confiança sugerida: {pct}%")
+    vals=[v for v in mapa.values() if v]
+    if len(vals)!=len(set(vals)):st.warning("⚠️ Há campos do CRM recebendo mais de uma coluna. Revise o mapeamento.")
+    registros=_imp_processar_df(df_imp,mapa);validos=[r for r in registros if r["chave"]];sem=len(registros)-len(validos)
+    c1,c2,c3=st.columns(3);c1.metric("Registros lidos",len(registros));c2.metric("Com PV/CNPJ",len(validos));c3.metric("Sem chave",sem)
+    if sem:st.warning("Registros sem PV e sem CNPJ não entram no merge automático.")
+    if not validos:st.error("Nenhum registro possui PV ou CNPJ utilizável.");return
+    confirmar=st.checkbox("Revisei o mapeamento e autorizo atualizar a base do CRM.",key="imp_confirmacao")
+    if st.button("🚀 Importar para o CRM",type="primary",use_container_width=True):
+        if not confirmar:st.error("Marque a confirmação antes de importar.");return
+        base=st.session_state["bases"].get("lojas",pd.DataFrame()).copy();nova,ins,atu=_imp_merge_com_base(base,validos);st.session_state["bases"]["lojas"]=nova
+        rel={"arquivo":arquivo.name,"aba":aba,"lidos":len(registros),"validos":len(validos),"inseridos":ins,"atualizados":atu,"sem_chave":sem,"data":datetime.now().strftime("%d/%m/%Y %H:%M:%S")};st.session_state["relatorio_importacao"]=rel
+        try:
+            if "salvar_bases_no_disco" in globals():salvar_bases_no_disco()
+            elif "salvar_base_unificada" in globals():salvar_base_unificada()
+        except Exception as e:st.warning(f"Dados aplicados na sessão; persistência precisa ser verificada: {e}")
+        st.success(f"✅ Importação concluída: {ins} novo(s) e {atu} atualizado(s).");st.json(rel)
+
+
 # --- SIDEBAR & NAVEGAÇÃO ---
 with st.sidebar:
     st.markdown("""
@@ -1991,6 +2159,8 @@ with st.sidebar:
         (chave, nome) for chave, nome in MODULOS_PERMISSOES.items()
         if usuario_tem_permissao(chave)
     ]
+    if usuario_e_admin() or usuario_tem_permissao("procv") or usuario_tem_permissao("administracao"):
+        opcoes_modulos.append(("importador_inteligente", "📥 Importador Inteligente"))
 
     if usuario_e_admin():
         opcoes_modulos.append(("administracao", "🛡️ Administração"))
@@ -2809,6 +2979,9 @@ elif modulo == "📍 Calculadora & Otimizador de Custos":
                         f"🏆 Menor custo estimado entre os instrutores selecionados: "
                         f"{melhor['Instrutor']} — R$ {melhor['Total Estimado']:,.2f}"
                     )
+
+elif modulo == "📥 Importador Inteligente":
+    render_importador_inteligente()
 
 elif modulo == "📞 Call Center & Timeline WhatsApp":
     def _texto_seguro_callcenter(valor):
