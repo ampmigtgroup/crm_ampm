@@ -4,6 +4,8 @@ import os
 from datetime import datetime, date
 import pydeck as pdk
 import io
+import zipfile
+import uuid
 import time
 import requests
 import json
@@ -22,6 +24,394 @@ st.set_page_config(
 
 CAMINHO_ARQUIVO = "Base_Unificada_AmPm.xlsx"
 CAMINHO_BACKUP = "Base_Unificada_AmPm.backup.xlsx"
+
+CAMINHO_ORCAMENTOS = "orcamentos_crm.json"
+PASTA_DOCUMENTOS_ORCAMENTO = "documentos_orcamentos"
+
+
+def _carregar_orcamentos():
+    if not os.path.exists(CAMINHO_ORCAMENTOS):
+        return {}
+    try:
+        with open(CAMINHO_ORCAMENTOS, "r", encoding="utf-8") as arquivo:
+            dados = json.load(arquivo)
+            return dados if isinstance(dados, dict) else {}
+    except Exception:
+        return {}
+
+
+def _salvar_orcamentos(dados):
+    with open(CAMINHO_ORCAMENTOS, "w", encoding="utf-8") as arquivo:
+        json.dump(dados, arquivo, ensure_ascii=False, indent=2, default=str)
+
+
+def _chave_orcamento(pv):
+    return str(pv).strip()
+
+
+PRODUTOS_TREINAMENTO = [
+    "Treinamento de Cafeteria",
+    "Treinamento em Pizzaria Pizza Hut",
+    "Treinamento em Padaria",
+]
+
+
+def _orcamento_vazio(posto):
+    agora = datetime.now()
+    return {
+        "numero": f"ORC-{agora.strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}",
+        "titulo": f"Orçamento - {posto.get('Razão Social', '')}",
+        "responsavel": "",
+        "validade_dias": 7,
+        "condicao_pagamento": "A definir",
+        "observacoes": "",
+        "desconto": 0.0,
+        "itens": [],
+        "documentos": [],
+        "atualizado_em": agora.strftime("%d/%m/%Y %H:%M"),
+    }
+
+
+def _normalizar_itens_orcamento(itens):
+    linhas = []
+    for item in itens or []:
+        if not isinstance(item, dict):
+            continue
+        produto = str(item.get("Produto", item.get("Descrição", item.get("descricao", ""))) or "").strip()
+        if not produto:
+            continue
+        if produto not in PRODUTOS_TREINAMENTO:
+            produto = str(item.get("Descrição", produto) or produto).strip()
+        try:
+            dias = float(item.get("Dias", item.get("Qtd", item.get("qtd", 1))) or 0)
+        except (TypeError, ValueError):
+            dias = 0.0
+        try:
+            valor_dia = float(item.get("Valor por Dia", item.get("Valor Unitário", item.get("valor_unitario", 0))) or 0)
+        except (TypeError, ValueError):
+            valor_dia = 0.0
+        total = dias * valor_dia
+        linhas.append({
+            "Item": str(item.get("Item", len(linhas) + 1)),
+            "Produto": produto,
+            "Dias": dias,
+            "Valor por Dia": valor_dia,
+            "Total": total,
+        })
+    return linhas
+
+
+def _gerar_excel_orcamento(orcamento, posto, pv):
+    itens = _normalizar_itens_orcamento(orcamento.get("itens", []))
+    colunas = ["Item", "Produto", "Dias", "Valor por Dia", "Total"]
+    df_itens = pd.DataFrame(itens, columns=colunas)
+    if df_itens.empty:
+        df_itens = pd.DataFrame(columns=colunas)
+
+    subtotal = float(sum(float(x.get("Total", 0) or 0) for x in itens))
+    desconto = float(orcamento.get("desconto", 0) or 0)
+    desconto_valor = subtotal * (desconto / 100)
+    total = subtotal - desconto_valor
+
+    resumo = pd.DataFrame([
+        ["Orçamento", orcamento.get("numero", "")],
+        ["PV", pv],
+        ["Razão Social", posto.get("Razão Social", "")],
+        ["Cidade/UF", f"{posto.get('Municipio', '')}/{posto.get('UF', '')}"],
+        ["Responsável", orcamento.get("responsavel", "")],
+        ["Validade", f"{orcamento.get('validade_dias', 7)} dias"],
+        ["Condição de pagamento", orcamento.get("condicao_pagamento", "")],
+        ["Subtotal", subtotal],
+        ["Desconto (%)", desconto],
+        ["Desconto (R$)", desconto_valor],
+        ["TOTAL", total],
+        ["Observações", orcamento.get("observacoes", "")],
+        ["Atualizado em", orcamento.get("atualizado_em", "")],
+    ], columns=["Campo", "Informação"])
+
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        resumo.to_excel(writer, index=False, sheet_name="Orçamento")
+        df_itens.to_excel(writer, index=False, sheet_name="Treinamentos")
+
+        ws = writer.sheets["Orçamento"]
+        ws.freeze_panes = "A2"
+        ws.column_dimensions["A"].width = 28
+        ws.column_dimensions["B"].width = 65
+
+        ws2 = writer.sheets["Treinamentos"]
+        ws2.freeze_panes = "A2"
+        ws2.auto_filter.ref = ws2.dimensions
+        for col in ws2.columns:
+            letra = col[0].column_letter
+            maior = max([len(str(c.value or "")) for c in col[:100]] + [10])
+            ws2.column_dimensions[letra].width = min(maior + 2, 45)
+        for linha in range(2, ws2.max_row + 1):
+            ws2.cell(linha, 4).number_format = 'R$ #,##0.00'
+            ws2.cell(linha, 5).number_format = 'R$ #,##0.00'
+
+        for linha in range(1, ws.max_row + 1):
+            if ws.cell(linha, 1).value in ("Subtotal", "Desconto (R$)", "TOTAL"):
+                ws.cell(linha, 2).number_format = 'R$ #,##0.00'
+
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+def _salvar_documentos_orcamento(pv, arquivos):
+    pasta = os.path.join(PASTA_DOCUMENTOS_ORCAMENTO, _chave_orcamento(pv).replace("/", "_"))
+    os.makedirs(pasta, exist_ok=True)
+    salvos = []
+
+    for arquivo in arquivos or []:
+        nome_original = os.path.basename(arquivo.name)
+        nome_seguro = re.sub(r"[^A-Za-z0-9._ -]", "_", nome_original).strip() or "documento"
+        nome_final = f"{uuid.uuid4().hex[:8]}_{nome_seguro}"
+        caminho = os.path.join(pasta, nome_final)
+        with open(caminho, "wb") as destino:
+            destino.write(arquivo.getbuffer())
+        salvos.append({
+            "nome": nome_original,
+            "arquivo": caminho,
+            "tamanho": os.path.getsize(caminho),
+        })
+    return salvos
+
+
+def _criar_pacote_orcamento(orcamento, posto, pv):
+    excel = _gerar_excel_orcamento(orcamento, posto, pv)
+    pacote = io.BytesIO()
+    nome_base = re.sub(r"[^A-Za-z0-9_-]", "_", str(orcamento.get("numero", "orcamento")))
+
+    with zipfile.ZipFile(pacote, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(f"{nome_base}/Orcamento.xlsx", excel)
+
+        resumo_txt = (
+            f"ORÇAMENTO {orcamento.get('numero', '')}\n"
+            f"PV: {pv}\n"
+            f"Razão Social: {posto.get('Razão Social', '')}\n"
+            f"Total: R$ {float(orcamento.get('_total_calculado', 0) or 0):,.2f}\n"
+            f"Atualizado em: {orcamento.get('atualizado_em', '')}\n"
+        )
+        zf.writestr(f"{nome_base}/LEIA-ME.txt", resumo_txt)
+
+        for doc in orcamento.get("documentos", []):
+            caminho = doc.get("arquivo", "")
+            if caminho and os.path.exists(caminho):
+                zf.write(caminho, arcname=f"{nome_base}/Documentos/{doc.get('nome', os.path.basename(caminho))}")
+
+    pacote.seek(0)
+    return pacote.getvalue()
+
+
+def _renderizar_mini_orcamento(posto, pv):
+    """Mini aplicativo de orçamento vinculado ao cliente selecionado no Call Center."""
+    st.markdown("### 💰 Gerador de Orçamento")
+    st.caption(
+        "Monte o orçamento, altere os itens, anexe documentos e exporte tudo em um pacote único."
+    )
+
+    if "orcamentos_crm" not in st.session_state:
+        st.session_state["orcamentos_crm"] = _carregar_orcamentos()
+
+    chave = _chave_orcamento(pv)
+    orcamentos = st.session_state["orcamentos_crm"]
+    if chave not in orcamentos:
+        orcamentos[chave] = _orcamento_vazio(posto)
+
+    orcamento = orcamentos[chave]
+
+    # Cabeçalho do orçamento.
+    c1, c2, c3 = st.columns([1, 1.6, 1])
+    with c1:
+        numero = st.text_input("Nº do orçamento", value=str(orcamento.get("numero", "")))
+    with c2:
+        titulo = st.text_input("Título", value=str(orcamento.get("titulo", "")))
+    with c3:
+        validade = st.number_input(
+            "Validade (dias)",
+            min_value=1,
+            max_value=365,
+            value=int(orcamento.get("validade_dias", 7) or 7),
+        )
+
+    c4, c5 = st.columns(2)
+    with c4:
+        responsavel = st.text_input("Responsável pelo orçamento", value=str(orcamento.get("responsavel", "")))
+    with c5:
+        condicao = st.selectbox(
+            "Condição de pagamento",
+            ["A definir", "À vista", "50% entrada + 50% na conclusão", "Parcelado", "Outro"],
+            index=(
+                ["A definir", "À vista", "50% entrada + 50% na conclusão", "Parcelado", "Outro"]
+                .index(orcamento.get("condicao_pagamento", "A definir"))
+                if orcamento.get("condicao_pagamento", "A definir") in
+                ["A definir", "À vista", "50% entrada + 50% na conclusão", "Parcelado", "Outro"]
+                else 0
+            ),
+        )
+
+    st.markdown("#### 🧾 Treinamentos")
+    st.caption("Os três produtos abaixo são os tipos de treinamento comercializados. O cálculo é feito por dias de treinamento.")
+    itens_iniciais = _normalizar_itens_orcamento(orcamento.get("itens", []))
+    df_itens_inicial = pd.DataFrame(
+        itens_iniciais,
+        columns=["Item", "Produto", "Dias", "Valor por Dia", "Total"],
+    )
+    if df_itens_inicial.empty:
+        df_itens_inicial = pd.DataFrame([
+            {"Item": 1, "Produto": PRODUTOS_TREINAMENTO[0], "Dias": 1.0, "Valor por Dia": 0.0, "Total": 0.0}
+        ])
+
+    df_editado = st.data_editor(
+        df_itens_inicial,
+        use_container_width=True,
+        num_rows="dynamic",
+        hide_index=True,
+        column_config={
+            "Item": st.column_config.TextColumn("Item", disabled=True),
+            "Produto": st.column_config.SelectboxColumn("Produto", options=PRODUTOS_TREINAMENTO, required=True),
+            "Dias": st.column_config.NumberColumn("Dias de treinamento", min_value=0.5, step=0.5),
+            "Valor por Dia": st.column_config.NumberColumn("Valor por Dia (R$)", min_value=0.0, step=0.01, format="R$ %.2f"),
+            "Total": st.column_config.NumberColumn("Total (R$)", disabled=True, format="R$ %.2f"),
+        },
+        key=f"orcamento_editor_{chave}",
+    ).copy()
+
+    if not df_editado.empty:
+        df_editado["Total"] = (
+            pd.to_numeric(df_editado["Dias"], errors="coerce").fillna(0)
+            * pd.to_numeric(df_editado["Valor por Dia"], errors="coerce").fillna(0)
+        )
+
+    st.markdown("#### 🧮 Fechamento")
+    c6, c7 = st.columns(2)
+    with c6:
+        desconto = st.number_input(
+            "Desconto (%)", min_value=0.0, max_value=100.0,
+            value=float(orcamento.get("desconto", 0) or 0), step=0.5
+        )
+    with c7:
+        subtotal = float(pd.to_numeric(df_editado["Total"], errors="coerce").fillna(0).sum()) if not df_editado.empty else 0.0
+        desconto_valor = subtotal * desconto / 100
+        total = subtotal - desconto_valor
+        st.metric("💰 Total do treinamento", f"R$ {total:,.2f}")
+
+    observacoes = st.text_area(
+        "Observações / condições comerciais",
+        value=str(orcamento.get("observacoes", "")),
+        height=100,
+    )
+
+    st.markdown("#### 📎 Documentos relacionados")
+    documentos = orcamento.get("documentos", [])
+    uploads = st.file_uploader(
+        "Anexe propostas, contratos, memoriais, imagens ou outros documentos",
+        type=["pdf", "doc", "docx", "xlsx", "xls", "csv", "png", "jpg", "jpeg"],
+        accept_multiple_files=True,
+        key=f"orcamento_upload_{chave}",
+    )
+
+    if uploads:
+        if st.button("📥 Salvar documentos anexados", key=f"salvar_docs_{chave}"):
+            novos = _salvar_documentos_orcamento(pv, uploads)
+            documentos.extend(novos)
+            orcamento["documentos"] = documentos
+            orcamentos[chave] = orcamento
+            _salvar_orcamentos(orcamentos)
+            st.session_state["orcamentos_crm"] = orcamentos
+            st.success(f"✅ {len(novos)} documento(s) anexado(s).")
+            st.rerun()
+
+    if documentos:
+        for doc in documentos:
+            caminho = doc.get("arquivo", "")
+            if caminho and os.path.exists(caminho):
+                with open(caminho, "rb") as arquivo:
+                    st.download_button(
+                        f"⬇️ {doc.get('nome', 'Documento')}",
+                        data=arquivo.read(),
+                        file_name=doc.get("nome", "Documento"),
+                        key=f"download_doc_{chave}_{doc.get('arquivo')}",
+                    )
+            else:
+                st.caption(f"⚠️ Arquivo não encontrado: {doc.get('nome', 'Documento')}")
+
+    st.divider()
+    b1, b2 = st.columns(2)
+    with b1:
+        salvar = st.button("💾 Salvar Orçamento", use_container_width=True, type="primary", key=f"salvar_orc_{chave}")
+    with b2:
+        limpar = st.button("🆕 Novo Orçamento", use_container_width=True, key=f"novo_orc_{chave}")
+
+    if salvar:
+        itens_salvos = []
+        for _, linha in df_editado.iterrows():
+            produto = str(linha.get("Produto", "") or "").strip()
+            if not produto:
+                continue
+            itens_salvos.append({
+                "Item": str(linha.get("Item", len(itens_salvos) + 1)),
+                "Produto": produto,
+                "Dias": float(linha.get("Dias", 0) or 0),
+                "Valor por Dia": float(linha.get("Valor por Dia", 0) or 0),
+                "Total": float(linha.get("Total", 0) or 0),
+            })
+
+        orcamento.update({
+            "numero": numero,
+            "titulo": titulo,
+            "validade_dias": validade,
+            "responsavel": responsavel,
+            "condicao_pagamento": condicao,
+            "desconto": desconto,
+            "observacoes": observacoes,
+            "itens": itens_salvos,
+            "documentos": documentos,
+            "atualizado_em": datetime.now().strftime("%d/%m/%Y %H:%M"),
+            "_total_calculado": total,
+        })
+        # Migração silenciosa: qualquer orçamento antigo que possuía frete deixa de usá-lo.
+        orcamento.pop("frete", None)
+        orcamentos[chave] = orcamento
+        st.session_state["orcamentos_crm"] = orcamentos
+        _salvar_orcamentos(orcamentos)
+        st.success("✅ Orçamento de treinamento salvo com sucesso!")
+
+    if limpar:
+        orcamentos[chave] = _orcamento_vazio(posto)
+        _salvar_orcamentos(orcamentos)
+        st.session_state["orcamentos_crm"] = orcamentos
+        st.rerun()
+
+    # Exportação somente depois de salvo.
+    orcamento_atual = st.session_state["orcamentos_crm"].get(chave, orcamento)
+    if orcamento_atual.get("itens"):
+        st.markdown("#### 📤 Exportar orçamento pronto")
+        excel_orc = _gerar_excel_orcamento(orcamento_atual, posto, pv)
+        pacote = _criar_pacote_orcamento(orcamento_atual, posto, pv)
+        nome_base = re.sub(r"[^A-Za-z0-9_-]", "_", str(orcamento_atual.get("numero", "orcamento")))
+
+        e1, e2 = st.columns(2)
+        with e1:
+            st.download_button(
+                "📊 Exportar Orçamento em Excel",
+                data=excel_orc,
+                file_name=f"{nome_base}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                key=f"export_excel_orc_{chave}",
+            )
+        with e2:
+            st.download_button(
+                "📦 Exportar Orçamento + Documentos",
+                data=pacote,
+                file_name=f"{nome_base}_com_documentos.zip",
+                mime="application/zip",
+                use_container_width=True,
+                key=f"export_zip_orc_{chave}",
+            )
+
 
 COLUNAS_FILA = [
     "PV_Abadi", "Tipo_Necessidade", "Data_Ultimo_Treinamento",
@@ -2305,6 +2695,12 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                         <span style="color:var(--text-secondary);"><i>"{posto.get('Observacoes', 'Sem observações registradas.')}"</i></span>
                     </div>
                 """, unsafe_allow_html=True)
+
+
+                st.divider()
+                aba_orc = st.tabs(["💰 Orçamento do Cliente"])
+                with aba_orc[0]:
+                    _renderizar_mini_orcamento(posto, pv_alvo)
     else:
         st.info("📭 Nenhum dado carregado ainda.")
 
