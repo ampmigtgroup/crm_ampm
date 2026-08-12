@@ -1342,6 +1342,7 @@ ENTIDADES = {
             "Razão Social": ["razao social", "nome loja", "loja", "unidade", "nome fantasia", "franquia", "nome da loja"],
             "Municipio": ["municipio", "cidade", "municipio loja"],
             "UF": ["uf", "estado", "uf loja"],
+            "CNPJ": ["cnpj", "cnpj loja", "documento cnpj", "cnpj da loja", "cnpj posto"],
             "Endereço": ["endereco", "endereco completo", "logradouro", "endereço"],
             "Status Loja": ["status loja", "status", "situacao loja", "situacao"],
             "GF": ["gf", "gerente franquia", "gerente"],
@@ -2487,7 +2488,7 @@ elif modulo == "🔍 PROCV Gestão e Franquia AMPM":
             ]
         if f_necessidade != "Todas" and 'Tipo_Necessidade' in df_view.columns:
             df_view = df_view[df_view['Tipo_Necessidade'] == f_necessidade]
-        cols_mostrar = [c for c in ['PV Abadi', 'Razão Social', 'Municipio', 'UF', 'Status Loja', 'Tipo_Necessidade', 'Instrutor_Treinamento', 'Instrutor_Sugerido', 'Status_Contato'] if c in df_view.columns]
+        cols_mostrar = [c for c in ['PV Abadi', 'Razão Social', 'CNPJ', 'Municipio', 'UF', 'Status Loja', 'Tipo_Necessidade', 'Instrutor_Treinamento', 'Instrutor_Sugerido', 'Status_Contato'] if c in df_view.columns]
         evento = st.dataframe(df_view[cols_mostrar], use_container_width=True, hide_index=True, selection_mode="single-row", on_select="rerun")
         linhas = evento.selection.get("rows", [])
         if linhas:
@@ -2497,7 +2498,7 @@ elif modulo == "🔍 PROCV Gestão e Franquia AMPM":
             st.markdown(f"**📋 Gestão e Franquia AMPM — PV {p.get('PV Abadi', '-')} · {p.get('Razão Social', '-')}**")
             k1, k2, k3 = st.columns(3)
             with k1:
-                st.markdown(f"""<div class="procv-card"><h4>🏪 Cadastro da Loja</h4><p>📍 <b>Endereço:</b> {p.get('Endereço', '-')}</p><p>🏙️ <b>Cidade/UF:</b> {p.get('Municipio', '-')}/{p.get('UF', '-')}</p><p>⚙️ <b>Status da loja:</b> {p.get('Status Loja', '-')}</p></div>""", unsafe_allow_html=True)
+                st.markdown(f"""<div class="procv-card"><h4>🏪 Cadastro da Loja</h4><p>🧾 <b>CNPJ:</b> {p.get('CNPJ', 'Não informado')}</p><p>📍 <b>Endereço:</b> {p.get('Endereço', '-')}</p><p>🏙️ <b>Cidade/UF:</b> {p.get('Municipio', '-')}/{p.get('UF', '-')}</p><p>⚙️ <b>Status da loja:</b> {p.get('Status Loja', '-')}</p></div>""", unsafe_allow_html=True)
             with k2:
                 st.markdown(f"""<div class="procv-card"><h4>👔 Gestão & Franquia</h4><p>👤 <b>Gerente (GF):</b> {p.get('GF', '-')}</p><p>👔 <b>Consultor (CF):</b> {p.get('CF', '-')}</p><p>📅 <b>Inauguração:</b> {p.get('Previsão Inauguração', 'N/A')}</p></div>""", unsafe_allow_html=True)
             with k3:
@@ -2920,19 +2921,31 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                         email_c = st.text_input("✉️ E-mail do Contato:", value=_texto_seguro_callcenter(posto.get('Email_Contato', '')))
                         tem_func_atual = _texto_seguro_callcenter(posto.get('Tem_Funcionarios', 'Sim')) or 'Sim'
                         tem_func_opcoes = ["Sim", "Não"]
-                        idx_tem_func = tem_func_opcoes.index(tem_func_atual) if tem_func_atual in tem_func_opcoes else 0
-                        tem_funcionarios = st.selectbox("👥 Há funcionários para treinar?", tem_func_opcoes, index=idx_tem_func)
                         qtd_func_atual = _texto_seguro_callcenter(posto.get('Qtd_Funcionarios', 0))
                         try:
                             qtd_func_padrao = int(float(qtd_func_atual or 0))
                         except (TypeError, ValueError):
                             qtd_func_padrao = 0
+                        qtd_func_padrao = max(0, qtd_func_padrao)
+
+                        # Regra de negócio: zero funcionários significa automaticamente "Não".
+                        # Isso também corrige registros antigos que estejam inconsistentes.
+                        if qtd_func_padrao == 0:
+                            tem_func_atual = "Não"
+                        elif tem_func_atual not in tem_func_opcoes:
+                            tem_func_atual = "Sim"
+
+                        idx_tem_func = tem_func_opcoes.index(tem_func_atual)
+                        tem_funcionarios = st.selectbox("👥 Há funcionários para treinar?", tem_func_opcoes, index=idx_tem_func)
                         qtd_func = st.number_input(
                             "🔢 Qtd. de Funcionários para Treinar:",
                             value=qtd_func_padrao, min_value=0, step=1,
                             disabled=(tem_funcionarios == "Não")
                         )
-                        if tem_funcionarios == "Não":
+                        # Se a quantidade for zero, a regra prevalece sobre a seleção anterior.
+                        if qtd_func == 0:
+                            tem_funcionarios = "Não"
+                        elif tem_funcionarios == "Não":
                             qtd_func = 0
                         instrutor_escolhido = st.selectbox("👨‍🏫 Instrutor Designado:", lista_instrutores, index=idx_instrutor)
 
@@ -2955,8 +2968,8 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                             'Nome_Contato': nome_c,
                             'Telefone_Contato': tel_c,
                             'Email_Contato': email_c,
-                            'Tem_Funcionarios': tem_funcionarios,
-                            'Qtd_Funcionarios': qtd_func,
+                            'Tem_Funcionarios': 'Não' if int(qtd_func) == 0 else 'Sim',
+                            'Qtd_Funcionarios': int(qtd_func),
                             'Instrutor_Sugerido': instrutor_escolhido,
                             'Material_Em_Loja': mat_loja,
                             'Data_Agendada': data_ag.strftime("%Y-%m-%d"),
@@ -3153,4 +3166,3 @@ elif modulo == "📂 Relatórios & Exportação":
         f"Base pronta para exportação: {len(df_base):,} registros e "
         f"{len(df_base.columns):,} colunas."
     )
-
