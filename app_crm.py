@@ -416,8 +416,8 @@ def _renderizar_mini_orcamento(posto, pv):
 COLUNAS_FILA = [
     "PV_Abadi", "Tipo_Necessidade", "Data_Ultimo_Treinamento",
     "Dias_desde_Ultimo_Treinamento", "Instrutor_Sugerido", "Semana_Sugerida",
-    "Telefone_Contato", "Status_Contato", "Data_do_Contato", "Observacoes",
-    "Nome_Contato", "Qtd_Funcionarios", "Material_Em_Loja", "Data_Agendada",
+    "Telefone_Contato", "Email_Contato", "Status_Contato", "Data_do_Contato", "Observacoes",
+    "Nome_Contato", "Tem_Funcionarios", "Qtd_Funcionarios", "Material_Em_Loja", "Data_Agendada",
     "Tipo_Pagamento", "Data_Pagamento", "Data_Liberacao_Treinamento",
 ]
 
@@ -2917,7 +2917,23 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                     with col_f1:
                         nome_c = st.text_input("👤 Nome do Responsável na Loja:", value=_texto_seguro_callcenter(posto.get('Nome_Contato', '')))
                         tel_c = st.text_input("📞 Telefone de Contato:", value=_texto_seguro_callcenter(posto.get('Telefone_Contato', '')))
-                        qtd_func = st.number_input("👥 Qtd. de Funcionários para Treinar:", value=int(posto.get('Qtd_Funcionarios', 0) or 0), min_value=0, step=1)
+                        email_c = st.text_input("✉️ E-mail do Contato:", value=_texto_seguro_callcenter(posto.get('Email_Contato', '')))
+                        tem_func_atual = _texto_seguro_callcenter(posto.get('Tem_Funcionarios', 'Sim')) or 'Sim'
+                        tem_func_opcoes = ["Sim", "Não"]
+                        idx_tem_func = tem_func_opcoes.index(tem_func_atual) if tem_func_atual in tem_func_opcoes else 0
+                        tem_funcionarios = st.selectbox("👥 Há funcionários para treinar?", tem_func_opcoes, index=idx_tem_func)
+                        qtd_func_atual = _texto_seguro_callcenter(posto.get('Qtd_Funcionarios', 0))
+                        try:
+                            qtd_func_padrao = int(float(qtd_func_atual or 0))
+                        except (TypeError, ValueError):
+                            qtd_func_padrao = 0
+                        qtd_func = st.number_input(
+                            "🔢 Qtd. de Funcionários para Treinar:",
+                            value=qtd_func_padrao, min_value=0, step=1,
+                            disabled=(tem_funcionarios == "Não")
+                        )
+                        if tem_funcionarios == "Não":
+                            qtd_func = 0
                         instrutor_escolhido = st.selectbox("👨‍🏫 Instrutor Designado:", lista_instrutores, index=idx_instrutor)
 
                     with col_f2:
@@ -2938,6 +2954,8 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                         atualizar_fila(pv_alvo, {
                             'Nome_Contato': nome_c,
                             'Telefone_Contato': tel_c,
+                            'Email_Contato': email_c,
+                            'Tem_Funcionarios': tem_funcionarios,
                             'Qtd_Funcionarios': qtd_func,
                             'Instrutor_Sugerido': instrutor_escolhido,
                             'Material_Em_Loja': mat_loja,
@@ -3135,3 +3153,4 @@ elif modulo == "📂 Relatórios & Exportação":
         f"Base pronta para exportação: {len(df_base):,} registros e "
         f"{len(df_base.columns):,} colunas."
     )
+
