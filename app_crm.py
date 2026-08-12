@@ -967,7 +967,7 @@ CAMINHO_PERMISSOES = "permissoes_usuarios_ampm.json"
 MODULOS_PERMISSOES = {
     "dashboard": "📊 Dashboard Executivo",
     "pipeline": "📋 Pipeline AmPm",
-    "procv": "🔍 PROCV & Filtros Avançados",
+    "procv": "🔍 PROCV Gestão e Franquia AMPM",
     "custos": "📍 Calculadora & Otimizador de Custos",
     "callcenter": "📞 Call Center & Timeline WhatsApp",
     "instrutores": "👔 Equipe de Instrutores",
@@ -1359,6 +1359,8 @@ ENTIDADES = {
             "Data_Ultimo_Treinamento": ["data ultimo treinamento", "ultimo treinamento", "data do ultimo treinamento"],
             "Dias_desde_Ultimo_Treinamento": ["dias desde ultimo treinamento", "dias sem treinamento", "dias desde treinamento"],
             "Instrutor_Sugerido": ["instrutor sugerido", "instrutor", "instrutor designado"],
+            "Instrutor_Treinamento": ["instrutor treinamento", "instrutor do treinamento", "instrutor que treinou", "instrutor responsavel treinamento", "instrutor responsavel pelo treinamento"],
+            "Instrutor_Inauguracao": ["instrutor inauguracao", "instrutor da inauguracao", "instrutor que inaugurou", "instrutor responsavel inauguracao"],
             "Semana_Sugerida": ["semana sugerida", "semana"],
             "Telefone_Contato": ["telefone contato", "telefone", "contato telefone", "celular"],
             "Status_Contato": ["status contato", "status do contato", "status atendimento"],
@@ -2211,6 +2213,31 @@ st.markdown(f"""
 
 # --- MÓDULOS DA APLICAÇÃO ---
 
+def _valor_historico_instrutor(posto, *campos):
+    """Retorna o primeiro nome histórico preenchido, sem verificar se está ativo."""
+    for campo in campos:
+        if campo not in posto:
+            continue
+        valor = posto.get(campo)
+        if valor is None:
+            continue
+        try:
+            if pd.isna(valor):
+                continue
+        except (TypeError, ValueError):
+            pass
+        texto = str(valor).strip()
+        if texto and texto.casefold() not in {"nan", "none", "nat", "-"}:
+            return texto
+    return "Não informado"
+
+def _historico_instrutor_procv(posto):
+    """Mostra o histórico do instrutor mesmo quando ele não está mais ativo."""
+    treinamento = _valor_historico_instrutor(posto, "Instrutor_Treinamento", "Instrutor_Sugerido")
+    inauguracao = _valor_historico_instrutor(posto, "Instrutor_Inauguracao")
+    return treinamento, inauguracao
+
+
 if modulo == "🛡️ Administração":
     render_administracao()
 
@@ -2444,14 +2471,13 @@ elif modulo == "📋 Pipeline AmPm":
                             st.rerun()
 
 
-elif modulo == "🔍 PROCV & Filtros Avançados":
-    render_section_header("🔍", "PROCV & Filtros Avançados", "Consulta detalhada na rede")
+elif modulo == "🔍 PROCV Gestão e Franquia AMPM":
+    render_section_header("🔍", "PROCV Gestão e Franquia AMPM", "Consulta detalhada da loja, gestão, franquia e histórico de treinamento")
     if not df_base.empty:
         with st.expander("🔎 **Pesquisa Avançada**", expanded=True):
             f1, f2 = st.columns(2)
             termo = f1.text_input("🔍 PV, Nome ou Município:", "")
             f_necessidade = f2.selectbox("🎯 Necessidade:", ["Todas"] + sorted([str(x) for x in df_base['Tipo_Necessidade'].dropna().unique()])) if 'Tipo_Necessidade' in df_base.columns else ["Todas"]
-
         df_view = df_base.copy()
         if termo:
             df_view = df_view[
@@ -2461,39 +2487,23 @@ elif modulo == "🔍 PROCV & Filtros Avançados":
             ]
         if f_necessidade != "Todas" and 'Tipo_Necessidade' in df_view.columns:
             df_view = df_view[df_view['Tipo_Necessidade'] == f_necessidade]
-
-        cols_mostrar = [c for c in ['PV Abadi', 'Razão Social', 'Municipio', 'UF', 'Status Loja', 'Tipo_Necessidade', 'Status_Contato'] if c in df_view.columns]
+        cols_mostrar = [c for c in ['PV Abadi', 'Razão Social', 'Municipio', 'UF', 'Status Loja', 'Tipo_Necessidade', 'Instrutor_Treinamento', 'Instrutor_Sugerido', 'Status_Contato'] if c in df_view.columns]
         evento = st.dataframe(df_view[cols_mostrar], use_container_width=True, hide_index=True, selection_mode="single-row", on_select="rerun")
-
         linhas = evento.selection.get("rows", [])
         if linhas:
             p = df_view.iloc[linhas[0]].to_dict()
+            instrutor_treinamento, instrutor_inauguracao = _historico_instrutor_procv(p)
             st.divider()
+            st.markdown(f"**📋 Gestão e Franquia AMPM — PV {p.get('PV Abadi', '-')} · {p.get('Razão Social', '-')}**")
             k1, k2, k3 = st.columns(3)
             with k1:
-                st.markdown(f"""
-                    <div class="procv-card">
-                        <h4>🏪 Cadastro</h4>
-                        <p>📍 <b>Endereço:</b> {p.get('Endereço', '-')}</p>
-                        <p>🏙️ <b>Cidade/UF:</b> {p.get('Municipio', '-')}/{p.get('UF', '-')}</p>
-                    </div>
-                """, unsafe_allow_html=True)
+                st.markdown(f"""<div class="procv-card"><h4>🏪 Cadastro da Loja</h4><p>📍 <b>Endereço:</b> {p.get('Endereço', '-')}</p><p>🏙️ <b>Cidade/UF:</b> {p.get('Municipio', '-')}/{p.get('UF', '-')}</p><p>⚙️ <b>Status da loja:</b> {p.get('Status Loja', '-')}</p></div>""", unsafe_allow_html=True)
             with k2:
-                st.markdown(f"""
-                    <div class="procv-card">
-                        <h4>👔 Gestão</h4>
-                        <p>👤 <b>Gerente:</b> {p.get('GF', '-')}</p>
-                        <p>👔 <b>Consultor:</b> {p.get('CF', '-')}</p>
-                    </div>
-                """, unsafe_allow_html=True)
+                st.markdown(f"""<div class="procv-card"><h4>👔 Gestão & Franquia</h4><p>👤 <b>Gerente (GF):</b> {p.get('GF', '-')}</p><p>👔 <b>Consultor (CF):</b> {p.get('CF', '-')}</p><p>📅 <b>Inauguração:</b> {p.get('Previsão Inauguração', 'N/A')}</p></div>""", unsafe_allow_html=True)
             with k3:
-                st.markdown(f"""
-                    <div class="procv-card">
-                        <h4>📞 Atendimento</h4>
-                        <p>🎯 <b>Necessidade:</b> {p.get('Tipo_Necessidade', '-')}</p>
-                        <p>🔄 <b>Status:</b> {badge_status_html(p.get('Status_Contato', '-'))}</p>
-                    </div>
-                """, unsafe_allow_html=True)
+                st.markdown(f"""<div class="procv-card"><h4>👨‍🏫 Histórico de Treinamento</h4><p>🎓 <b>Instrutor do treinamento:</b> {instrutor_treinamento}</p><p>🚀 <b>Instrutor da inauguração:</b> {instrutor_inauguracao}</p><p>📅 <b>Último treinamento:</b> {p.get('Data_Ultimo_Treinamento', 'Não informado')}</p><p>🎯 <b>Necessidade atual:</b> {p.get('Tipo_Necessidade', '-')}</p><p>🔄 <b>Status do atendimento:</b> {badge_status_html(p.get('Status_Contato', '-'))}</p></div>""", unsafe_allow_html=True)
+    else:
+        st.info("📭 Nenhum dado carregado ainda.")
 
 elif modulo == "📍 Calculadora & Otimizador de Custos":
     render_section_header("📍", "Calculadora & Otimizador de Custos", "Simulação de rotas e análise de custos")
