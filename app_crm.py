@@ -1342,7 +1342,7 @@ ENTIDADES = {
             "Razão Social": ["razao social", "nome loja", "loja", "unidade", "nome fantasia", "franquia", "nome da loja"],
             "Municipio": ["municipio", "cidade", "municipio loja"],
             "UF": ["uf", "estado", "uf loja"],
-            "CNPJ": ["cnpj", "cnpj loja", "documento cnpj", "cnpj da loja", "cnpj posto"],
+            "CNPJ": ["cnpj", "cnpj loja", "documento cnpj", "cnpj da loja", "cnpj posto", "cnpj completo"],
             "Endereço": ["endereco", "endereco completo", "logradouro", "endereço"],
             "Status Loja": ["status loja", "status", "situacao loja", "situacao"],
             "GF": ["gf", "gerente franquia", "gerente"],
@@ -1745,9 +1745,46 @@ def _ler_csv_flexivel(uploaded_file):
     raise ValueError(f"Não foi possível interpretar o CSV: {ultimo_erro}")
 
 
+def _abrir_excel_resiliente(conteudo_bytes):
+    """Abre Excel recebido pelo Streamlit com validação e fallbacks.
+
+    Alguns arquivos chegam com extensão .xlsx mas podem ter sido gerados por
+    sistemas diferentes. Primeiro validamos o pacote OOXML (ZIP), depois
+    tentamos o openpyxl por bytes e, por fim, o leitor padrão do pandas.
+    """
+    if not conteudo_bytes:
+        raise ValueError("O arquivo recebido está vazio.")
+
+    dados = bytes(conteudo_bytes)
+    if len(dados) < 4:
+        raise ValueError("O arquivo recebido é pequeno demais para ser um Excel válido.")
+
+    tentativas = []
+
+    # XLSX/XLSM são pacotes ZIP. Se não for ZIP, o nome pode estar errado.
+    if zipfile.is_zipfile(io.BytesIO(dados)):
+        for engine in ("openpyxl", None):
+            try:
+                if engine:
+                    return pd.ExcelFile(io.BytesIO(dados), engine=engine)
+                return pd.ExcelFile(io.BytesIO(dados))
+            except Exception as exc:
+                tentativas.append(f"{engine or 'padrão'}: {exc}")
+    else:
+        # Evita o erro genérico "File is not a zip file" e explica a causa.
+        assinatura = dados[:16].hex(" ")
+        raise ValueError(
+            "O arquivo possui extensão Excel, mas o conteúdo recebido não é um pacote XLSX válido. "
+            f"Assinatura recebida: {assinatura}. Verifique se o arquivo não foi renomeado de CSV/HTML "
+            "para .xlsx ou exporte novamente como .xlsx pelo Excel/LibreOffice."
+        )
+
+    raise ValueError("Não foi possível abrir o Excel. Tentativas: " + " | ".join(tentativas))
+
+
 def validar_bytes_excel(conteudo_bytes):
     try:
-        xls = pd.ExcelFile(io.BytesIO(conteudo_bytes), engine="openpyxl")
+        xls = _abrir_excel_resiliente(conteudo_bytes)
         bases, relatorio = _processar_excelfile(xls, exigir_lojas=False)
         return bases, relatorio, None
     except Exception as e:
@@ -2186,7 +2223,7 @@ with st.sidebar:
 
     uploaded_file = st.file_uploader(
         "Envie a nova planilha (.xlsx ou .csv):",
-        type=["xlsx", "csv"]
+        type=["xlsx", "xls", "csv"]
     )
 
     def _exibir_relatorio_importacao(relatorio):
@@ -2215,11 +2252,23 @@ with st.sidebar:
 
     if uploaded_file is not None:
         try:
-            if uploaded_file.name.lower().endswith(".xlsx"):
-                conteudo = uploaded_file.getbuffer().tobytes()
+            if uploaded_file.name.lower().endswith((".xlsx", ".xls")):
+                conteudo = uploaded_file.getvalue()
+                st.session_state["ultimo_upload_info"] = {
+                    "arquivo": uploaded_file.name,
+                    "bytes": len(conteudo),
+                    "zip_valido": zipfile.is_zipfile(io.BytesIO(conteudo)),
+                }
                 bases_validadas, relatorio, erro = validar_bytes_excel(conteudo)
                 if erro:
+                    info = st.session_state.get("ultimo_upload_info", {})
                     st.error(f"❌ Arquivo rejeitado:\n\n{erro}")
+                    if info:
+                        st.caption(
+                            f"Diagnóstico: {info.get('arquivo', 'arquivo')} — "
+                            f"{info.get('bytes', 0):,} bytes — "
+                            f"pacote XLSX/ZIP: {'sim' if info.get('zip_valido') else 'não'}"
+                        )
                 else:
                     bases_atuais = st.session_state.get("bases", _bases_vazias())
                     bases_combinadas, estatisticas = mesclar_bases(bases_atuais, bases_validadas)
