@@ -2506,52 +2506,308 @@ elif modulo == "🔍 PROCV Gestão e Franquia AMPM":
         st.info("📭 Nenhum dado carregado ainda.")
 
 elif modulo == "📍 Calculadora & Otimizador de Custos":
-    render_section_header("📍", "Calculadora & Otimizador de Custos", "Simulação de rotas e análise de custos")
+    render_section_header(
+        "📍",
+        "Calculadora & Otimizador de Custos",
+        "Simulação de rotas, custos estimados e comparação entre instrutores"
+    )
+
     if not df_rec.empty:
         df_rec_filtrado = df_rec.copy()
         if filtro_uf != "Todas" and 'UF_Loja' in df_rec_filtrado.columns:
             df_rec_filtrado = df_rec_filtrado[df_rec_filtrado['UF_Loja'] == filtro_uf]
-        postos_unicos = df_rec_filtrado[['PV_ABADI', 'Razao_Social', 'Municipio_Loja', 'UF_Loja']].drop_duplicates()
+
+        postos_unicos = df_rec_filtrado[
+            ['PV_ABADI', 'Razao_Social', 'Municipio_Loja', 'UF_Loja']
+        ].drop_duplicates()
 
         if not postos_unicos.empty:
-            postos_unicos['label'] = postos_unicos['PV_ABADI'].astype(str) + " - " + postos_unicos['Razao_Social'] + " (" + postos_unicos['Municipio_Loja'] + "/" + postos_unicos['UF_Loja'] + ")"
-            posto_sel = st.selectbox("⛽ Selecione o Posto Alvo:", postos_unicos['label'].tolist())
+            postos_unicos['label'] = (
+                postos_unicos['PV_ABADI'].astype(str)
+                + " - " + postos_unicos['Razao_Social'].astype(str)
+                + " (" + postos_unicos['Municipio_Loja'].astype(str)
+                + "/" + postos_unicos['UF_Loja'].astype(str) + ")"
+            )
+
+            posto_sel = st.selectbox(
+                "⛽ Selecione o Posto Alvo:",
+                postos_unicos['label'].tolist()
+            )
             pv_sel = int(posto_sel.split(" - ")[0])
-            top_3 = df_rec_filtrado[df_rec_filtrado['PV_ABADI'] == pv_sel].sort_values(by='Ranking_Proximidade').head(3)
+
+            top_3 = (
+                df_rec_filtrado[df_rec_filtrado['PV_ABADI'] == pv_sel]
+                .sort_values(by='Ranking_Proximidade')
+                .head(3)
+            )
 
             if not top_3.empty:
                 primeira = top_3.iloc[0]
-                if pd.notna(primeira.get('Lat_Loja')) and pd.notna(primeira.get('Lon_Loja')) and pd.notna(primeira.get('Lat_Instrutor')) and pd.notna(primeira.get('Lon_Instrutor')):
+
+                # Mapa continua mostrando o instrutor mais próximo.
+                if (
+                    pd.notna(primeira.get('Lat_Loja'))
+                    and pd.notna(primeira.get('Lon_Loja'))
+                    and pd.notna(primeira.get('Lat_Instrutor'))
+                    and pd.notna(primeira.get('Lon_Instrutor'))
+                ):
                     p_lat, p_lon = float(primeira['Lat_Loja']), float(primeira['Lon_Loja'])
                     i_lat, i_lon = float(primeira['Lat_Instrutor']), float(primeira['Lon_Instrutor'])
 
                     df_mapa_pontos = pd.DataFrame([
-                        {"name": f"Posto {primeira['PV_ABADI']}", "lat": p_lat, "lon": p_lon, "color": [226, 123, 0, 220]},
-                        {"name": f"Instrutor {primeira['Instrutor_Sugerido']}", "lat": i_lat, "lon": i_lon, "color": [76, 175, 80, 220]}
+                        {
+                            "name": f"Posto {primeira['PV_ABADI']}",
+                            "lat": p_lat,
+                            "lon": p_lon,
+                            "color": [226, 123, 0, 220]
+                        },
+                        {
+                            "name": f"Instrutor {primeira['Instrutor_Sugerido']}",
+                            "lat": i_lat,
+                            "lon": i_lon,
+                            "color": [76, 175, 80, 220]
+                        }
                     ])
-                    df_mapa_arco = pd.DataFrame([{"from_lat": i_lat, "from_lon": i_lon, "to_lat": p_lat, "to_lon": p_lon}])
+                    df_mapa_arco = pd.DataFrame([{
+                        "from_lat": i_lat,
+                        "from_lon": i_lon,
+                        "to_lat": p_lat,
+                        "to_lon": p_lon
+                    }])
 
-                    layer_pontos = pdk.Layer("ScatterplotLayer", df_mapa_pontos, get_position="[lon, lat]", get_color="color", get_radius=20000, pickable=True)
-                    layer_arco = pdk.Layer("ArcLayer", df_mapa_arco, get_source_position="[from_lon, from_lat]", get_target_position="[to_lon, to_lat]", get_source_color=[76, 175, 80, 180], get_target_color=[226, 123, 0, 180], get_width=4)
-                    view_state = pdk.ViewState(latitude=(p_lat + i_lat) / 2, longitude=(p_lon + i_lon) / 2, zoom=5, pitch=40)
+                    layer_pontos = pdk.Layer(
+                        "ScatterplotLayer",
+                        df_mapa_pontos,
+                        get_position="[lon, lat]",
+                        get_color="color",
+                        get_radius=20000,
+                        pickable=True
+                    )
+                    layer_arco = pdk.Layer(
+                        "ArcLayer",
+                        df_mapa_arco,
+                        get_source_position="[from_lon, from_lat]",
+                        get_target_position="[to_lon, to_lat]",
+                        get_source_color=[76, 175, 80, 180],
+                        get_target_color=[226, 123, 0, 180],
+                        get_width=4
+                    )
+                    view_state = pdk.ViewState(
+                        latitude=(p_lat + i_lat) / 2,
+                        longitude=(p_lon + i_lon) / 2,
+                        zoom=5,
+                        pitch=40
+                    )
+                    st.pydeck_chart(
+                        pdk.Deck(
+                            layers=[layer_pontos, layer_arco],
+                            initial_view_state=view_state,
+                            tooltip={"text": "{name}"}
+                        )
+                    )
 
-                    st.pydeck_chart(pdk.Deck(layers=[layer_pontos, layer_arco], initial_view_state=view_state, tooltip={"text": "{name}"}))
+                st.markdown("### 💰 Composição estimada de custos")
+                st.caption(
+                    "Os valores abaixo são estimativas e podem ser alterados para cada instrutor. "
+                    "As caixas de seleção definem quais custos entram no cálculo."
+                )
+
+                # Valores iniciais de referência. Não são valores fixos da empresa.
+                # No futuro poderão ser substituídos por uma tabela de valores fixos.
+                st.markdown(
+                    "**Valores iniciais de referência:** "
+                    "diária R$ 280/dia · hospedagem R$ 250/dia · carro R$ 180/dia · "
+                    "rodoviário calculado pela distância · avião R$ 800/deslocamento · "
+                    "treinamento R$ 280/dia."
+                )
+
+                resultados_custos = []
 
                 col1, col2, col3 = st.columns(3)
                 cols = [col1, col2, col3]
+
                 for idx, (_, row) in enumerate(top_3.iterrows()):
-                    dist = row['Distancia_km_linha_reta']
-                    dias = row['Dias_Treinamento_Necessarios']
-                    custo_total = (dist * 2 * 2.10) + (dias * 280.0)
+                    nome_instrutor = str(row.get('Instrutor_Sugerido', 'Instrutor não informado'))
+                    dist = float(row.get('Distancia_km_linha_reta', 0) or 0)
+
+                    try:
+                        dias_base = float(row.get('Dias_Treinamento_Necessarios', 1) or 1)
+                    except (TypeError, ValueError):
+                        dias_base = 1.0
+                    dias_base = max(0.5, dias_base)
+
+                    # Cada instrutor possui suas próprias flags e valores.
                     with cols[idx]:
-                        st.markdown(f"""
+                        st.markdown(
+                            f"""
                             <div class="top-instructor-card">
-                                <h4>#{idx+1} {row['Instrutor_Sugerido']}</h4>
-                                <p>Origem: {row['Cidade_Instrutor']}/{row['UF_Instrutor']}</p>
-                                <p>Distância: {dist} km</p>
-                                <h3>Total Est.: R$ {custo_total:.2f}</h3>
+                                <h4>#{idx+1} {nome_instrutor}</h4>
+                                <p>Origem: {row.get('Cidade_Instrutor', '-')} / {row.get('UF_Instrutor', '-')}</p>
+                                <p>Distância: {dist:.1f} km</p>
                             </div>
-                        """, unsafe_allow_html=True)
+                            """,
+                            unsafe_allow_html=True
+                        )
+
+                        with st.expander("⚙️ Configurar custos deste instrutor", expanded=True):
+                            dias = st.number_input(
+                                "📅 Dias de treinamento",
+                                min_value=0.5,
+                                value=float(dias_base),
+                                step=0.5,
+                                key=f"custos_dias_{pv_sel}_{idx}"
+                            )
+
+                            st.markdown("**Selecione os custos que serão considerados:**")
+
+                            usar_diaria = st.checkbox(
+                                "☑ Diárias",
+                                value=True,
+                                key=f"usar_diaria_{pv_sel}_{idx}"
+                            )
+                            valor_diaria = st.number_input(
+                                "Valor da diária (R$/dia)",
+                                min_value=0.0,
+                                value=280.0,
+                                step=10.0,
+                                key=f"valor_diaria_{pv_sel}_{idx}"
+                            )
+
+                            usar_hospedagem = st.checkbox(
+                                "☑ Hospedagem",
+                                value=True,
+                                key=f"usar_hospedagem_{pv_sel}_{idx}"
+                            )
+                            valor_hospedagem = st.number_input(
+                                "Hospedagem (R$/dia)",
+                                min_value=0.0,
+                                value=250.0,
+                                step=10.0,
+                                key=f"valor_hospedagem_{pv_sel}_{idx}"
+                            )
+
+                            usar_carro = st.checkbox(
+                                "☑ Aluguel de carro",
+                                value=False,
+                                key=f"usar_carro_{pv_sel}_{idx}"
+                            )
+                            valor_carro = st.number_input(
+                                "Aluguel de carro (R$/dia)",
+                                min_value=0.0,
+                                value=180.0,
+                                step=10.0,
+                                key=f"valor_carro_{pv_sel}_{idx}"
+                            )
+
+                            usar_rodoviario = st.checkbox(
+                                "☐ Deslocamento rodoviário",
+                                value=False,
+                                key=f"usar_rodoviario_{pv_sel}_{idx}"
+                            )
+                            valor_rodoviario = st.number_input(
+                                "Deslocamento rodoviário (R$/viagem)",
+                                min_value=0.0,
+                                value=float(max(0.0, dist * 2 * 2.10)),
+                                step=10.0,
+                                key=f"valor_rodoviario_{pv_sel}_{idx}"
+                            )
+
+                            usar_aviao = st.checkbox(
+                                "☐ Deslocamento de avião",
+                                value=False,
+                                key=f"usar_aviao_{pv_sel}_{idx}"
+                            )
+                            valor_aviao = st.number_input(
+                                "Deslocamento de avião (R$/viagem)",
+                                min_value=0.0,
+                                value=800.0,
+                                step=50.0,
+                                key=f"valor_aviao_{pv_sel}_{idx}"
+                            )
+
+                            usar_treinamento = st.checkbox(
+                                "☑ Valor do treinamento",
+                                value=True,
+                                key=f"usar_treinamento_{pv_sel}_{idx}"
+                            )
+                            valor_treinamento = st.number_input(
+                                "Valor do treinamento (R$/dia)",
+                                min_value=0.0,
+                                value=280.0,
+                                step=10.0,
+                                key=f"valor_treinamento_{pv_sel}_{idx}"
+                            )
+
+                            subtotal_diaria = valor_diaria * dias if usar_diaria else 0.0
+                            subtotal_hospedagem = valor_hospedagem * dias if usar_hospedagem else 0.0
+                            subtotal_carro = valor_carro * dias if usar_carro else 0.0
+                            subtotal_rodoviario = valor_rodoviario if usar_rodoviario else 0.0
+                            subtotal_aviao = valor_aviao if usar_aviao else 0.0
+                            subtotal_treinamento = valor_treinamento * dias if usar_treinamento else 0.0
+
+                            custo_total = (
+                                subtotal_diaria
+                                + subtotal_hospedagem
+                                + subtotal_carro
+                                + subtotal_rodoviario
+                                + subtotal_aviao
+                                + subtotal_treinamento
+                            )
+
+                            if usar_rodoviario and usar_aviao:
+                                st.warning(
+                                    "⚠️ Rodoviário e avião estão selecionados ao mesmo tempo. "
+                                    "O sistema soma os dois. Se for uma alternativa de transporte, "
+                                    "desmarque um deles."
+                                )
+
+                            st.markdown("**Resumo deste instrutor**")
+                            st.write(f"Diárias: R$ {subtotal_diaria:,.2f}")
+                            st.write(f"Hospedagem: R$ {subtotal_hospedagem:,.2f}")
+                            st.write(f"Carro: R$ {subtotal_carro:,.2f}")
+                            st.write(f"Rodoviário: R$ {subtotal_rodoviario:,.2f}")
+                            st.write(f"Avião: R$ {subtotal_aviao:,.2f}")
+                            st.write(f"Treinamento: R$ {subtotal_treinamento:,.2f}")
+                            st.metric("💰 Custo total estimado", f"R$ {custo_total:,.2f}")
+
+                            resultados_custos.append({
+                                "Instrutor": nome_instrutor,
+                                "Dias": dias,
+                                "Diárias": subtotal_diaria,
+                                "Hospedagem": subtotal_hospedagem,
+                                "Carro": subtotal_carro,
+                                "Rodoviário": subtotal_rodoviario,
+                                "Avião": subtotal_aviao,
+                                "Treinamento": subtotal_treinamento,
+                                "Total Estimado": custo_total,
+                            })
+
+                if resultados_custos:
+                    st.divider()
+                    st.markdown("### 📊 Comparativo dos instrutores sugeridos")
+                    df_custos = pd.DataFrame(resultados_custos).sort_values(
+                        "Total Estimado", ascending=True
+                    )
+                    st.dataframe(
+                        df_custos,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Diárias": st.column_config.NumberColumn("Diárias", format="R$ %.2f"),
+                            "Hospedagem": st.column_config.NumberColumn("Hospedagem", format="R$ %.2f"),
+                            "Carro": st.column_config.NumberColumn("Carro", format="R$ %.2f"),
+                            "Rodoviário": st.column_config.NumberColumn("Rodoviário", format="R$ %.2f"),
+                            "Avião": st.column_config.NumberColumn("Avião", format="R$ %.2f"),
+                            "Treinamento": st.column_config.NumberColumn("Treinamento", format="R$ %.2f"),
+                            "Total Estimado": st.column_config.NumberColumn("Total Estimado", format="R$ %.2f"),
+                        }
+                    )
+
+                    melhor = df_custos.iloc[0]
+                    st.success(
+                        f"🏆 Menor custo estimado entre os instrutores selecionados: "
+                        f"{melhor['Instrutor']} — R$ {melhor['Total Estimado']:,.2f}"
+                    )
 
 elif modulo == "📞 Call Center & Timeline WhatsApp":
     def _texto_seguro_callcenter(valor):
