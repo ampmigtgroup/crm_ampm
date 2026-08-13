@@ -3410,4 +3410,3 @@ elif modulo == "📂 Relatórios & Exportação":
         f"Base pronta para exportação: {len(df_base):,} registros e "
         f"{len(df_base.columns):,} colunas."
     )
-

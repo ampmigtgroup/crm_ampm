@@ -1,7 +1,9 @@
 streamlit
+streamlit-authenticator
 pandas
 numpy
 openpyxl
 pydeck
 plotly
 fpdf
+requests

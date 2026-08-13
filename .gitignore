@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+anteriores/
+app_crm_v*.py
+crm_ampm_v*.py
+*.backup.*
+Base_Unificada_AmPm.backup.xlsx
+orcamentos_crm.json
+documentos_orcamentos/
+permissoes_usuarios_ampm.json
+usuarios_ampm.json
