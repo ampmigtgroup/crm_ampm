@@ -9,6 +9,7 @@ import uuid
 import time
 import requests
 import json
+import hashlib
 import re
 import unicodedata
 from difflib import SequenceMatcher
@@ -1725,6 +1726,10 @@ def _processar_excelfile(xls, exigir_lojas=False):
     return bases, relatorio
 
 
+def _fingerprint_upload(conteudo):
+    return hashlib.sha256(conteudo).hexdigest()
+
+
 def _ler_csv_flexivel(uploaded_file):
     """Lê CSV com diferentes codificações e separadores comuns no Brasil."""
     dados = uploaded_file.getvalue()
@@ -2225,6 +2230,16 @@ with st.sidebar:
         "Envie a nova planilha (.xlsx ou .csv):",
         type=["xlsx", "xls", "csv"]
     )
+    assinatura_upload = None
+    if uploaded_file is not None and not (
+        assinatura_upload
+        and assinatura_upload == st.session_state.get("upload_processado_assinatura")
+        and st.session_state.get("upload_processado_ok")
+    ):
+        try:
+            assinatura_upload = _fingerprint_upload(uploaded_file.getvalue())
+        except Exception:
+            assinatura_upload = None
 
     def _exibir_relatorio_importacao(relatorio):
         nomes_entidade = {
@@ -2285,11 +2300,12 @@ with st.sidebar:
                     st.session_state["erro_carga"] = None
                     total_novos = sum(x["adicionados"] for x in estatisticas)
                     total_atualizados = sum(x["atualizados"] for x in estatisticas)
-                    st.toast(
-                        f"💾 Importação concluída: {total_novos} novos e {total_atualizados} atualizados.",
-                        icon="✅",
+                    st.session_state["upload_processado_assinatura"] = assinatura_upload
+                    st.session_state["upload_processado_ok"] = True
+                    st.success(
+                        f"✅ Importação concluída: {total_novos} novos e {total_atualizados} atualizados."
                     )
-                    st.rerun()
+                    _exibir_relatorio_importacao(relatorio)
 
             elif uploaded_file.name.lower().endswith(".csv"):
                 df_csv = _ler_csv_flexivel(uploaded_file)
@@ -2350,6 +2366,12 @@ with st.sidebar:
                     st.rerun()
         except Exception as e:
             st.error(f"❌ Erro ao interpretar/incorporar o arquivo: {e}")
+
+    elif uploaded_file is not None and st.session_state.get("upload_processado_ok"):
+        st.info(
+            f"✅ A planilha **{uploaded_file.name}** já foi processada nesta sessão. "
+            "Remova o arquivo e envie novamente para importar uma nova versão."
+        )
 
     if os.path.exists(CAMINHO_BACKUP):
         if st.button("↩️ Restaurar último backup do Excel"):
