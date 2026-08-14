@@ -1343,10 +1343,10 @@ ENTIDADES = {
             "Razão Social": ["razao social", "nome loja", "loja", "unidade", "nome fantasia", "franquia", "nome da loja"],
             "Municipio": ["municipio", "cidade", "municipio loja"],
             "UF": ["uf", "estado", "uf loja"],
-            "CNPJ": ["cnpj", "cnpj loja", "documento cnpj", "cnpj da loja", "cnpj posto", "cnpj completo"],
-            "Telefone_Contato": ["telefone", "telefone contato", "telefone da loja", "telefone loja", "celular", "whatsapp", "fone", "telefone comercial"],
-            "Email_Contato": ["email", "e mail", "e-mail", "email contato", "email da loja", "email loja", "correio eletronico", "correio eletrônico"],
-            "Nome_Contato": ["nome contato", "nome do contato", "responsavel", "responsável", "responsavel loja", "responsável loja", "contato"],
+            "CNPJ": ["cnpj", "cnpj loja", "documento cnpj", "cnpj da loja", "cnpj posto", "cnpj completo", "cnpj c/ dv"],
+            "Telefone_Contato": ["telefone", "telefone contato", "telefone da loja", "telefone loja", "celular", "whatsapp", "fone", "telefone comercial", "telefone contato loja"],
+            "Email_Contato": ["email", "e mail", "e-mail", "email contato", "email da loja", "email loja", "correio eletronico", "correio eletrônico", "e-mail contato"],
+            "Nome_Contato": ["nome contato", "nome do contato", "responsavel", "responsável", "responsavel loja", "responsável loja", "contato", "nome contato loja"],
             "Endereço": ["endereco", "endereco completo", "logradouro", "endereço"],
             "Status Loja": ["status loja", "status", "situacao loja", "situacao"],
             "GF": ["gf", "gerente franquia", "gerente"],
@@ -2243,40 +2243,213 @@ def _imp_merge_com_base(base_df,registros):
         df["Qtd_Funcionarios"]=q;df["Tem_Funcionarios"]=q.gt(0).map({True:"Sim",False:"Não"})
     return df,ins,atu
 
+
+def _formatar_conf_importador(valor):
+    return str(valor or "").strip().lower()
+
+
+def _resumo_importacao_integrada(estatisticas):
+    nomes = {
+        "lojas": "🏪 Rede de Lojas",
+        "fila": "📞 Fila Call Center",
+        "inaug": "🚀 Previsão de Inauguração",
+        "instrutores": "👔 Instrutores",
+        "rec": "📍 Recomendação de Deslocamento",
+    }
+    totais = {
+        "novos": sum(int(x.get("adicionados", 0) or 0) for x in estatisticas),
+        "atualizados": sum(int(x.get("atualizados", 0) or 0) for x in estatisticas),
+    }
+    return nomes, totais
+
+
 def render_importador_inteligente():
     st.markdown("## 📥 Importador Inteligente de Planilhas")
-    st.caption("Upload de Excel, leitura de múltiplas abas, sugestão automática de campos, revisão e merge por PV/CNPJ.")
-    arquivo=st.file_uploader("Escolha um arquivo Excel",type=["xlsx","xls"],key="importador_inteligente_upload")
+    st.caption(
+        "Um único ponto de entrada para planilhas novas. "
+        "O CRM identifica abas, reconhece colunas, mescla por PV/CNPJ e atualiza o banco central."
+    )
+
+    arquivo = st.file_uploader(
+        "📤 Envie a planilha",
+        type=["xlsx", "xls", "csv"],
+        key="importador_inteligente_principal",
+        help="O importador pode receber planilhas gerenciais, contatos, treinamentos e outras bases."
+    )
+
     if not arquivo:
-        st.info("Envie uma planilha para iniciar a análise automática.");return
-    try:abas=_imp_ler_planilha(arquivo)
-    except Exception as e:st.error(f"Não foi possível ler a planilha: {e}");return
-    if not abas:st.warning("Nenhuma aba com dados utilizáveis foi encontrada.");return
-    aba=st.selectbox("📑 Aba para importar",list(abas.keys()));df_imp=abas[aba]
-    st.markdown(f"**Prévia:** {len(df_imp)} registros × {len(df_imp.columns)} colunas")
-    st.dataframe(df_imp.head(10),use_container_width=True,hide_index=True)
-    opcoes=["— Não importar esta coluna —"]+list(IMPORTADOR_CAMPOS.keys());mapa={}
-    for coluna in df_imp.columns:
-        sug,score=_imp_sugerir_campo(str(coluna));idx=opcoes.index(sug) if sug in opcoes else 0
-        escolha=st.selectbox(f"`{coluna}`",opcoes,index=idx,key=f"imp_map_{_imp_norm(aba)}_{_imp_norm(coluna)}");mapa[coluna]=None if escolha.startswith("—") else escolha
-        if mapa[coluna]:
-            pct=round(score*100);st.caption(("🟢" if pct>=85 else "🟡" if pct>=65 else "🔴")+f" Confiança sugerida: {pct}%")
-    vals=[v for v in mapa.values() if v]
-    if len(vals)!=len(set(vals)):st.warning("⚠️ Há campos do CRM recebendo mais de uma coluna. Revise o mapeamento.")
-    registros=_imp_processar_df(df_imp,mapa);validos=[r for r in registros if r["chave"]];sem=len(registros)-len(validos)
-    c1,c2,c3=st.columns(3);c1.metric("Registros lidos",len(registros));c2.metric("Com PV/CNPJ",len(validos));c3.metric("Sem chave",sem)
-    if sem:st.warning("Registros sem PV e sem CNPJ não entram no merge automático.")
-    if not validos:st.error("Nenhum registro possui PV ou CNPJ utilizável.");return
-    confirmar=st.checkbox("Revisei o mapeamento e autorizo atualizar a base do CRM.",key="imp_confirmacao")
-    if st.button("🚀 Importar para o CRM",type="primary",use_container_width=True):
-        if not confirmar:st.error("Marque a confirmação antes de importar.");return
-        base=st.session_state["bases"].get("lojas",pd.DataFrame()).copy();nova,ins,atu=_imp_merge_com_base(base,validos);st.session_state["bases"]["lojas"]=nova
-        rel={"arquivo":arquivo.name,"aba":aba,"lidos":len(registros),"validos":len(validos),"inseridos":ins,"atualizados":atu,"sem_chave":sem,"data":datetime.now().strftime("%d/%m/%Y %H:%M:%S")};st.session_state["relatorio_importacao"]=rel
-        try:
-            if "salvar_bases_no_disco" in globals():salvar_bases_no_disco()
-            elif "salvar_base_unificada" in globals():salvar_base_unificada()
-        except Exception as e:st.warning(f"Dados aplicados na sessão; persistência precisa ser verificada: {e}")
-        st.success(f"✅ Importação concluída: {ins} novo(s) e {atu} atualizado(s).");st.json(rel)
+        st.info(
+            "Envie uma planilha para começar. "
+            "Nada será alterado até você revisar o diagnóstico e clicar em Confirmar."
+        )
+        return
+
+    conteudo = arquivo.getvalue()
+    assinatura = _fingerprint_upload(conteudo) if "_fingerprint_upload" in globals() else str(len(conteudo))
+
+    if st.session_state.get("ultimo_importador_assinatura") == assinatura:
+        relatorio_salvo = st.session_state.get("ultimo_importador_relatorio")
+        if relatorio_salvo:
+            st.success("✅ Esta planilha já foi processada nesta sessão.")
+            nomes, totais = _resumo_importacao_integrada(relatorio_salvo)
+            st.metric("Novos", totais["novos"])
+            st.metric("Atualizados", totais["atualizados"])
+        return
+
+    try:
+        if arquivo.name.lower().endswith(".csv"):
+            df_csv = _ler_csv_flexivel(arquivo)
+
+            candidatos = []
+            for entidade, definicao in ENTIDADES.items():
+                score, canonicas = _score_aba_para_entidade(
+                    df_csv, arquivo.name, entidade, definicao
+                )
+                if definicao["chave"] in canonicas:
+                    candidatos.append((score, entidade))
+
+            candidatos.sort(reverse=True)
+
+            if candidatos and candidatos[0][0] >= MIN_SCORE_CONFIANTE:
+                entidade_escolhida = candidatos[0][1]
+            else:
+                entidade_escolhida = st.selectbox(
+                    "Destino da planilha CSV",
+                    list(ENTIDADES.keys()),
+                    format_func=lambda x: {
+                        "lojas": "🏪 Rede de Lojas",
+                        "fila": "📞 Fila Call Center",
+                        "inaug": "🚀 Previsão de Inauguração",
+                        "instrutores": "👔 Instrutores",
+                        "rec": "📍 Recomendação de Deslocamento",
+                    }.get(x, x)
+                )
+
+            definicao = ENTIDADES[entidade_escolhida]
+            preparado, _, canonicas, colunas_novas = _preparar_dataframe_entidade(
+                df_csv, definicao
+            )
+
+            if definicao["chave"] not in canonicas:
+                st.error(
+                    f"❌ Não encontrei a chave '{definicao['chave']}' na planilha."
+                )
+                return
+
+            bases_novas = _bases_vazias()
+            bases_novas[entidade_escolhida] = preparado
+
+            st.markdown("### 🔎 Diagnóstico da importação")
+            st.write(
+                f"**Arquivo:** `{arquivo.name}`  \n"
+                f"**Linhas:** {len(df_csv):,}  \n"
+                f"**Colunas reconhecidas:** {len(canonicas)}  \n"
+                f"**Colunas novas preservadas:** {len(colunas_novas)}"
+            )
+
+        else:
+            xls = _abrir_excel_resiliente(conteudo)
+            bases_novas, relatorio = _processar_excelfile(
+                xls,
+                exigir_lojas=False
+            )
+
+            # Rejeita apenas um workbook que não tenha nenhuma entidade útil.
+            entidades_com_dados = [
+                item for item in relatorio
+                if item.get("aba_origem") and item.get("linhas_lidas", 0) > 0
+            ]
+
+            if not entidades_com_dados:
+                st.error("❌ Nenhuma aba útil foi reconhecida nessa planilha.")
+                return
+
+            st.markdown("### 🔎 Diagnóstico da importação")
+            for item in relatorio:
+                nome = {
+                    "lojas": "🏪 Rede de Lojas",
+                    "fila": "📞 Fila Call Center",
+                    "inaug": "🚀 Previsão de Inauguração",
+                    "instrutores": "👔 Instrutores",
+                    "rec": "📍 Recomendação de Deslocamento",
+                }.get(item["entidade"], item["entidade"])
+
+                if item.get("aba_origem"):
+                    col_rec = item.get("colunas_reconhecidas", [])
+                    col_new = item.get("colunas_novas", [])
+                    conf = item.get("confianca", "n/a")
+                    st.markdown(
+                        f"**{nome}** → aba `{item['aba_origem']}` · "
+                        f"confiança **{conf}** · "
+                        f"{item.get('linhas_lidas', 0):,} linhas"
+                    )
+                    if col_rec:
+                        st.caption("Colunas reconhecidas: " + ", ".join(col_rec))
+                    if col_new:
+                        st.caption("🆕 Colunas novas preservadas: " + ", ".join(map(str, col_new)))
+
+        # Prévia do impacto ANTES de gravar.
+        bases_atuais = st.session_state.get("bases", _bases_vazias())
+        bases_teste, estatisticas = mesclar_bases(bases_atuais, bases_novas)
+
+        total_novos = sum(int(x.get("adicionados", 0) or 0) for x in estatisticas)
+        total_atualizados = sum(int(x.get("atualizados", 0) or 0) for x in estatisticas)
+
+        st.markdown("### 📊 Impacto previsto")
+        c1, c2 = st.columns(2)
+        c1.metric("🆕 Novos registros", f"{total_novos:,}")
+        c2.metric("🔄 Registros atualizados", f"{total_atualizados:,}")
+
+        st.info(
+            "Nenhum dado será salvo até a confirmação. "
+            "O merge usa PV como chave principal, preserva valores existentes quando a nova célula está vazia "
+            "e mantém colunas adicionais."
+        )
+
+        confirmar = st.checkbox(
+            "✅ Revisei o diagnóstico e autorizo a integração desta planilha.",
+            key=f"confirmar_importacao_{assinatura}"
+        )
+
+        if not confirmar:
+            return
+
+        if st.button(
+            "🚀 Confirmar e integrar ao banco",
+            type="primary",
+            use_container_width=True,
+            key=f"confirmar_integracao_{assinatura}"
+        ):
+            # Grava no mecanismo oficial do CRM.
+            salvar_bases_combinadas_no_disco(bases_teste)
+
+            st.session_state["bases"] = bases_teste
+            st.session_state["ultimo_importador_assinatura"] = assinatura
+            st.session_state["ultimo_importador_relatorio"] = estatisticas
+            st.session_state["erro_carga"] = None
+
+            # Limpa caches para que Dashboard/PROCV/Call Center reconstruam a visão.
+            st.cache_data.clear()
+
+            nomes, totais = _resumo_importacao_integrada(estatisticas)
+            st.success(
+                f"✅ Importação concluída. "
+                f"{totais['novos']:,} novos e {totais['atualizados']:,} atualizados."
+            )
+
+            for item in estatisticas:
+                entidade = item.get("entidade")
+                n = nomes.get(entidade, entidade)
+                st.caption(
+                    f"{n}: {int(item.get('adicionados', 0) or 0):,} novos · "
+                    f"{int(item.get('atualizados', 0) or 0):,} atualizados"
+                )
+
+            st.session_state["relatorio_importacao"] = estatisticas
+            st.rerun()
+
+    except Exception as exc:
+        st.error(f"❌ Falha na importação: {exc}")
 
 
 # --- SIDEBAR & NAVEGAÇÃO ---
@@ -2320,280 +2493,6 @@ with st.sidebar:
     )
 
     st.divider()
-
-    st.markdown("📥 **Atualizar Banco de Dados**")
-    st.caption("O CRM interpreta o conteúdo, reconhece colunas parecidas e faz atualização incremental: registros novos entram e registros existentes são atualizados sem apagar dados válidos.")
-
-    aba_destino_csv = st.selectbox(
-        "Destino para CSV:",
-        ["Rede_de_Lojas", "Fila_CallCenter", "Previsao_Inauguracao", "Instrutores", "Recomendacao_Deslocamento"]
-    )
-
-    uploaded_file = st.file_uploader(
-        "Envie a nova planilha (.xlsx ou .csv):",
-        type=["xlsx", "xls", "csv"]
-    )
-    assinatura_upload = None
-    if uploaded_file is not None and not (
-        assinatura_upload
-        and assinatura_upload == st.session_state.get("upload_processado_assinatura")
-        and st.session_state.get("upload_processado_ok")
-    ):
-        try:
-            assinatura_upload = _fingerprint_upload(uploaded_file.getvalue())
-        except Exception:
-            assinatura_upload = None
-
-    def _exibir_relatorio_importacao(relatorio):
-        nomes_entidade = {
-            "lojas": "🏪 Rede de Lojas",
-            "fila": "📞 Fila de Call Center",
-            "inaug": "🚀 Previsão de Inauguração",
-            "instrutores": "👔 Instrutores",
-            "rec": "📍 Recomendação de Deslocamento",
-        }
-        with st.expander("🔎 Ver o que foi reconhecido no arquivo", expanded=False):
-            for item in relatorio:
-                nome = nomes_entidade.get(item["entidade"], item["entidade"])
-                if item["aba_origem"]:
-                    st.markdown(f"**{nome}** — encontrado na aba `{item['aba_origem']}`")
-                    if item["colunas_reconhecidas"]:
-                        st.caption("Colunas usadas: " + ", ".join(item["colunas_reconhecidas"]))
-                    if item.get("colunas_novas"):
-                        st.caption("🆕 Colunas novas armazenadas: " + ", ".join(item["colunas_novas"]))
-                    if item.get("linhas_lidas") is not None:
-                        st.caption(f"Linhas lidas: {item['linhas_lidas']}")
-                    if item["colunas_ignoradas"]:
-                        st.caption("Colunas ignoradas: " + ", ".join(item["colunas_ignoradas"]))
-                else:
-                    st.markdown(f"**{nome}** — não encontrado no arquivo")
-
-    if uploaded_file is not None:
-        try:
-            if uploaded_file.name.lower().endswith((".xlsx", ".xls")):
-                conteudo = uploaded_file.getvalue()
-                st.session_state["ultimo_upload_info"] = {
-                    "arquivo": uploaded_file.name,
-                    "bytes": len(conteudo),
-                    "zip_valido": zipfile.is_zipfile(io.BytesIO(conteudo)),
-                }
-                bases_validadas, relatorio, erro = validar_bytes_excel(conteudo)
-                if erro:
-                    info = st.session_state.get("ultimo_upload_info", {})
-                    st.error(f"❌ Arquivo rejeitado:\n\n{erro}")
-                    if info:
-                        st.caption(
-                            f"Diagnóstico: {info.get('arquivo', 'arquivo')} — "
-                            f"{info.get('bytes', 0):,} bytes — "
-                            f"pacote XLSX/ZIP: {'sim' if info.get('zip_valido') else 'não'}"
-                        )
-                else:
-                    bases_atuais = st.session_state.get("bases", _bases_vazias())
-                    bases_combinadas, estatisticas = mesclar_bases(bases_atuais, bases_validadas)
-
-                    if os.path.exists(CAMINHO_ARQUIVO):
-                        with open(CAMINHO_ARQUIVO, "rb") as f_atual, open(CAMINHO_BACKUP, "wb") as f_bak:
-                            f_bak.write(f_atual.read())
-
-                    salvar_bases_combinadas_no_disco(bases_combinadas)
-                    st.cache_data.clear()
-                    st.session_state["bases"] = bases_combinadas
-                    st.session_state["relatorio_importacao"] = relatorio
-                    st.session_state["estatisticas_importacao"] = estatisticas
-                    st.session_state["erro_carga"] = None
-                    total_novos = sum(x["adicionados"] for x in estatisticas)
-                    total_atualizados = sum(x["atualizados"] for x in estatisticas)
-                    st.session_state["upload_processado_assinatura"] = assinatura_upload
-                    st.session_state["upload_processado_ok"] = True
-                    st.success(
-                        f"✅ Importação concluída: {total_novos} novos e {total_atualizados} atualizados."
-                    )
-                    _exibir_relatorio_importacao(relatorio)
-
-            elif uploaded_file.name.lower().endswith(".csv"):
-                df_csv = _ler_csv_flexivel(uploaded_file)
-                chave_map = {
-                    "Rede_de_Lojas": "lojas",
-                    "Fila_CallCenter": "fila",
-                    "Previsao_Inauguracao": "inaug",
-                    "Instrutores": "instrutores",
-                    "Recomendacao_Deslocamento": "rec",
-                }
-
-                candidatos_csv = []
-                for entidade, definicao in ENTIDADES.items():
-                    score, canonicas = _score_aba_para_entidade(df_csv, uploaded_file.name, entidade, definicao)
-                    if definicao["chave"] in canonicas:
-                        candidatos_csv.append((score, entidade))
-                candidatos_csv.sort(reverse=True)
-
-                if candidatos_csv and candidatos_csv[0][0] >= MIN_SCORE_CONFIANTE:
-                    chave = candidatos_csv[0][1]
-                    origem = "identificação automática"
-                else:
-                    chave = chave_map[aba_destino_csv]
-                    origem = "destino selecionado"
-
-                definicao = ENTIDADES[chave]
-                df_preparado, _, canonicas, _ = _preparar_dataframe_entidade(df_csv, definicao)
-                if definicao["chave"] not in canonicas:
-                    st.error(f"❌ O arquivo não possui uma coluna equivalente a '{definicao['chave']}'.")
-                else:
-                    bases_atuais = st.session_state.get("bases", _bases_vazias())
-                    bases_novas = _bases_vazias()
-                    bases_novas[chave] = df_preparado
-                    bases_combinadas, estatisticas = mesclar_bases(bases_atuais, bases_novas)
-
-                    if os.path.exists(CAMINHO_ARQUIVO):
-                        with open(CAMINHO_ARQUIVO, "rb") as f_atual, open(CAMINHO_BACKUP, "wb") as f_bak:
-                            f_bak.write(f_atual.read())
-
-                    salvar_bases_combinadas_no_disco(bases_combinadas)
-                    st.cache_data.clear()
-                    st.session_state["bases"] = bases_combinadas
-                    st.session_state["relatorio_importacao"] = [{
-                        "entidade": chave,
-                        "aba_origem": uploaded_file.name,
-                        "confianca": "alta" if origem == "identificação automática" else "manual",
-                        "colunas_reconhecidas": [c for c in definicao["colunas"] if c in df_preparado.columns],
-                        "colunas_novas": [c for c in df_preparado.columns if c not in definicao["colunas"]],
-                        "colunas_ignoradas": [],
-                        "linhas_lidas": len(df_preparado),
-                    }]
-                    st.session_state["estatisticas_importacao"] = estatisticas
-                    st.toast(
-                        f"✅ CSV incorporado ({origem}): {estatisticas[[x['entidade'] for x in estatisticas].index(chave)]['adicionados']} novos / "
-                        f"{estatisticas[[x['entidade'] for x in estatisticas].index(chave)]['atualizados']} atualizados.",
-                        icon="✅",
-                    )
-                    st.rerun()
-        except Exception as e:
-            st.error(f"❌ Erro ao interpretar/incorporar o arquivo: {e}")
-
-    elif uploaded_file is not None and st.session_state.get("upload_processado_ok"):
-        st.info(
-            f"✅ A planilha **{uploaded_file.name}** já foi processada nesta sessão. "
-            "Remova o arquivo e envie novamente para importar uma nova versão."
-        )
-
-    if os.path.exists(CAMINHO_BACKUP):
-        if st.button("↩️ Restaurar último backup do Excel"):
-            try:
-                with open(CAMINHO_BACKUP, "rb") as f_bak, open(CAMINHO_ARQUIVO, "wb") as f_atual:
-                    f_atual.write(f_bak.read())
-                st.cache_data.clear()
-                if 'bases' in st.session_state:
-                    del st.session_state['bases']
-                st.session_state['relatorio_importacao'] = None
-                inicializar_estado()
-                st.success("✅ Backup restaurado com sucesso!")
-                st.rerun()
-            except Exception as e:
-                st.error(f"❌ Erro ao restaurar backup: {e}")
-
-    if st.session_state.get('relatorio_importacao'):
-        _exibir_relatorio_importacao(st.session_state['relatorio_importacao'])
-
-    if st.session_state.get('estatisticas_importacao'):
-        with st.expander("📊 Resumo da última integração", expanded=False):
-            for item in st.session_state["estatisticas_importacao"]:
-                if item["atualizados"] or item["adicionados"] or item["novas_colunas"]:
-                    st.write(
-                        f"**{item['entidade']}** — "
-                        f"{item['adicionados']} novos, {item['atualizados']} atualizados"
-                        + (f" | novas colunas: {', '.join(item['novas_colunas'])}" if item["novas_colunas"] else "")
-                    )
-
-    st.divider()
-
-    bases = st.session_state['bases']
-    df_base_raw = construir_base_unificada(bases["lojas"], bases["fila"], bases["inaug"])
-    df_instrutores = bases["instrutores"]
-    df_rec_raw = bases["rec"]
-
-    if not df_rec_raw.empty and not df_instrutores.empty:
-        df_rec = pd.merge(
-            df_rec_raw,
-            df_instrutores[['NOME_COMPLETO', 'Latitude', 'Longitude']],
-            left_on='Instrutor_Sugerido', right_on='NOME_COMPLETO', how='left'
-        ).rename(columns={'Latitude': 'Lat_Instrutor', 'Longitude': 'Lon_Instrutor'})
-
-        df_rec = pd.merge(
-            df_rec,
-            bases["lojas"][['PV Abadi', 'Latitude', 'Longitude']],
-            left_on='PV_ABADI', right_on='PV Abadi', how='left'
-        ).rename(columns={'Latitude': 'Lat_Loja', 'Longitude': 'Lon_Loja'})
-    else:
-        df_rec = df_rec_raw
-
-    st.markdown("🎯 **Filtros Globais**")
-    uf_opcoes = ["Todas"] + sorted([str(x) for x in df_base_raw['UF'].dropna().unique()]) if 'UF' in df_base_raw.columns else ["Todas"]
-    filtro_uf = st.selectbox("Filtrar Estado (UF):", uf_opcoes)
-    cf_opcoes = ["Todos"] + sorted([str(x) for x in df_base_raw['CF'].dropna().unique()]) if 'CF' in df_base_raw.columns else ["Todos"]
-    filtro_cf = st.selectbox("Filtrar Consultor (CF):", cf_opcoes)
-    st.divider()
-    st.markdown(f"""
-        <div class="sidebar-metric">📶 Status: <b>Operacional</b> 🟢</div>
-        <div class="sidebar-metric">🏪 Rede total: <b>{len(df_base_raw)} unidades</b></div>
-    """, unsafe_allow_html=True)
-
-# APLICAÇÃO DOS FILTROS GLOBAIS
-df_base = df_base_raw.copy()
-if filtro_uf != "Todas":
-    df_base = df_base[df_base['UF'] == filtro_uf]
-if filtro_cf != "Todos":
-    df_base = df_base[df_base['CF'] == filtro_cf]
-
-st.markdown(f"""
-    <div class="main-header">
-        <div class="main-header-top">
-            <div>
-                <h1>⛽ CRM Operacional AmPm</h1>
-                <p>Gestão Estratégica de Capacitação, Logística de Viagens e Atendimento da Rede</p>
-            </div>
-            <div class="header-status-chip"><span class="pulse-dot"></span> SISTEMA ONLINE</div>
-        </div>
-    </div>
-""", unsafe_allow_html=True)
-
-# --- MÓDULOS DA APLICAÇÃO ---
-
-def _valor_historico_instrutor(posto, *campos):
-    """Retorna o primeiro nome histórico preenchido, sem verificar se está ativo."""
-    for campo in campos:
-        if campo not in posto:
-            continue
-        valor = posto.get(campo)
-        if valor is None:
-            continue
-        try:
-            if pd.isna(valor):
-                continue
-        except (TypeError, ValueError):
-            pass
-        texto = str(valor).strip()
-        if texto and texto.casefold() not in {"nan", "none", "nat", "-"}:
-            return texto
-    return "Não informado"
-
-def _procv_valor_flexivel(posto, campo, aliases=()):
-    """Busca um valor no registro pelo campo canônico ou por aliases de planilhas."""
-    candidatos = [campo] + list(aliases)
-    normalizados = {_normalizar_nome(str(k)): k for k in posto.keys()}
-    for candidato in candidatos:
-        if candidato in posto and _valor_preenchido(posto.get(candidato)):
-            return posto.get(candidato)
-        chave_real = normalizados.get(_normalizar_nome(candidato))
-        if chave_real is not None and _valor_preenchido(posto.get(chave_real)):
-            return posto.get(chave_real)
-    return "Não informado"
-
-def _historico_instrutor_procv(posto):
-    """Mostra o histórico do instrutor mesmo quando ele não está mais ativo."""
-    treinamento = _valor_historico_instrutor(posto, "Instrutor_Treinamento", "Instrutor_Sugerido")
-    inauguracao = _valor_historico_instrutor(posto, "Instrutor_Inauguracao")
-    return treinamento, inauguracao
-
 
 if modulo == "🛡️ Administração":
     render_administracao()
