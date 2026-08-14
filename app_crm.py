@@ -2104,6 +2104,22 @@ def inicializar_estado():
 
 inicializar_estado()
 
+# ------------------------------------------------------------
+# VISOES DERIVADAS: mantem todos os modulos usando a mesma base
+# consolidada. Esta etapa precisa existir antes do despacho dos
+# modulos (Dashboard, Pipeline, PROCV, Call Center etc.).
+# ------------------------------------------------------------
+_bases_atuais_ui = st.session_state.get("bases", _bases_vazias())
+df_lojas = _bases_atuais_ui.get("lojas", pd.DataFrame()).copy()
+df_fila = _bases_atuais_ui.get("fila", pd.DataFrame(columns=COLUNAS_FILA)).copy()
+df_inaug = _bases_atuais_ui.get("inaug", pd.DataFrame()).copy()
+df_instrutores = _bases_atuais_ui.get("instrutores", pd.DataFrame()).copy()
+df_rec = _bases_atuais_ui.get("rec", pd.DataFrame()).copy()
+
+df_base = construir_base_unificada(df_lojas, df_fila, df_inaug)
+# O calculador usa este filtro opcional; por padrao mostra toda a rede.
+filtro_uf = "Todas"
+
 if st.session_state.get('erro_carga'):
     st.error(
         "⚠️ Não foi possível carregar `Base_Unificada_AmPm.xlsx`:\n\n"
