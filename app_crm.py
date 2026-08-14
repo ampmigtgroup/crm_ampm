@@ -2312,6 +2312,53 @@ def _upsert_dataframe_supabase(entidade, df, tamanho_lote=400):
         )
 
 
+
+def salvar_importacao_supabase(bases_resultado, bases_novas):
+    """
+    Persiste somente as entidades efetivamente trazidas pela planilha.
+    Evita regravar tabelas não relacionadas durante um upload.
+    """
+    salvas = []
+    for entidade in ("lojas", "fila", "inaug", "instrutores", "rec"):
+        novo = bases_novas.get(entidade, pd.DataFrame())
+        if novo is None or novo.empty:
+            continue
+
+        resultado = bases_resultado.get(entidade, pd.DataFrame())
+        if resultado is None or resultado.empty:
+            continue
+
+        # Para lojas, garante uma linha por PV antes do upsert.
+        if entidade == "lojas" and "PV Abadi" in resultado.columns:
+            resultado = (
+                resultado
+                .dropna(subset=["PV Abadi"])
+                .drop_duplicates(subset=["PV Abadi"], keep="last")
+                .copy()
+            )
+
+        # Para fila/inaug, também garante uma linha por PV.
+        if entidade == "fila" and "PV_Abadi" in resultado.columns:
+            resultado = (
+                resultado
+                .dropna(subset=["PV_Abadi"])
+                .drop_duplicates(subset=["PV_Abadi"], keep="last")
+                .copy()
+            )
+        if entidade == "inaug" and "PV ABADI" in resultado.columns:
+            resultado = (
+                resultado
+                .dropna(subset=["PV ABADI"])
+                .drop_duplicates(subset=["PV ABADI"], keep="last")
+                .copy()
+            )
+
+        _upsert_dataframe_supabase(entidade, resultado)
+        salvas.append(entidade)
+
+    return salvas
+
+
 def salvar_bases_combinadas_no_disco(bases, caminho=CAMINHO_ARQUIVO):
     """
     Compatibilidade com o código legado: o nome da função foi mantido,
@@ -2681,15 +2728,6 @@ def render_importador_inteligente():
     conteudo = arquivo.getvalue()
     assinatura = _fingerprint_upload(conteudo) if "_fingerprint_upload" in globals() else str(len(conteudo))
 
-    if st.session_state.get("ultimo_importador_assinatura") == assinatura:
-        relatorio_salvo = st.session_state.get("ultimo_importador_relatorio")
-        if relatorio_salvo:
-            st.success("✅ Esta planilha já foi processada nesta sessão.")
-            nomes, totais = _resumo_importacao_integrada(relatorio_salvo)
-            st.metric("Novos", totais["novos"])
-            st.metric("Atualizados", totais["atualizados"])
-        return
-
     try:
         if arquivo.name.lower().endswith(".csv"):
             df_csv = _ler_csv_flexivel(arquivo)
@@ -2812,71 +2850,106 @@ def render_importador_inteligente():
             "🚀 Confirmar e integrar ao banco",
             type="primary",
             use_container_width=True,
-            key=f"confirmar_integracao_{assinatura}"
+            key=f"confirmar_integracao_v32_{assinatura}"
         ):
-            # Grava no Supabase/PostgreSQL.
-            salvar_bases_combinadas_no_disco(bases_teste)
-
-            # Verificação real: lê novamente o banco central.
-            st.cache_data.clear()
-            bases_recarregadas = carregar_bases_supabase()
-
-            lojas_db = bases_recarregadas.get("lojas", pd.DataFrame())
-            total_db = len(lojas_db)
-
-            def _contar_preenchidos(df, coluna):
-                if df is None or df.empty or coluna not in df.columns:
-                    return 0
-                return int(df[coluna].map(_valor_preenchido).sum())
-
-            cnpj_db = _contar_preenchidos(lojas_db, "CNPJ")
-            tel_db = _contar_preenchidos(lojas_db, "Telefone_Contato")
-            email_db = _contar_preenchidos(lojas_db, "Email_Contato")
-
-            st.session_state["bases"] = bases_recarregadas
-            st.session_state["ultimo_importador_assinatura"] = assinatura
-            st.session_state["ultimo_importador_relatorio"] = estatisticas
-            st.session_state["erro_carga"] = None
-            st.session_state["fonte_dados"] = "Supabase"
-
-            nomes, totais = _resumo_importacao_integrada(estatisticas)
-            st.success(
-                f"✅ Importação gravada e verificada no Supabase. "
-                f"{totais['novos']:,} novos e {totais['atualizados']:,} atualizados."
-            )
-            st.info(
-                f"🗄️ Banco central agora: {total_db:,} lojas · "
-                f"CNPJ: {cnpj_db:,} · Telefones: {tel_db:,} · E-mails: {email_db:,}"
-            )
-
-            for item in estatisticas:
-                entidade = item.get("entidade")
-                n = nomes.get(entidade, entidade)
-                st.caption(
-                    f"{n}: {int(item.get('adicionados', 0) or 0):,} novos · "
-                    f"{int(item.get('atualizados', 0) or 0):,} atualizados"
+            with st.spinner("Gravando no Supabase e verificando os dados..."):
+                # Salva apenas entidades realmente presentes no arquivo.
+                entidades_salvas = salvar_importacao_supabase(
+                    bases_teste,
+                    bases_novas
                 )
 
-            st.session_state["relatorio_importacao"] = estatisticas
-            try:
-                _supabase_client().table("crm_importacoes").insert({
-                    "arquivo": arquivo.name,
-                    "aba": None,
-                    "registros_lidos": int(sum(
-                        int(x.get("linhas_lidas", 0) or 0)
-                        for x in (diagnostico if isinstance(diagnostico, list) else [])
-                    )),
-                    "novos": int(total_novos),
-                    "atualizados": int(total_atualizados),
-                    "status": "concluida",
-                    "detalhes": {
-                        "estatisticas": estatisticas,
-                        "diagnostico": diagnostico,
-                    },
-                }).execute()
-            except Exception:
-                pass
-            st.rerun()
+                if not entidades_salvas:
+                    raise RuntimeError(
+                        "Nenhuma entidade com dados foi encontrada para gravar."
+                    )
+
+                # Releitura obrigatória do banco central.
+                st.cache_data.clear()
+                bases_recarregadas = carregar_bases_supabase()
+                lojas_db = bases_recarregadas.get("lojas", pd.DataFrame())
+
+                def _contar_preenchidos(df, coluna):
+                    if df is None or df.empty or coluna not in df.columns:
+                        return 0
+                    return int(df[coluna].map(_valor_preenchido).sum())
+
+                total_db = len(lojas_db)
+                cnpj_db = _contar_preenchidos(lojas_db, "CNPJ")
+                tel_db = _contar_preenchidos(lojas_db, "Telefone_Contato")
+                email_db = _contar_preenchidos(lojas_db, "Email_Contato")
+                contato_db = _contar_preenchidos(lojas_db, "Nome_Contato")
+
+                # Teste adicional com os PVs do arquivo enviado.
+                pvs_arquivo = set()
+                lojas_novas = bases_novas.get("lojas", pd.DataFrame())
+                if (
+                    lojas_novas is not None
+                    and not lojas_novas.empty
+                    and "PV Abadi" in lojas_novas.columns
+                ):
+                    pvs_arquivo = {
+                        str(v).strip()
+                        for v in lojas_novas["PV Abadi"].dropna().tolist()
+                        if _valor_preenchido(v)
+                    }
+
+                pvs_banco = set()
+                if not lojas_db.empty and "PV Abadi" in lojas_db.columns:
+                    pvs_banco = {
+                        str(v).strip()
+                        for v in lojas_db["PV Abadi"].dropna().tolist()
+                        if _valor_preenchido(v)
+                    }
+
+                pvs_confirmados = len(pvs_arquivo & pvs_banco)
+
+                st.session_state["bases"] = bases_recarregadas
+                st.session_state["ultimo_importador_assinatura"] = assinatura
+                st.session_state["ultimo_importador_relatorio"] = estatisticas
+                st.session_state["erro_carga"] = None
+                st.session_state["fonte_dados"] = "Supabase"
+
+                st.success("✅ Importação gravada e conferida diretamente no Supabase.")
+                st.info(
+                    f"🗄️ Banco central: {total_db:,} lojas · "
+                    f"CNPJ: {cnpj_db:,} · Telefones: {tel_db:,} · "
+                    f"E-mails: {email_db:,} · Contatos: {contato_db:,}"
+                )
+                st.caption(
+                    f"Entidades gravadas: {', '.join(entidades_salvas)} · "
+                    f"PVs do arquivo confirmados no banco: "
+                    f"{pvs_confirmados:,}/{len(pvs_arquivo):,}"
+                )
+
+                # Auditoria da importação.
+                try:
+                    _supabase_client().table("crm_importacoes").insert({
+                        "arquivo": arquivo.name,
+                        "aba": None,
+                        "registros_lidos": int(
+                            sum(
+                                int(x.get("linhas_lidas", 0) or 0)
+                                for x in relatorio
+                            )
+                        ) if "relatorio" in locals() else int(len(lojas_novas)),
+                        "novos": int(total_novos),
+                        "atualizados": int(total_atualizados),
+                        "status": "concluida",
+                        "detalhes": {
+                            "entidades_salvas": entidades_salvas,
+                            "pvs_arquivo": len(pvs_arquivo),
+                            "pvs_confirmados": pvs_confirmados,
+                            "total_lojas_db": total_db,
+                            "cnpj_db": cnpj_db,
+                            "telefones_db": tel_db,
+                            "emails_db": email_db,
+                        },
+                    }).execute()
+                except Exception:
+                    pass
+
+                # Não faz rerun automático: mantém os números visíveis.
 
     except Exception as exc:
         st.error(f"❌ Falha na importação: {exc}")
@@ -2885,6 +2958,15 @@ def render_importador_inteligente():
 # --- SIDEBAR & NAVEGAÇÃO ---
 with st.sidebar:
     st.caption(f"🗄️ Fonte de dados: {st.session_state.get('fonte_dados', '-')}")
+    if st.button("🔄 Recarregar dados do Supabase", use_container_width=True):
+        try:
+            st.cache_data.clear()
+            st.session_state["bases"] = carregar_bases_supabase()
+            st.session_state["fonte_dados"] = "Supabase"
+            st.session_state["erro_carga"] = None
+            st.rerun()
+        except Exception as _e:
+            st.error(f"Falha ao recarregar Supabase: {_e}")
     st.markdown("""
         <div class="sidebar-brand">
             <div class="logo-chip">⛽</div>
