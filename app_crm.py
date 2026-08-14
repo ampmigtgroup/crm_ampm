@@ -1935,6 +1935,16 @@ def _render_editor_modelos_whatsapp():
 
 
 # --- HELPERS DE APRESENTAÇÃO ---
+def _render_html_dashboard(conteudo):
+    """
+    Renderiza HTML do Dashboard sem o Markdown interpretar blocos indentados
+    como código. Isso é essencial para fragmentos HTML gerados dinamicamente.
+    """
+    texto = str(conteudo or "").strip()
+    texto = re.sub(r">\s+<", "><", texto)
+    st.markdown(texto, unsafe_allow_html=True)
+
+
 def render_section_header(icone, titulo, subtitulo=""):
     st.markdown(f"""
         <div class="section-header">
@@ -4435,7 +4445,7 @@ elif modulo == "📊 Dashboard Executivo":
         # --------------------------------------------------------
         # TÍTULO E FILTROS
         # --------------------------------------------------------
-        st.markdown(
+        _render_html_dashboard(
             """
             <div class="dashboard-title">
                 <div class="dashboard-title-icon">📊</div>
@@ -4445,7 +4455,6 @@ elif modulo == "📊 Dashboard Executivo":
                 Visão geral do desempenho operacional dos treinamentos
             </div>
             """,
-            unsafe_allow_html=True,
         )
 
         df_dash = df_base.copy()
@@ -4577,7 +4586,7 @@ elif modulo == "📊 Dashboard Executivo":
         ]
         for col, icon, cls, label, value, note in kpis:
             with col:
-                st.markdown(
+                _render_html_dashboard(
                     f"""
                     <div class="dashboard-kpi">
                         <div class="dashboard-kpi-top">
@@ -4588,7 +4597,6 @@ elif modulo == "📊 Dashboard Executivo":
                         <div class="dashboard-kpi-note">{note}</div>
                     </div>
                     """,
-                    unsafe_allow_html=True,
                 )
 
         st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
@@ -4640,7 +4648,7 @@ elif modulo == "📊 Dashboard Executivo":
         donut_gradient = ", ".join(partes_gradiente) if partes_gradiente else "#E6E8EC 0 100%"
 
         with row_a[0]:
-            st.markdown(
+            _render_html_dashboard(
                 f"""
                 <div class="dashboard-panel">
                     <div class="dashboard-panel-title">Treinamentos por Status (Pipeline)</div>
@@ -4658,7 +4666,6 @@ elif modulo == "📊 Dashboard Executivo":
                     </div>
                 </div>
                 """,
-                unsafe_allow_html=True,
             )
 
         with row_a[1]:
@@ -4680,29 +4687,26 @@ elif modulo == "📊 Dashboard Executivo":
                 largura = max(3.0, float(qtd) / max_modelo * 100)
                 cor = cores_modelo[idx % len(cores_modelo)]
                 barras.append(
-                    f"""
-                    <div class="dashboard-model-row">
-                        <span>{html.escape(str(nome_modelo))}</span>
-                        <div class="dashboard-progress">
-                            <span style="width:{largura:.1f}%;background:{cor};"></span>
-                        </div>
-                        <strong>{int(qtd)}</strong>
-                    </div>
-                    """
+                    f'<div class="dashboard-model-row">'
+                    f'<span>{html.escape(str(nome_modelo))}</span>'
+                    f'<div class="dashboard-progress">'
+                    f'<span style="width:{largura:.1f}%;background:{cor};"></span>'
+                    f'</div>'
+                    f'<strong>{int(qtd)}</strong>'
+                    f'</div>'
                 )
             if not barras:
                 barras.append(
                     "<div class='dashboard-mini-sub'>Modelo da loja ainda não disponível na visão filtrada.</div>"
                 )
 
-            st.markdown(
+            _render_html_dashboard(
                 f"""
                 <div class="dashboard-panel">
                     <div class="dashboard-panel-title">Treinamentos por Modelo</div>
                     {''.join(barras)}
                 </div>
                 """,
-                unsafe_allow_html=True,
             )
 
         with row_a[2]:
@@ -4722,17 +4726,15 @@ elif modulo == "📊 Dashboard Executivo":
                 pv = str(row.get("PV Abadi", "") or "")
                 razao = html.escape(str(row.get("Razão Social", "") or "Cliente"))
                 atividades_html.append(
-                    f"""
-                    <div class="dashboard-mini-row">
-                        <div class="dashboard-mini-badge">📌</div>
-                        <div style="flex:1">
-                            <div class="dashboard-mini-main">{html.escape(status)}</div>
-                            <div class="dashboard-mini-sub">{razao} · PV {html.escape(pv)}</div>
-                        </div>
-                    </div>
-                    """
+                    f'<div class="dashboard-mini-row">'
+                    f'<div class="dashboard-mini-badge">📌</div>'
+                    f'<div style="flex:1">'
+                    f'<div class="dashboard-mini-main">{html.escape(status)}</div>'
+                    f'<div class="dashboard-mini-sub">{razao} · PV {html.escape(pv)}</div>'
+                    f'</div>'
+                    f'</div>'
                 )
-            st.markdown(
+            _render_html_dashboard(
                 f"""
                 <div class="dashboard-panel">
                     <div class="dashboard-panel-title">Atividades Recentes</div>
@@ -4740,7 +4742,6 @@ elif modulo == "📊 Dashboard Executivo":
                     <div class="dashboard-panel-link">Acompanhamento central do CRM →</div>
                 </div>
                 """,
-                unsafe_allow_html=True,
             )
 
         st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
@@ -4759,15 +4760,13 @@ elif modulo == "📊 Dashboard Executivo":
         pipeline_cards = []
         for nome_status, classe in ordem_pipeline_dash:
             pipeline_cards.append(
-                f"""
-                <div class="pipeline-stat {classe}">
-                    {nome_status}
-                    <strong>{status_counts.get(nome_status, 0)}</strong>
-                </div>
-                """
+                f'<div class="pipeline-stat {classe}">'
+                f'{html.escape(nome_status)}'
+                f'<strong>{status_counts.get(nome_status, 0)}</strong>'
+                f'</div>'
             )
 
-        st.markdown(
+        _render_html_dashboard(
             f"""
             <div class="dashboard-panel">
                 <div class="dashboard-panel-title">Resumo do Pipeline</div>
@@ -4776,7 +4775,6 @@ elif modulo == "📊 Dashboard Executivo":
                 </div>
             </div>
             """,
-            unsafe_allow_html=True,
         )
 
         st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
@@ -4817,7 +4815,7 @@ elif modulo == "📊 Dashboard Executivo":
                 f"<tr><td><b>{html.escape(uf)}</b></td><td>{total}</td><td>{ag}</td><td>{conc}</td><td>{taxa:.1f}%</td></tr>"
                 for uf, total, ag, conc, taxa in estados
             )
-            st.markdown(
+            _render_html_dashboard(
                 f"""
                 <div class="dashboard-panel">
                     <div class="dashboard-panel-title">Treinamentos por Estado</div>
@@ -4829,7 +4827,6 @@ elif modulo == "📊 Dashboard Executivo":
                     </table>
                 </div>
                 """,
-                unsafe_allow_html=True,
             )
 
         with row_b[1]:
@@ -4861,7 +4858,7 @@ elif modulo == "📊 Dashboard Executivo":
             if not linhas_instr:
                 linhas_instr = "<tr><td colspan='3'>Ainda não há treinamentos concluídos com instrutor identificado.</td></tr>"
 
-            st.markdown(
+            _render_html_dashboard(
                 f"""
                 <div class="dashboard-panel">
                     <div class="dashboard-panel-title">Top Instrutores (Concluídos)</div>
@@ -4873,14 +4870,13 @@ elif modulo == "📊 Dashboard Executivo":
                     </table>
                 </div>
                 """,
-                unsafe_allow_html=True,
             )
 
         # --------------------------------------------------------
         # AÇÕES RÁPIDAS VISUAIS
         # --------------------------------------------------------
         st.markdown("<div style='height:13px'></div>", unsafe_allow_html=True)
-        st.markdown(
+        _render_html_dashboard(
             """
             <div class="dashboard-panel-title">Ações Rápidas</div>
             <div class="quick-actions-grid">
@@ -4892,7 +4888,6 @@ elif modulo == "📊 Dashboard Executivo":
                 <div class="quick-action-card"><span>📊</span>Relatórios<br>Gerenciais</div>
             </div>
             """,
-            unsafe_allow_html=True,
         )
 
         render_exportacao_modulo(
