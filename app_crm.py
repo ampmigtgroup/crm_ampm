@@ -1531,7 +1531,14 @@ def _score_aba_para_entidade(df, sheet_name, entidade, definicao):
 
 
 def detectar_entidades_no_workbook(xls):
-    """Lê todas as abas e identifica o tipo pelo conteúdo, não pelo nome da aba."""
+    """
+    Lê todas as abas e permite que uma mesma aba alimente várias entidades.
+
+    Isso é importante para planilhas gerenciais/contatos: a mesma linha com PV
+    pode conter dados de cadastro (lojas), contato (fila) e histórico. A versão
+    anterior atribuía uma aba a apenas uma entidade e podia mandar uma planilha
+    de contatos para a fila, deixando a Rede de Lojas sem CNPJ/telefone/e-mail.
+    """
     dfs_brutos = {}
     candidatos = []
 
@@ -1542,31 +1549,40 @@ def detectar_entidades_no_workbook(xls):
             continue
         if df_bruto is None or len(df_bruto.columns) == 0:
             continue
+
         df_bruto = df_bruto.dropna(axis=0, how="all").dropna(axis=1, how="all")
         if df_bruto.empty:
             continue
+
         dfs_brutos[sheet_name] = df_bruto
 
         for entidade, definicao in ENTIDADES.items():
-            score, canonicas = _score_aba_para_entidade(df_bruto, sheet_name, entidade, definicao)
-            if score >= 1 and definicao["chave"] in canonicas:
-                candidatos.append((score, sheet_name, entidade, canonicas))
+            score, canonicas = _score_aba_para_entidade(
+                df_bruto, sheet_name, entidade, definicao
+            )
+            if definicao["chave"] in canonicas:
+                # Uma aba pode alimentar mais de uma entidade.
+                # Exigimos a chave e pelo menos uma coluna adicional reconhecida
+                # para evitar importar abas irrelevantes.
+                quantidade_reconhecida = len(canonicas)
+                if quantidade_reconhecida >= 2 or entidade == "lojas":
+                    candidatos.append((score, sheet_name, entidade, canonicas))
 
+    # Para cada entidade, escolhe a melhor aba. A mesma aba pode ser escolhida
+    # para várias entidades quando ela realmente contém os respectivos campos.
     prioridade = {"lojas": 5, "fila": 4, "inaug": 3, "instrutores": 2, "rec": 1}
     candidatos.sort(key=lambda x: (-x[0], -prioridade.get(x[2], 0), x[1]))
+
     entidade_atribuida = {}
-    aba_usada = set()
+    for score, sheet_name, entidade, canonicas in candidatos:
+        if entidade not in entidade_atribuida:
+            entidade_atribuida[entidade] = sheet_name
 
-    for score, sheet_name, entidade, _ in candidatos:
-        if entidade in entidade_atribuida or sheet_name in aba_usada:
-            continue
-        entidade_atribuida[entidade] = sheet_name
-        aba_usada.add(sheet_name)
-
-    # Rede de lojas é a âncora do CRM. Se houver mais de uma candidata,
-    # escolhemos a que tiver mais campos reconhecidos.
     if "lojas" not in entidade_atribuida:
-        raise ValueError("Nenhuma aba com uma chave de loja/PV foi reconhecida.")
+        raise ValueError(
+            "Nenhuma aba com uma chave de loja/PV foi reconhecida. "
+            "Verifique se existe PV/Código da Loja."
+        )
 
     bases = {}
     relatorio = []
@@ -1577,7 +1593,9 @@ def detectar_entidades_no_workbook(xls):
 
         if sheet_name:
             df_bruto = dfs_brutos[sheet_name]
-            df_final, rename_map, canonicas, colunas_novas = _preparar_dataframe_entidade(df_bruto, definicao)
+            df_final, rename_map, canonicas, colunas_novas = _preparar_dataframe_entidade(
+                df_bruto, definicao
+            )
             df_final = _normalizar_chave_dataframe(
                 df_final,
                 definicao["chave"],
@@ -1588,8 +1606,12 @@ def detectar_entidades_no_workbook(xls):
                 "entidade": entidade,
                 "aba_origem": sheet_name,
                 "confianca": "alta" if len(canonicas) >= MIN_SCORE_CONFIANTE else "média",
-                "colunas_reconhecidas": [c for c in colunas_canonicas if c in df_final.columns],
-                "colunas_novas": [c for c in df_final.columns if c not in colunas_canonicas],
+                "colunas_reconhecidas": [
+                    c for c in colunas_canonicas if c in df_final.columns
+                ],
+                "colunas_novas": [
+                    c for c in df_final.columns if c not in colunas_canonicas
+                ],
                 "colunas_ignoradas": [],
                 "linhas_lidas": len(df_final),
             })
@@ -1610,6 +1632,7 @@ def detectar_entidades_no_workbook(xls):
             bases["fila"][col] = pd.NA
 
     return bases, relatorio
+
 
 
 def _valor_preenchido(valor):
