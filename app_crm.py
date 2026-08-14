@@ -1598,6 +1598,103 @@ def _extrair_lojas_de_todas_as_abas(xls):
     return pd.DataFrame(registros)
 
 
+
+def _extrair_instrutores_explicitos(xls):
+    """
+    Procura primeiro abas cujo nome indique claramente instrutores/equipe.
+    Isso evita confundir consultores/GF/CF da base gerencial com instrutores.
+    """
+    definicao = ENTIDADES["instrutores"]
+    candidatos = []
+
+    for sheet_name in xls.sheet_names:
+        nome_norm = _normalizar_nome(sheet_name)
+        if not any(p in nome_norm for p in ("instrutor", "instrutores", "equipe instrutor", "equipe treinamento")):
+            continue
+
+        try:
+            bruto = pd.read_excel(xls, sheet_name=sheet_name)
+        except Exception:
+            continue
+
+        if bruto is None or bruto.empty:
+            continue
+
+        bruto = bruto.dropna(axis=0, how="all").dropna(axis=1, how="all")
+        if bruto.empty:
+            continue
+
+        preparado, _, canonicas, _ = _preparar_dataframe_entidade(
+            bruto, definicao
+        )
+
+        if "NOME_COMPLETO" not in canonicas or "NOME_COMPLETO" not in preparado.columns:
+            continue
+
+        preparado = _normalizar_chave_dataframe(
+            preparado, "NOME_COMPLETO", False
+        )
+        preparado = preparado[
+            preparado["NOME_COMPLETO"].map(_valor_preenchido)
+        ].copy()
+
+        if preparado.empty:
+            continue
+
+        # Normaliza status sem inventar informação.
+        if "STATUS" not in preparado.columns:
+            preparado["STATUS"] = "Ativo"
+
+        # Mantém uma linha por instrutor pelo nome.
+        preparado = preparado.drop_duplicates(
+            subset=["NOME_COMPLETO"], keep="last"
+        ).reset_index(drop=True)
+
+        candidatos.append((sheet_name, preparado, len(canonicas)))
+
+    if not candidatos:
+        return None, pd.DataFrame(columns=list(definicao["colunas"].keys()))
+
+    # Prioriza a aba com mais colunas reconhecidas e depois mais linhas.
+    candidatos.sort(
+        key=lambda x: (x[2], len(x[1])),
+        reverse=True
+    )
+    return candidatos[0][0], candidatos[0][1]
+
+
+def _substituir_instrutores_supabase(df_instrutores, tamanho_lote=300):
+    """
+    Quando uma aba explícita de Instrutores é importada, ela passa a ser
+    a fonte oficial da equipe. Remove a lista antiga e grava a lista real.
+    """
+    if df_instrutores is None or df_instrutores.empty:
+        return 0
+
+    client = _supabase_client()
+
+    # Limpa a tabela atual somente neste fluxo explícito de substituição.
+    try:
+        client.table("crm_instrutores").delete().neq("nome_completo", "").execute()
+    except Exception:
+        # Fallback para tabelas onde haja nulos/eventuais registros estranhos.
+        try:
+            existentes = _supabase_fetch_all("crm_instrutores")
+            for item in existentes:
+                nome = item.get("nome_completo")
+                if nome:
+                    client.table("crm_instrutores").delete().eq("nome_completo", nome).execute()
+        except Exception as exc:
+            raise RuntimeError(f"Não foi possível substituir a equipe de instrutores: {exc}")
+
+    _upsert_dataframe_supabase(
+        "instrutores",
+        df_instrutores,
+        tamanho_lote=tamanho_lote
+    )
+    return len(df_instrutores)
+
+
 def detectar_entidades_no_workbook(xls):
     """
     Lê todas as abas e permite que uma mesma aba alimente várias entidades.
@@ -1694,6 +1791,21 @@ def detectar_entidades_no_workbook(xls):
                 "colunas_ignoradas": [],
                 "linhas_lidas": 0,
             })
+
+    # Instrutores: usa preferencialmente a aba explícita "Instrutores"/"Equipe".
+    aba_instrutores_exp, instrutores_exp = _extrair_instrutores_explicitos(xls)
+    if instrutores_exp is not None and not instrutores_exp.empty:
+        bases["instrutores"] = instrutores_exp
+        for item in relatorio:
+            if item.get("entidade") == "instrutores":
+                item["aba_origem"] = aba_instrutores_exp
+                item["linhas_lidas"] = len(instrutores_exp)
+                item["confianca"] = "alta"
+                item["colunas_reconhecidas"] = [
+                    c for c in ENTIDADES["instrutores"]["colunas"].keys()
+                    if c in instrutores_exp.columns
+                ]
+                break
 
     # Rede de Lojas é consolidada de TODAS as abas com PV.
     # Assim CNPJ/telefone/e-mail nunca dependem do nome/classificação da aba.
@@ -3220,6 +3332,9 @@ def render_importador_inteligente():
             columns=["PV Abadi", "Nome_Contato", "Telefone_Contato", "Email_Contato"]
         )
 
+        aba_instrutores_importada = None
+        instrutores_importados = pd.DataFrame()
+
         if arquivo.name.lower().endswith(".csv"):
             df_csv = _ler_csv_flexivel(arquivo)
             contatos_novos = _extrair_contatos_dataframe(df_csv)
@@ -3274,6 +3389,7 @@ def render_importador_inteligente():
         else:
             xls = _abrir_excel_resiliente(conteudo)
             contatos_novos = _extrair_contatos_workbook(xls)
+            aba_instrutores_importada, instrutores_importados = _extrair_instrutores_explicitos(xls)
             bases_novas, relatorio = _processar_excelfile(
                 xls,
                 exigir_lojas=False
@@ -3354,6 +3470,18 @@ def render_importador_inteligente():
 
                 contatos_gravados = _upsert_contatos_supabase(contatos_novos)
 
+                instrutores_substituidos = 0
+                if (
+                    aba_instrutores_importada
+                    and instrutores_importados is not None
+                    and not instrutores_importados.empty
+                ):
+                    instrutores_substituidos = _substituir_instrutores_supabase(
+                        instrutores_importados
+                    )
+                    if "instrutores" not in entidades_salvas:
+                        entidades_salvas.append("instrutores")
+
                 if not entidades_salvas:
                     raise RuntimeError(
                         "Nenhuma entidade com dados foi encontrada para gravar."
@@ -3422,6 +3550,12 @@ def render_importador_inteligente():
                     f"PVs do arquivo confirmados no banco: "
                     f"{pvs_confirmados:,}/{len(pvs_arquivo):,}"
                 )
+                if instrutores_substituidos:
+                    st.success(
+                        f"👔 Equipe oficial atualizada pela aba "
+                        f"`{aba_instrutores_importada}`: "
+                        f"{instrutores_substituidos:,} instrutor(es)."
+                    )
 
                 # Auditoria da importação.
                 try:
@@ -3845,7 +3979,7 @@ elif modulo == "📍 Calculadora & Otimizador de Custos":
     render_section_header(
         "📍",
         "Calculadora & Otimizador de Custos",
-        "Top 3 instrutores ativos por proximidade e simulação de custos"
+        "Top 3 instrutores ativos da equipe oficial por proximidade e simulação de custos"
     )
 
     if df_lojas is None or df_lojas.empty:
@@ -4017,7 +4151,7 @@ elif modulo == "📍 Calculadora & Otimizador de Custos":
 
                         st.pydeck_chart(
                             pdk.Deck(
-                                map_style="light",
+                                map_style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
                                 layers=[layer_rota, layer_pontos],
                                 initial_view_state=pdk.ViewState(
                                     latitude=centro_lat,
