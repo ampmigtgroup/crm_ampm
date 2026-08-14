@@ -3869,6 +3869,28 @@ def render_importador_inteligente():
         st.error(f"❌ Falha na importação: {exc}")
 
 
+# --- CONTROLE DO MENU SUPERIOR DO STREAMLIT ---
+# O botão de acesso ao código/GitHub é nativo do Streamlit Cloud.
+# Administradores mantêm o toolbar completo; demais usuários recebem
+# toolbar mínimo, sem acesso ao repositório pelo canto superior direito.
+if not usuario_e_admin():
+    st.markdown(
+        """
+        <style>
+            /* Oculta o botão nativo de source/GitHub e ações de deploy para não-admins. */
+            [data-testid="stToolbar"] a[href*="github.com"],
+            [data-testid="stToolbar"] button[aria-label*="GitHub"],
+            [data-testid="stToolbar"] button[title*="GitHub"],
+            [data-testid="stToolbar"] a[aria-label*="GitHub"],
+            [data-testid="stToolbar"] a[title*="GitHub"],
+            [data-testid="stToolbar"] [data-testid="stAppDeployButton"] {
+                display: none !important;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
 # --- SIDEBAR & NAVEGAÇÃO ---
 with st.sidebar:
     st.caption(f"🗄️ Fonte de dados: {st.session_state.get('fonte_dados', '-')}")
