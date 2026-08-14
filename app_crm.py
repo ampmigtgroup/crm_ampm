@@ -2622,6 +2622,33 @@ def _geocodificar_municipio(municipio, uf):
     return None, None
 
 
+@st.cache_data(ttl=21600, show_spinner=False)
+def _obter_rota_rodoviaria(lat_origem, lon_origem, lat_destino, lon_destino):
+    """Rota rodoviária real via OSRM; retorna geometria, km e minutos."""
+    try:
+        url = (
+            "https://router.project-osrm.org/route/v1/driving/"
+            f"{float(lon_origem)},{float(lat_origem)};"
+            f"{float(lon_destino)},{float(lat_destino)}"
+        )
+        r = requests.get(
+            url,
+            params={"overview":"full","geometries":"geojson","steps":"false"},
+            timeout=12,
+        )
+        r.raise_for_status()
+        rotas=(r.json().get("routes") or [])
+        if not rotas:
+            return None, None, None
+        rota=rotas[0]
+        coords=rota.get("geometry",{}).get("coordinates") or []
+        if len(coords)<2:
+            return None, None, None
+        return coords, float(rota.get("distance",0))/1000, float(rota.get("duration",0))/60
+    except Exception:
+        return None, None, None
+
+
 def _haversine_km(lat1, lon1, lat2, lon2):
     import math
     r = 6371.0088
@@ -3782,12 +3809,9 @@ elif modulo == "📍 Calculadora & Otimizador de Custos":
                             {"name": f"Posto {primeira['PV_ABADI']}", "lat": p_lat, "lon": p_lon},
                             {"name": f"Instrutor {primeira['Instrutor_Sugerido']}", "lat": i_lat, "lon": i_lon},
                         ])
-                        df_mapa_arco = pd.DataFrame([{
-                            "from_lat": i_lat,
-                            "from_lon": i_lon,
-                            "to_lat": p_lat,
-                            "to_lon": p_lon,
-                        }])
+                        rota_coords, rota_km, rota_min = _obter_rota_rodoviaria(
+                            i_lat, i_lon, p_lat, p_lon
+                        )
 
                         layer_pontos = pdk.Layer(
                             "ScatterplotLayer",
@@ -3796,16 +3820,40 @@ elif modulo == "📍 Calculadora & Otimizador de Custos":
                             get_radius=18000,
                             pickable=True
                         )
-                        layer_arco = pdk.Layer(
-                            "ArcLayer",
-                            df_mapa_arco,
-                            get_source_position="[from_lon, from_lat]",
-                            get_target_position="[to_lon, to_lat]",
-                            get_width=4
-                        )
+                        layers_mapa = [layer_pontos]
+
+                        if rota_coords:
+                            layers_mapa.append(
+                                pdk.Layer(
+                                    "PathLayer",
+                                    pd.DataFrame([{"path": rota_coords}]),
+                                    get_path="path",
+                                    get_width=5,
+                                    width_min_pixels=3,
+                                )
+                            )
+                            st.caption(
+                                f"🛣️ Rota rodoviária do instrutor #1: "
+                                f"{rota_km:,.1f} km · {rota_min/60:,.1f} h"
+                            )
+                        else:
+                            layers_mapa.append(
+                                pdk.Layer(
+                                    "ArcLayer",
+                                    pd.DataFrame([{
+                                        "from_lat": i_lat, "from_lon": i_lon,
+                                        "to_lat": p_lat, "to_lon": p_lon
+                                    }]),
+                                    get_source_position="[from_lon, from_lat]",
+                                    get_target_position="[to_lon, to_lat]",
+                                    get_width=4
+                                )
+                            )
+                            st.caption("ℹ️ Rota rodoviária indisponível; mostrando ligação em linha reta.")
+
                         st.pydeck_chart(
                             pdk.Deck(
-                                layers=[layer_pontos, layer_arco],
+                                layers=layers_mapa,
                                 initial_view_state=pdk.ViewState(
                                     latitude=(p_lat + i_lat) / 2,
                                     longitude=(p_lon + i_lon) / 2,
@@ -3939,18 +3987,67 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
         return str(valor)
     render_section_header("📞", "Call Center & Timeline WhatsApp", "Registro de atendimentos e disparo de mensagens")
     if not df_base.empty:
-        df_fila_view = df_base[df_base['Tipo_Necessidade'] != 'Rede Ativa (Sem Pendência)'].copy() if 'Tipo_Necessidade' in df_base.columns else df_base.copy()
+        # O Call Center parte de TODOS os clientes; filtros apenas reduzem a visão.
+        df_fila_view = df_base.copy()
+
+        st.markdown("#### 🎛️ Filtros combináveis do Call Center")
+        busca_call = st.text_input(
+            "🔍 Buscar PV, cliente, município, telefone, e-mail ou contato:",
+            key="call_busca_v36"
+        )
+
+        f1, f2, f3 = st.columns(3)
+        with f1:
+            ufs_opts = sorted(df_fila_view["UF"].dropna().astype(str).unique().tolist()) if "UF" in df_fila_view.columns else []
+            ufs_call = st.multiselect("🗺️ UF", ufs_opts, key="call_uf_v36")
+        with f2:
+            nec_opts = sorted(df_fila_view["Tipo_Necessidade"].dropna().astype(str).unique().tolist()) if "Tipo_Necessidade" in df_fila_view.columns else []
+            necessidades_call = st.multiselect(
+                "🎯 Situação / necessidade",
+                nec_opts,
+                help="Marque uma ou várias opções: a contratar, retreinamento, já treinados etc.",
+                key="call_nec_v36"
+            )
+        with f3:
+            status_opts = sorted(df_fila_view["Status_Contato"].dropna().astype(str).unique().tolist()) if "Status_Contato" in df_fila_view.columns else []
+            status_call = st.multiselect("📞 Status do contato", status_opts, key="call_status_v36")
+
+        if busca_call:
+            campos = [c for c in ["PV Abadi","Razão Social","Municipio","Telefone_Contato","Email_Contato","Nome_Contato"] if c in df_fila_view.columns]
+            mascara = pd.Series(False, index=df_fila_view.index)
+            for c in campos:
+                mascara |= df_fila_view[c].astype(str).str.contains(busca_call, case=False, na=False, regex=False)
+            df_fila_view = df_fila_view[mascara]
+        if ufs_call and "UF" in df_fila_view.columns:
+            df_fila_view = df_fila_view[df_fila_view["UF"].astype(str).isin(ufs_call)]
+        if necessidades_call and "Tipo_Necessidade" in df_fila_view.columns:
+            df_fila_view = df_fila_view[df_fila_view["Tipo_Necessidade"].astype(str).isin(necessidades_call)]
+        if status_call and "Status_Contato" in df_fila_view.columns:
+            df_fila_view = df_fila_view[df_fila_view["Status_Contato"].astype(str).isin(status_call)]
+
+        st.caption(f"👥 Exibindo {len(df_fila_view):,} de {len(df_base):,} clientes.")
 
         c_left, c_right = st.columns([1.2, 1.8])
 
         with c_left:
-            st.markdown("**📋 Fila de Atendimento**")
-            cols_call = [c for c in ['PV Abadi', 'Razão Social', 'Municipio', 'UF', 'Status_Contato'] if c in df_fila_view.columns]
-            evento_call = st.dataframe(
-                df_fila_view[cols_call],
-                use_container_width=True, hide_index=True, selection_mode="single-row", on_select="rerun"
+            st.markdown("**📋 Todos os Clientes / Fila de Atendimento**")
+            cols_call = [c for c in ['PV Abadi','Razão Social','Municipio','UF','Tipo_Necessidade','Status_Contato'] if c in df_fila_view.columns]
+            tabela_call = df_fila_view[cols_call].copy().reset_index(drop=True)
+            tabela_call.insert(0, "Selecionar", False)
+            tabela_call_editada = st.data_editor(
+                tabela_call,
+                use_container_width=True,
+                hide_index=True,
+                disabled=[c for c in tabela_call.columns if c != "Selecionar"],
+                column_config={
+                    "Selecionar": st.column_config.CheckboxColumn("☑️", help="Marque o cliente")
+                },
+                key="call_tabela_v36"
             )
-            selecionado = evento_call.selection.get("rows", [])
+            marcados = tabela_call_editada.index[tabela_call_editada["Selecionar"] == True].tolist()
+            selecionado = marcados[:1]
+            if len(marcados) > 1:
+                st.caption(f"☑️ {len(marcados)} clientes marcados. A ficha à direita mostra o primeiro.")
 
         with c_right:
             if selecionado:
