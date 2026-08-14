@@ -4946,6 +4946,13 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                 """, unsafe_allow_html=True)
 
                 # --- WHATSAPP: MODELOS CENTRAIS EDITÁVEIS + MENSAGEM PRÉ-PREENCHIDA ---
+                # Chave segura do PV precisa existir antes dos widgets do WhatsApp.
+                chave_pv_widget = re.sub(
+                    r"[^A-Za-z0-9_-]+",
+                    "_",
+                    str(pv_alvo if pv_alvo is not None else "sem_pv")
+                ).strip("_") or "sem_pv"
+
                 if tel_limpo:
                     st.markdown("##### 📲 WhatsApp")
 
@@ -5046,7 +5053,6 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                 elif tem_func_atual not in tem_func_opcoes:
                     tem_func_atual = "Sim"
 
-                chave_pv_widget = str(pv_alvo).replace(".", "_")
                 idx_tem_func = tem_func_opcoes.index(tem_func_atual)
 
                 cf1, cf2 = st.columns(2)
