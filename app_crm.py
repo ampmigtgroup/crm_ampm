@@ -1967,27 +1967,48 @@ def _coalescer_colunas(df, base, candidatos):
 
 
 def _merge_base_por_pv(df_base, df_extra, chave_base, chave_extra):
-    """Merge seguro por PV, coalescendo colunas repetidas em vez de criar _x/_y."""
+    """
+    Merge seguro por PV, tolerante a dtypes rígidos do pandas/pyarrow.
+
+    Dados vindos do Supabase podem chegar como string[pyarrow]. Antes de
+    coalescer campos de fila/inauguração sobre a rede de lojas, convertemos
+    colunas não-chave para object. Isso permite misturar string, número,
+    Timestamp e valores ausentes sem TypeError.
+    """
     if df_extra is None or df_extra.empty or chave_extra not in df_extra.columns:
         return df_base
+
     base = df_base.copy()
     extra = df_extra.copy()
+
     if chave_base not in base.columns:
         return base
 
     base[chave_base] = pd.to_numeric(base[chave_base], errors='coerce')
     extra[chave_extra] = pd.to_numeric(extra[chave_extra], errors='coerce')
+
+    # Neutraliza ExtensionArrays rígidos antes do merge.
+    for _df, _chave in ((base, chave_base), (extra, chave_extra)):
+        for _col in _df.columns:
+            if _col == _chave:
+                continue
+            try:
+                _df[_col] = _df[_col].astype("object")
+            except Exception:
+                pass
+
     extra = extra.dropna(subset=[chave_extra]).copy()
     if extra.empty:
         return base
+
     extra = extra.drop_duplicates(subset=[chave_extra], keep='last')
 
-    # Renomeia somente colunas do extra que já existem no base para evitar _x/_y.
     extra_cols = [c for c in extra.columns if c != chave_extra]
     temp_names = {}
     for c in extra_cols:
         if c in base.columns:
             temp_names[c] = f"__extra__{c}"
+
     extra = extra.rename(columns=temp_names)
 
     merged = base.merge(
@@ -1997,26 +2018,54 @@ def _merge_base_por_pv(df_base, df_extra, chave_base, chave_extra):
         how='left',
         suffixes=('', '__duplicata')
     )
+
     if chave_extra != chave_base and chave_extra in merged.columns:
         merged.drop(columns=[chave_extra], inplace=True, errors='ignore')
 
-    # Coalesce campos repetidos e novos campos.
+    # O merge pode recriar dtypes extension; converte novamente antes do coalesce.
     for original, tmp in temp_names.items():
+        if original in merged.columns:
+            try:
+                merged[original] = merged[original].astype("object")
+            except Exception:
+                pass
         if tmp in merged.columns:
-            if original not in merged.columns:
-                merged[original] = merged[tmp]
-            else:
-                mask = ~merged[original].map(_valor_util)
-                merged.loc[mask, original] = merged.loc[mask, tmp]
-            merged.drop(columns=[tmp], inplace=True, errors='ignore')
+            try:
+                merged[tmp] = merged[tmp].astype("object")
+            except Exception:
+                pass
+
+    for original, tmp in temp_names.items():
+        if tmp not in merged.columns:
+            continue
+
+        if original not in merged.columns:
+            merged[original] = merged[tmp].astype("object")
+        else:
+            destino = merged[original].astype("object").copy()
+            origem = merged[tmp].astype("object")
+            mask = ~destino.map(_valor_util)
+            if mask.any():
+                destino.loc[mask] = origem.loc[mask].tolist()
+            merged[original] = destino
+
+        merged.drop(columns=[tmp], inplace=True, errors='ignore')
 
     for c in list(merged.columns):
-        if c.endswith('__duplicata'):
-            original = c[:-11]
-            if original in merged.columns:
-                mask = ~merged[original].map(_valor_util)
-                merged.loc[mask, original] = merged.loc[mask, c]
-                merged.drop(columns=[c], inplace=True, errors='ignore')
+        if not c.endswith('__duplicata'):
+            continue
+
+        original = c[:-11]
+        if original in merged.columns:
+            destino = merged[original].astype("object").copy()
+            origem = merged[c].astype("object")
+            mask = ~destino.map(_valor_util)
+            if mask.any():
+                destino.loc[mask] = origem.loc[mask].tolist()
+            merged[original] = destino
+
+        merged.drop(columns=[c], inplace=True, errors='ignore')
+
     return merged
 
 
@@ -2041,10 +2090,27 @@ def construir_base_unificada(df_lojas, df_fila, df_inaug):
             base_col = coluna[:-2]
             y_col = f"{base_col}_y"
             if base_col not in df_base.columns:
-                df_base[base_col] = pd.NA
-            mask = ~df_base[base_col].map(_valor_util)
-            df_base.loc[mask, base_col] = df_base.loc[mask, coluna]
-            df_base.loc[~df_base[base_col].map(_valor_util), base_col] = df_base.loc[~df_base[base_col].map(_valor_util), y_col]
+                df_base[base_col] = pd.Series(
+                    [pd.NA] * len(df_base),
+                    index=df_base.index,
+                    dtype="object"
+                )
+            else:
+                df_base[base_col] = df_base[base_col].astype("object")
+
+            origem_x = df_base[coluna].astype("object")
+            origem_y = df_base[y_col].astype("object")
+
+            destino = df_base[base_col].astype("object").copy()
+            mask = ~destino.map(_valor_util)
+            if mask.any():
+                destino.loc[mask] = origem_x.loc[mask].tolist()
+
+            mask2 = ~destino.map(_valor_util)
+            if mask2.any():
+                destino.loc[mask2] = origem_y.loc[mask2].tolist()
+
+            df_base[base_col] = destino
 
     defaults = {
         "Status_Contato": "A Contatar",
