@@ -1541,6 +1541,64 @@ def _score_aba_para_entidade(df, sheet_name, entidade, definicao):
     return score, canonicas
 
 
+
+def _extrair_lojas_de_todas_as_abas(xls):
+    """
+    Consolida todas as abas que contenham uma chave compatível com PV.
+    Isso evita depender da classificação da aba para CNPJ/telefone/e-mail.
+    """
+    definicao = ENTIDADES["lojas"]
+    partes = []
+
+    for sheet_name in xls.sheet_names:
+        try:
+            bruto = pd.read_excel(xls, sheet_name=sheet_name)
+        except Exception:
+            continue
+
+        if bruto is None or bruto.empty:
+            continue
+
+        bruto = bruto.dropna(axis=0, how="all").dropna(axis=1, how="all")
+        if bruto.empty:
+            continue
+
+        preparado, _, canonicas, _ = _preparar_dataframe_entidade(
+            bruto, definicao
+        )
+
+        if "PV Abadi" not in canonicas or "PV Abadi" not in preparado.columns:
+            continue
+
+        preparado = _normalizar_chave_dataframe(
+            preparado, "PV Abadi", True
+        )
+        preparado = preparado[preparado["PV Abadi"].notna()].copy()
+        if not preparado.empty:
+            partes.append(preparado)
+
+    if not partes:
+        return pd.DataFrame(columns=list(definicao["colunas"].keys()))
+
+    combinado = pd.concat(partes, ignore_index=True, sort=False)
+
+    # Mantém a última ocorrência de cada PV, mas antes agrega valores preenchidos
+    # para não perder contato presente numa aba e cadastro presente em outra.
+    colunas = [c for c in combinado.columns if c != "PV Abadi"]
+    registros = []
+    for pv, grupo in combinado.groupby("PV Abadi", dropna=True, sort=False):
+        reg = {"PV Abadi": pv}
+        for col in colunas:
+            valor_final = pd.NA
+            for valor in grupo[col].tolist():
+                if _valor_preenchido(valor):
+                    valor_final = valor
+            reg[col] = valor_final
+        registros.append(reg)
+
+    return pd.DataFrame(registros)
+
+
 def detectar_entidades_no_workbook(xls):
     """
     Lê todas as abas e permite que uma mesma aba alimente várias entidades.
@@ -1637,6 +1695,21 @@ def detectar_entidades_no_workbook(xls):
                 "colunas_ignoradas": [],
                 "linhas_lidas": 0,
             })
+
+    # Rede de Lojas é consolidada de TODAS as abas com PV.
+    # Assim CNPJ/telefone/e-mail nunca dependem do nome/classificação da aba.
+    lojas_consolidadas = _extrair_lojas_de_todas_as_abas(xls)
+    if lojas_consolidadas is not None and not lojas_consolidadas.empty:
+        bases["lojas"] = lojas_consolidadas
+        for item in relatorio:
+            if item.get("entidade") == "lojas":
+                item["linhas_lidas"] = len(lojas_consolidadas)
+                item["colunas_reconhecidas"] = [
+                    c for c in ENTIDADES["lojas"]["colunas"].keys()
+                    if c in lojas_consolidadas.columns
+                ]
+                item["aba_origem"] = "Consolidação de abas com PV"
+                break
 
     for col in COLUNAS_FILA:
         if col not in bases["fila"].columns:
@@ -2741,21 +2814,39 @@ def render_importador_inteligente():
             use_container_width=True,
             key=f"confirmar_integracao_{assinatura}"
         ):
-            # Grava no mecanismo oficial do CRM.
+            # Grava no Supabase/PostgreSQL.
             salvar_bases_combinadas_no_disco(bases_teste)
 
-            st.session_state["bases"] = bases_teste
+            # Verificação real: lê novamente o banco central.
+            st.cache_data.clear()
+            bases_recarregadas = carregar_bases_supabase()
+
+            lojas_db = bases_recarregadas.get("lojas", pd.DataFrame())
+            total_db = len(lojas_db)
+
+            def _contar_preenchidos(df, coluna):
+                if df is None or df.empty or coluna not in df.columns:
+                    return 0
+                return int(df[coluna].map(_valor_preenchido).sum())
+
+            cnpj_db = _contar_preenchidos(lojas_db, "CNPJ")
+            tel_db = _contar_preenchidos(lojas_db, "Telefone_Contato")
+            email_db = _contar_preenchidos(lojas_db, "Email_Contato")
+
+            st.session_state["bases"] = bases_recarregadas
             st.session_state["ultimo_importador_assinatura"] = assinatura
             st.session_state["ultimo_importador_relatorio"] = estatisticas
             st.session_state["erro_carga"] = None
-
-            # Limpa caches para que Dashboard/PROCV/Call Center reconstruam a visão.
-            st.cache_data.clear()
+            st.session_state["fonte_dados"] = "Supabase"
 
             nomes, totais = _resumo_importacao_integrada(estatisticas)
             st.success(
-                f"✅ Importação concluída. "
+                f"✅ Importação gravada e verificada no Supabase. "
                 f"{totais['novos']:,} novos e {totais['atualizados']:,} atualizados."
+            )
+            st.info(
+                f"🗄️ Banco central agora: {total_db:,} lojas · "
+                f"CNPJ: {cnpj_db:,} · Telefones: {tel_db:,} · E-mails: {email_db:,}"
             )
 
             for item in estatisticas:
@@ -2833,6 +2924,50 @@ with st.sidebar:
     )
 
     st.divider()
+
+
+def _procv_valor_flexivel(posto, campo, aliases=()):
+    """Busca valor canônico ou equivalente sem quebrar com NA/NaN."""
+    normalizados = {}
+    for chave in posto.keys():
+        try:
+            normalizados[_normalizar_nome(str(chave))] = chave
+        except Exception:
+            pass
+
+    for candidato in [campo] + list(aliases):
+        if candidato in posto:
+            valor = posto.get(candidato)
+            if _valor_preenchido(valor):
+                return valor
+
+        real = normalizados.get(_normalizar_nome(candidato))
+        if real is not None:
+            valor = posto.get(real)
+            if _valor_preenchido(valor):
+                return valor
+
+    return "Não informado"
+
+
+def _valor_historico_instrutor(posto, *campos):
+    for campo in campos:
+        valor = _procv_valor_flexivel(posto, campo)
+        if valor != "Não informado":
+            return str(valor).strip()
+    return "Não informado"
+
+
+def _historico_instrutor_procv(posto):
+    """Histórico informativo, inclusive instrutores inativos."""
+    treinamento = _valor_historico_instrutor(
+        posto, "Instrutor_Treinamento", "Instrutor_Sugerido"
+    )
+    inauguracao = _valor_historico_instrutor(
+        posto, "Instrutor_Inauguracao"
+    )
+    return treinamento, inauguracao
+
 
 if modulo == "🛡️ Administração":
     render_administracao()
