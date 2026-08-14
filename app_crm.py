@@ -983,7 +983,6 @@ MODULOS_PERMISSOES = {
     "custos": "📍 Calculadora & Otimizador de Custos",
     "callcenter": "📞 Call Center & Timeline WhatsApp",
     "instrutores": "👔 Equipe de Instrutores",
-    "enriquecimento": "📇 Enriquecimento de Rede",
     "relatorios": "📂 Relatórios & Exportação",
 }
 
@@ -2649,6 +2648,122 @@ def _obter_rota_rodoviaria(lat_origem, lon_origem, lat_destino, lon_destino):
         return None, None, None
 
 
+
+def _zoom_para_pontos(pontos):
+    """Calcula um zoom aproximado para enquadrar todos os pontos no mapa."""
+    if not pontos:
+        return 4.0
+
+    lats = [float(p[0]) for p in pontos]
+    lons = [float(p[1]) for p in pontos]
+    lat_span = max(lats) - min(lats)
+    lon_span = max(lons) - min(lons)
+    span = max(lat_span, lon_span)
+
+    if span <= 0.10:
+        return 10.5
+    if span <= 0.30:
+        return 9.0
+    if span <= 0.70:
+        return 7.5
+    if span <= 1.50:
+        return 6.5
+    if span <= 3.00:
+        return 5.5
+    if span <= 6.00:
+        return 4.5
+    if span <= 12.00:
+        return 3.8
+    if span <= 25.00:
+        return 3.1
+    return 2.5
+
+
+def _montar_rotas_mapa(top_instrutores):
+    """
+    Monta as rotas dos 3 instrutores para o posto.
+    Usa OSRM quando disponível; se falhar, mantém uma linha reta visível.
+    """
+    if top_instrutores is None or top_instrutores.empty:
+        return [], [], []
+
+    cores = [
+        [0, 150, 90, 230],
+        [245, 140, 0, 230],
+        [55, 105, 220, 230],
+    ]
+
+    rotas = []
+    pontos = []
+    resumo = []
+
+    primeira = top_instrutores.iloc[0]
+    p_lat = float(primeira["Lat_Loja"])
+    p_lon = float(primeira["Lon_Loja"])
+
+    pontos.append({
+        "name": f"Posto {primeira.get('PV_ABADI', '')}",
+        "tipo": "Posto",
+        "lat": p_lat,
+        "lon": p_lon,
+        "cor": [220, 40, 40, 255],
+    })
+
+    for idx, (_, row) in enumerate(top_instrutores.iterrows()):
+        try:
+            i_lat = float(row["Lat_Instrutor"])
+            i_lon = float(row["Lon_Instrutor"])
+        except Exception:
+            continue
+
+        nome = str(row.get("Instrutor_Sugerido", f"Instrutor {idx + 1}"))
+        cor = cores[min(idx, len(cores) - 1)]
+
+        pontos.append({
+            "name": nome,
+            "tipo": f"Instrutor #{idx + 1}",
+            "lat": i_lat,
+            "lon": i_lon,
+            "cor": cor,
+        })
+
+        rota_coords, rota_km, rota_min = _obter_rota_rodoviaria(
+            i_lat, i_lon, p_lat, p_lon
+        )
+
+        if rota_coords:
+            path = rota_coords
+            tipo_rota = "Rodoviária"
+            km_exibicao = rota_km
+            min_exibicao = rota_min
+        else:
+            # A rota continua visível no mapa mesmo se o servidor OSRM estiver indisponível.
+            path = [[i_lon, i_lat], [p_lon, p_lat]]
+            tipo_rota = "Linha reta (fallback)"
+            km_exibicao = float(row.get("Distancia_km_linha_reta", 0) or 0)
+            min_exibicao = None
+
+        rotas.append({
+            "Instrutor": nome,
+            "Ranking": idx + 1,
+            "path": path,
+            "cor": cor,
+            "largura": max(5, 9 - idx * 2),
+            "Tipo": tipo_rota,
+            "Distancia_km": km_exibicao,
+        })
+
+        resumo.append({
+            "Ranking": idx + 1,
+            "Instrutor": nome,
+            "Rota": tipo_rota,
+            "Distância": km_exibicao,
+            "Tempo_min": min_exibicao,
+        })
+
+    return rotas, pontos, resumo
+
+
 def _haversine_km(lat1, lon1, lat2, lon2):
     import math
     r = 6371.0088
@@ -3794,75 +3909,101 @@ elif modulo == "📍 Calculadora & Otimizador de Custos":
                         f"✅ {len(top_3)} instrutor(es) ativo(s) mais próximo(s) calculado(s) em tempo real."
                     )
 
-                    primeira = top_3.iloc[0]
-
-                    if all(
-                        _valor_preenchido(primeira.get(c))
-                        for c in ["Lat_Loja", "Lon_Loja", "Lat_Instrutor", "Lon_Instrutor"]
-                    ):
-                        p_lat = float(primeira["Lat_Loja"])
-                        p_lon = float(primeira["Lon_Loja"])
-                        i_lat = float(primeira["Lat_Instrutor"])
-                        i_lon = float(primeira["Lon_Instrutor"])
-
-                        df_mapa_pontos = pd.DataFrame([
-                            {"name": f"Posto {primeira['PV_ABADI']}", "lat": p_lat, "lon": p_lon},
-                            {"name": f"Instrutor {primeira['Instrutor_Sugerido']}", "lat": i_lat, "lon": i_lon},
-                        ])
-                        rota_coords, rota_km, rota_min = _obter_rota_rodoviaria(
-                            i_lat, i_lon, p_lat, p_lon
+                    # =====================================================
+                    # MAPA COM ROTAS DOS 3 INSTRUTORES
+                    # =====================================================
+                    campos_geo = ["Lat_Loja", "Lon_Loja", "Lat_Instrutor", "Lon_Instrutor"]
+                    top_geo = top_3[
+                        top_3.apply(
+                            lambda r: all(_valor_preenchido(r.get(c)) for c in campos_geo),
+                            axis=1
                         )
+                    ].copy()
 
-                        layer_pontos = pdk.Layer(
-                            "ScatterplotLayer",
-                            df_mapa_pontos,
-                            get_position="[lon, lat]",
-                            get_radius=18000,
-                            pickable=True
-                        )
-                        layers_mapa = [layer_pontos]
+                    if top_geo.empty:
+                        st.warning("Não há coordenadas suficientes para montar o mapa de rotas.")
+                    else:
+                        with st.spinner("Montando rotas no mapa..."):
+                            rotas_mapa, pontos_mapa, resumo_rotas = _montar_rotas_mapa(top_geo)
 
-                        if rota_coords:
-                            layers_mapa.append(
-                                pdk.Layer(
-                                    "PathLayer",
-                                    pd.DataFrame([{"path": rota_coords}]),
-                                    get_path="path",
-                                    get_width=5,
-                                    width_min_pixels=3,
-                                )
-                            )
-                            st.caption(
-                                f"🛣️ Rota rodoviária do instrutor #1: "
-                                f"{rota_km:,.1f} km · {rota_min/60:,.1f} h"
-                            )
-                        else:
-                            layers_mapa.append(
-                                pdk.Layer(
-                                    "ArcLayer",
-                                    pd.DataFrame([{
-                                        "from_lat": i_lat, "from_lon": i_lon,
-                                        "to_lat": p_lat, "to_lon": p_lon
-                                    }]),
-                                    get_source_position="[from_lon, from_lat]",
-                                    get_target_position="[to_lon, to_lat]",
-                                    get_width=4
-                                )
-                            )
-                            st.caption("ℹ️ Rota rodoviária indisponível; mostrando ligação em linha reta.")
+                        if rotas_mapa and pontos_mapa:
+                            df_rotas_mapa = pd.DataFrame(rotas_mapa)
+                            df_pontos_mapa = pd.DataFrame(pontos_mapa)
 
-                        st.pydeck_chart(
-                            pdk.Deck(
-                                layers=layers_mapa,
-                                initial_view_state=pdk.ViewState(
-                                    latitude=(p_lat + i_lat) / 2,
-                                    longitude=(p_lon + i_lon) / 2,
-                                    zoom=5,
-                                    pitch=35
+                            layer_rotas = pdk.Layer(
+                                "PathLayer",
+                                df_rotas_mapa,
+                                get_path="path",
+                                get_color="cor",
+                                get_width="largura",
+                                width_units="pixels",
+                                width_min_pixels=4,
+                                joint_rounded=True,
+                                cap_rounded=True,
+                                pickable=True,
+                            )
+
+                            layer_pontos = pdk.Layer(
+                                "ScatterplotLayer",
+                                df_pontos_mapa,
+                                get_position="[lon, lat]",
+                                get_fill_color="cor",
+                                get_radius=16000,
+                                radius_min_pixels=7,
+                                radius_max_pixels=18,
+                                pickable=True,
+                            )
+
+                            coords_enquadramento = [
+                                (float(r["lat"]), float(r["lon"]))
+                                for r in pontos_mapa
+                            ]
+                            centro_lat = sum(x[0] for x in coords_enquadramento) / len(coords_enquadramento)
+                            centro_lon = sum(x[1] for x in coords_enquadramento) / len(coords_enquadramento)
+                            zoom_mapa = _zoom_para_pontos(coords_enquadramento)
+
+                            st.markdown("### 🗺️ Rotas dos 3 instrutores mais próximos")
+                            st.pydeck_chart(
+                                pdk.Deck(
+                                    map_style="light",
+                                    layers=[layer_rotas, layer_pontos],
+                                    initial_view_state=pdk.ViewState(
+                                        latitude=centro_lat,
+                                        longitude=centro_lon,
+                                        zoom=zoom_mapa,
+                                        pitch=0,
+                                    ),
+                                    tooltip={
+                                        "html": "<b>{name}{Instrutor}</b><br/>{tipo}{Tipo}"
+                                    },
                                 ),
-                                tooltip={"text": "{name}"}
+                                use_container_width=True,
                             )
-                        )
+
+                            # Mantém uma leitura textual mesmo que o mapa-base do navegador falhe.
+                            if resumo_rotas:
+                                df_resumo_rotas = pd.DataFrame(resumo_rotas)
+                                df_resumo_rotas["Tempo"] = df_resumo_rotas["Tempo_min"].apply(
+                                    lambda v: (
+                                        f"{float(v)/60:.1f} h"
+                                        if _valor_preenchido(v)
+                                        else "-"
+                                    )
+                                )
+                                st.dataframe(
+                                    df_resumo_rotas[
+                                        ["Ranking", "Instrutor", "Rota", "Distância", "Tempo"]
+                                    ],
+                                    use_container_width=True,
+                                    hide_index=True,
+                                    column_config={
+                                        "Distância": st.column_config.NumberColumn(
+                                            "Distância", format="%.1f km"
+                                        )
+                                    },
+                                )
+                        else:
+                            st.warning("Não foi possível montar as rotas para este posto.")
 
                     st.markdown("### 💰 Composição estimada de custos")
                     st.caption(
@@ -4314,10 +4455,6 @@ elif modulo == "👔 Equipe de Instrutores":
                 st.error(f"❌ Não foi possível cadastrar o instrutor: {exc}")
     else:
         st.caption("🔒 Cadastro de novos instrutores disponível somente para administradores.")
-
-elif modulo == "📇 Enriquecimento de Rede":
-    render_section_header("📇", "Enriquecimento de Rede", "Atualizações de lojas e telefones")
-    st.info("Utilize a barra lateral para fazer upload de novas bases ou enriquecer os dados existentes.")
 
 elif modulo == "📂 Relatórios & Exportação":
     render_section_header(
