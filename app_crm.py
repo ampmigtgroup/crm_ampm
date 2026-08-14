@@ -1666,6 +1666,19 @@ def mesclar_entidade_existente(df_atual, df_novo, definicao):
     atual = _normalizar_chave_dataframe(df_atual if df_atual is not None else pd.DataFrame(), chave, numerica)
     novo = _normalizar_chave_dataframe(df_novo if df_novo is not None else pd.DataFrame(), chave, numerica)
 
+    # Pandas 3 pode inferir dtype "str" para colunas vindas do Supabase/Excel.
+    # Uma planilha pode então trazer Timestamp, int, bool etc. para a mesma coluna,
+    # e a atribuição falha com "Invalid value ... for dtype str".
+    # Como o CRM é um integrador heterogêneo, colunas não-chave precisam aceitar
+    # tipos mistos durante o merge. A conversão para tipos de banco ocorre depois.
+    for _df in (atual, novo):
+        for _col in _df.columns:
+            if _col != chave:
+                try:
+                    _df[_col] = _df[_col].astype("object")
+                except Exception:
+                    pass
+
     if novo.empty:
         return atual, 0, 0, []
     if chave not in novo.columns:
@@ -1861,7 +1874,13 @@ def _coalescer_colunas(df, base, candidatos):
         return df
     principal = base
     if principal not in df.columns:
-        df[principal] = pd.NA
+        df[principal] = pd.Series([pd.NA] * len(df), index=df.index, dtype="object")
+    else:
+        # Necessário para aceitar valores heterogêneos de planilhas (ex.: Timestamp).
+        try:
+            df[principal] = df[principal].astype("object")
+        except Exception:
+            pass
     for col in existentes:
         if col == principal:
             continue
@@ -2006,6 +2025,12 @@ def _valor_json_seguro(valor):
         pass
     if isinstance(valor, (pd.Timestamp, datetime, date)):
         return valor.isoformat()
+    # numpy.datetime64 and similar pandas date scalars
+    try:
+        if pd.api.types.is_datetime64_any_dtype(type(valor)):
+            return pd.Timestamp(valor).isoformat()
+    except Exception:
+        pass
     if hasattr(valor, "item"):
         try:
             valor = valor.item()
