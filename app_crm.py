@@ -1524,6 +1524,208 @@ def render_exportacao_modulo(df, nome_modulo, nome_aba=None, legenda=None):
         )
 
 
+
+MODELOS_WHATSAPP_PADRAO = {
+    "primeiro_contato": {
+        "nome": "Primeiro contato",
+        "mensagem": (
+            "Olá, {nome_contato}! Tudo bem? Aqui é {atendente}, da equipe de Capacitação AmPm. "
+            "Estou entrando em contato sobre o PV {pv} - {razao_social}. "
+            "Identificamos a necessidade de {necessidade}. Podemos alinhar os próximos passos?"
+        ),
+    },
+    "retreinamento": {
+        "nome": "Retreinamento",
+        "mensagem": (
+            "Olá, {nome_contato}! Aqui é {atendente}, da equipe de Capacitação AmPm. "
+            "Estamos entrando em contato sobre o PV {pv} - {razao_social} para alinharmos "
+            "um retreinamento da equipe. Hoje temos {qtd_funcionarios} funcionário(s) para treinar. "
+            "Podemos verificar uma data?"
+        ),
+    },
+    "inauguracao": {
+        "nome": "Inauguração",
+        "mensagem": (
+            "Olá, {nome_contato}! Aqui é {atendente}, da equipe de Capacitação AmPm. "
+            "Estamos acompanhando a inauguração do PV {pv} - {razao_social}, prevista para "
+            "{data_inauguracao}. Gostaríamos de alinhar o treinamento de {tipo_modelo} "
+            "e a preparação da equipe."
+        ),
+    },
+    "confirmacao_treinamento": {
+        "nome": "Confirmação de treinamento",
+        "mensagem": (
+            "Olá, {nome_contato}! Confirmamos o treinamento do PV {pv} - {razao_social} "
+            "para {data_agendada}, com o instrutor {instrutor}. Qualquer alteração, por favor nos avise."
+        ),
+    },
+    "reagendamento": {
+        "nome": "Reagendamento",
+        "mensagem": (
+            "Olá, {nome_contato}! Precisamos alinhar uma nova data para o treinamento do "
+            "PV {pv} - {razao_social}. Podemos verificar a melhor disponibilidade para a equipe?"
+        ),
+    },
+    "pos_treinamento": {
+        "nome": "Pós-treinamento",
+        "mensagem": (
+            "Olá, {nome_contato}! Tudo bem? Gostaríamos de saber como foi o treinamento realizado "
+            "no PV {pv} - {razao_social}. Ficamos à disposição para dúvidas, ajustes ou novos alinhamentos."
+        ),
+    },
+}
+
+
+def carregar_modelos_whatsapp():
+    """Lê os modelos centrais do Supabase; usa defaults locais apenas como fallback."""
+    try:
+        resposta = (
+            _supabase_client()
+            .table("crm_modelos_whatsapp")
+            .select("chave,nome,mensagem,ativo,atualizado_por,atualizado_em")
+            .eq("ativo", True)
+            .order("nome")
+            .execute()
+        )
+        dados = resposta.data or []
+        if dados:
+            return {item["chave"]: item for item in dados}
+    except Exception:
+        pass
+
+    return {
+        chave: {
+            "chave": chave,
+            "nome": valor["nome"],
+            "mensagem": valor["mensagem"],
+            "ativo": True,
+        }
+        for chave, valor in MODELOS_WHATSAPP_PADRAO.items()
+    }
+
+
+def salvar_modelo_whatsapp(chave, nome, mensagem):
+    """Salva edição como novo padrão global do CRM."""
+    chave = str(chave or "").strip()
+    nome = str(nome or "").strip()
+    mensagem = str(mensagem or "").strip()
+
+    if not chave or not nome or not mensagem:
+        raise ValueError("Nome e mensagem do modelo são obrigatórios.")
+
+    registro = {
+        "chave": chave,
+        "nome": nome,
+        "mensagem": mensagem,
+        "ativo": True,
+        "atualizado_por": str(_usuario_atual() or ""),
+        "atualizado_em": datetime.now().isoformat(),
+    }
+
+    (
+        _supabase_client()
+        .table("crm_modelos_whatsapp")
+        .upsert(registro, on_conflict="chave")
+        .execute()
+    )
+
+    st.session_state.pop("modelos_whatsapp_cache", None)
+    return registro
+
+
+def _texto_modelo_whatsapp(template, posto):
+    """Substitui variáveis conhecidas do CRM sem quebrar se algum campo estiver vazio."""
+    nome_contato = _procv_valor_flexivel(
+        posto,
+        "Nome_Contato",
+        ["Nome do Contato", "Contato", "Responsável", "Responsavel"],
+    )
+    if nome_contato == "Não informado":
+        nome_contato = "equipe"
+
+    tipo_modelo = _procv_valor_flexivel(
+        posto,
+        "Tipo de Modelo",
+        ["Tipo Modelo", "Modelo", "Modelo da Loja", "Modelo Loja"],
+    )
+
+    dados = {
+        "nome_contato": nome_contato,
+        "atendente": str(st.session_state.get("name") or _usuario_atual() or "equipe de Capacitação AmPm"),
+        "pv": str(posto.get("PV Abadi", "") or ""),
+        "razao_social": str(posto.get("Razão Social", "") or ""),
+        "necessidade": str(posto.get("Tipo_Necessidade", "") or ""),
+        "qtd_funcionarios": str(posto.get("Qtd_Funcionarios", "") or ""),
+        "data_inauguracao": str(
+            posto.get("Previsão Inauguração", "")
+            or posto.get("Data Inauguração Atual", "")
+            or ""
+        ),
+        "tipo_modelo": tipo_modelo if tipo_modelo != "Não informado" else "",
+        "data_agendada": str(posto.get("Data_Agendada", "") or ""),
+        "instrutor": str(posto.get("Instrutor_Sugerido", "") or ""),
+        "municipio": str(posto.get("Municipio", "") or ""),
+        "uf": str(posto.get("UF", "") or ""),
+    }
+
+    class _SafeDict(dict):
+        def __missing__(self, key):
+            return "{" + key + "}"
+
+    try:
+        return str(template or "").format_map(_SafeDict(dados))
+    except Exception:
+        return str(template or "")
+
+
+def _render_editor_modelos_whatsapp():
+    """Editor de padrões; qualquer usuário do Call Center pode ajustar e salvar o padrão global."""
+    modelos = carregar_modelos_whatsapp()
+    if not modelos:
+        st.info("Nenhum modelo de WhatsApp disponível.")
+        return
+
+    opcoes = {v["nome"]: k for k, v in modelos.items()}
+    nome_sel = st.selectbox(
+        "Modelo para editar",
+        list(opcoes.keys()),
+        key="wa_editor_modelo_sel_v46",
+    )
+    chave_sel = opcoes[nome_sel]
+    atual = modelos[chave_sel]
+
+    novo_nome = st.text_input(
+        "Nome do modelo",
+        value=str(atual.get("nome", nome_sel)),
+        key=f"wa_editor_nome_{chave_sel}",
+    )
+    nova_msg = st.text_area(
+        "Mensagem padrão",
+        value=str(atual.get("mensagem", "")),
+        height=180,
+        key=f"wa_editor_msg_{chave_sel}",
+    )
+
+    st.caption(
+        "Variáveis disponíveis: {nome_contato}, {atendente}, {pv}, {razao_social}, "
+        "{necessidade}, {qtd_funcionarios}, {data_inauguracao}, {tipo_modelo}, "
+        "{data_agendada}, {instrutor}, {municipio}, {uf}."
+    )
+
+    if st.button(
+        "💾 Salvar como modelo padrão",
+        type="primary",
+        use_container_width=True,
+        key=f"wa_salvar_modelo_{chave_sel}",
+    ):
+        try:
+            salvar_modelo_whatsapp(chave_sel, novo_nome, nova_msg)
+            st.success("✅ Modelo atualizado. A partir de agora ele é o padrão para todos os usuários.")
+            st.rerun()
+        except Exception as exc:
+            st.error(f"❌ Não foi possível salvar o modelo: {exc}")
+
+
 # --- HELPERS DE APRESENTAÇÃO ---
 def render_section_header(icone, titulo, subtitulo=""):
     st.markdown(f"""
@@ -4743,36 +4945,62 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                     </div>
                 """, unsafe_allow_html=True)
 
-                # --- INTEGRAÇÃO WHATSAPP FLEXÍVEL (LINK DIRETO + TEMPLATES) ---
+                # --- WHATSAPP: MODELOS CENTRAIS EDITÁVEIS + MENSAGEM PRÉ-PREENCHIDA ---
                 if tel_limpo:
-                    st.markdown("##### 📲 Envio de Mensagem WhatsApp")
-                    opcao_wa = st.radio("Selecione o estilo do envio:", ["Link Direto Rápido", "Template Customizado"], horizontal=True)
+                    st.markdown("##### 📲 WhatsApp")
 
-                    if opcao_wa == "Link Direto Rápido":
-                        msg_final = f"Olá, equipe {posto.get('Razão Social', '')}! Aqui é da equipe de Capacitação AmPm. Gostaria de agendar o treinamento da loja."
+                    modelos_wa = carregar_modelos_whatsapp()
+                    nomes_modelos_wa = {
+                        dados.get("nome", chave): chave
+                        for chave, dados in modelos_wa.items()
+                        if dados.get("ativo", True)
+                    }
+
+                    if nomes_modelos_wa:
+                        modelo_nome = st.selectbox(
+                            "Modelo de mensagem:",
+                            list(nomes_modelos_wa.keys()),
+                            key=f"wa_modelo_{chave_pv_widget}",
+                        )
+                        modelo_chave = nomes_modelos_wa[modelo_nome]
+                        modelo_dados = modelos_wa[modelo_chave]
+
+                        mensagem_gerada = _texto_modelo_whatsapp(
+                            modelo_dados.get("mensagem", ""),
+                            posto,
+                        )
+
+                        mensagem_envio = st.text_area(
+                            "Mensagem para este cliente:",
+                            value=mensagem_gerada,
+                            height=150,
+                            key=f"wa_msg_cliente_{chave_pv_widget}_{modelo_chave}",
+                            help=(
+                                "Você pode ajustar esta mensagem somente para este envio. "
+                                "Para alterar o padrão, use 'Editar modelos padrão'."
+                            ),
+                        )
+
+                        from urllib.parse import quote
+                        link_wa = (
+                            f"https://wa.me/55{tel_limpo}"
+                            f"?text={quote(str(mensagem_envio))}"
+                        )
+
+                        st.link_button(
+                            "💬 Abrir conversa no WhatsApp",
+                            link_wa,
+                            use_container_width=True,
+                        )
+
+                        with st.expander("✏️ Editar modelos padrão", expanded=False):
+                            _render_editor_modelos_whatsapp()
                     else:
-                        tmpl = st.selectbox("Escolha o Modelo de Mensagem:", [
-                            "Agendamento de Treinamento",
-                            "Cobrança / Verificação de Apostilas",
-                            "Lembrete de Treinamento Agendado",
-                            "Acompanhamento Pós-Treinamento"
-                        ])
-
-                        data_agendada_disp = posto.get('Data_Agendada')
-                        data_agendada_fmt = parse_data_flexivel(data_agendada_disp)
-                        data_agendada_fmt = data_agendada_fmt.strftime("%d/%m/%Y") if data_agendada_fmt else "em breve"
-
-                        if tmpl == "Agendamento de Treinamento":
-                            msg_final = f"Olá! Aqui é da Capacitação AmPm. Gostaríamos de confirmar as datas disponíveis para o treinamento na loja {posto.get('Razão Social', '')} (PV {posto.get('PV Abadi', '')})."
-                        elif tmpl == "Cobrança / Verificação de Apostilas":
-                            msg_final = f"Olá, equipe {posto.get('Razão Social', '')}! Para darmos início ao treinamento, poderiam confirmar se o material de apoio e apostilas já chegaram na loja?"
-                        elif tmpl == "Lembrete de Treinamento Agendado":
-                            msg_final = f"Olá! Passando para lembrar que o treinamento AmPm da loja {posto.get('Razão Social', '')} está agendado para o dia {data_agendada_fmt}. Contamos com todos!"
-                        else:
-                            msg_final = f"Olá! Como foi o treinamento concluído na loja {posto.get('Razão Social', '')}? Estamos à disposição para dúvidas ou feedbacks."
-
-                    link_wa = f"https://wa.me/55{tel_limpo}?text={msg_final.replace(' ', '%20')}"
-                    st.markdown(f"👉 **[Clique aqui para chamar no WhatsApp Direct]({link_wa})**")
+                        st.info("Nenhum modelo de WhatsApp ativo foi encontrado.")
+                else:
+                    st.caption(
+                        "📵 Este cliente não possui telefone cadastrado para abrir o WhatsApp."
+                    )
 
                 lista_instrutores = ["Pendente de Alocação"]
                 df_instrutores_ativos_call = filtrar_instrutores_ativos(df_instrutores)
