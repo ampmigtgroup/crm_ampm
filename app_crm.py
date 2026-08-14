@@ -1457,6 +1457,73 @@ def salvar_status_instrutores_admin(df_editor, df_original):
 
 
 
+
+def _nome_arquivo_seguro(texto):
+    texto = unicodedata.normalize("NFKD", str(texto or "exportacao"))
+    texto = "".join(ch for ch in texto if not unicodedata.combining(ch))
+    texto = re.sub(r"[^A-Za-z0-9_-]+", "_", texto).strip("_")
+    return texto or "exportacao"
+
+
+def _excel_dataframe_bytes(df, nome_aba="Dados"):
+    if df is None:
+        df = pd.DataFrame()
+    buffer = io.BytesIO()
+    aba = str(nome_aba or "Dados")[:31]
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        df.copy().to_excel(writer, index=False, sheet_name=aba)
+        ws = writer.sheets[aba]
+        ws.freeze_panes = "A2"
+        if ws.max_column:
+            ws.auto_filter.ref = ws.dimensions
+        for col in ws.columns:
+            letra = col[0].column_letter
+            maior = max([len(str(c.value or "")) for c in list(col)[:300]] + [10])
+            ws.column_dimensions[letra].width = min(maior + 2, 45)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+def render_exportacao_modulo(df, nome_modulo, nome_aba=None, legenda=None):
+    if df is None:
+        df = pd.DataFrame()
+    df_export = df.copy()
+
+    st.divider()
+    st.markdown("### 📤 Exportar dados deste módulo")
+    st.caption(
+        legenda or "Exporta exatamente os dados disponíveis nesta visão do módulo."
+    )
+
+    if df_export.empty:
+        st.info("Não há dados disponíveis nesta visão para exportar.")
+        return
+
+    nome_base = _nome_arquivo_seguro(nome_modulo)
+    csv_bytes = df_export.to_csv(index=False).encode("utf-8-sig")
+    excel_bytes = _excel_dataframe_bytes(df_export, nome_aba or nome_modulo)
+
+    c_csv, c_xlsx = st.columns(2)
+    with c_csv:
+        st.download_button(
+            "📄 Exportar CSV",
+            data=csv_bytes,
+            file_name=f"{nome_base}.csv",
+            mime="text/csv",
+            use_container_width=True,
+            key=f"export_csv_mod_{nome_base}",
+        )
+    with c_xlsx:
+        st.download_button(
+            "📊 Exportar Excel",
+            data=excel_bytes,
+            file_name=f"{nome_base}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key=f"export_xlsx_mod_{nome_base}",
+        )
+
+
 # --- HELPERS DE APRESENTAÇÃO ---
 def render_section_header(icone, titulo, subtitulo=""):
     st.markdown(f"""
@@ -3958,6 +4025,13 @@ elif modulo == "📊 Dashboard Executivo":
             if 'Status_Contato' in df_base.columns:
                 st.bar_chart(df_base['Status_Contato'].value_counts(), color="#3B9EFF")
 
+        render_exportacao_modulo(
+            df_base,
+            "Dashboard_Executivo",
+            nome_aba="Dashboard",
+            legenda="Exporta a base consolidada usada pelos indicadores do Dashboard."
+        )
+
 elif modulo == "📋 Pipeline AmPm":
     render_section_header(
         "📋",
@@ -3975,6 +4049,12 @@ elif modulo == "📋 Pipeline AmPm":
         "Treinamento Realizado",
     ]
     cols_k = st.columns(len(colunas_pipeline))
+
+    df_pipeline_export = df_base.copy()
+    if "Status_Contato" in df_pipeline_export.columns:
+        df_pipeline_export = df_pipeline_export[
+            df_pipeline_export["Status_Contato"].isin(colunas_pipeline)
+        ].copy()
 
     for idx, status in enumerate(colunas_pipeline):
         df_status = (
@@ -4135,7 +4215,12 @@ elif modulo == "📋 Pipeline AmPm":
                                 {"Status_Contato": mudar_status}
                             )
                             st.rerun()
-
+    render_exportacao_modulo(
+        df_pipeline_export,
+        "Pipeline_AmPm",
+        nome_aba="Pipeline",
+        legenda="Exporta os clientes e seus estágios atuais no Pipeline."
+    )
 
 elif modulo == "🔍 PROCV Gestão e Franquia AMPM":
     render_section_header("🔍", "PROCV Gestão e Franquia AMPM", "Consulta detalhada da loja, gestão, franquia e histórico de treinamento")
@@ -4184,6 +4269,13 @@ elif modulo == "🔍 PROCV Gestão e Franquia AMPM":
                 st.markdown(f"""<div class="procv-card"><h4>📞 Contatos da Loja</h4><p>👤 <b>Responsável:</b> {nome_contato_procv}</p><p>📞 <b>Telefone:</b> {telefone_procv}</p><p>✉️ <b>E-mail:</b> {email_procv}</p><p>👥 <b>Funcionários:</b> {qtd_func_procv}</p></div>""", unsafe_allow_html=True)
             with k3:
                 st.markdown(f"""<div class="procv-card"><h4>👔 Gestão & Histórico</h4><p>👤 <b>Gerente (GF):</b> {p.get('GF', 'Não informado')}</p><p>👔 <b>Consultor (CF):</b> {p.get('CF', 'Não informado')}</p><p>📅 <b>Inauguração:</b> {p.get('Previsão Inauguração', 'Não informado')}</p><hr><p>🎓 <b>Instrutor do treinamento:</b> {instrutor_treinamento}</p><p>🚀 <b>Instrutor da inauguração:</b> {instrutor_inauguracao}</p><p>📅 <b>Último treinamento:</b> {p.get('Data_Ultimo_Treinamento', 'Não informado')}</p><p>🎯 <b>Necessidade atual:</b> {p.get('Tipo_Necessidade', '-')}</p><p>🔄 <b>Status do atendimento:</b> {badge_status_html(p.get('Status_Contato', '-'))}</p></div>""", unsafe_allow_html=True)
+        render_exportacao_modulo(
+            df_view,
+            "PROCV_Gestao_Franquia_AMPM",
+            nome_aba="PROCV",
+            legenda="Exporta o resultado atual da pesquisa e dos filtros aplicados no PROCV."
+        )
+
     else:
         st.info("📭 Nenhum dado carregado ainda.")
 
@@ -4490,6 +4582,20 @@ elif modulo == "📍 Calculadora & Otimizador de Custos":
                                 "Total Estimado": st.column_config.NumberColumn(format="R$ %.2f"),
                             }
                         )
+                        df_export_calc = df_comparativo.copy()
+                        df_export_calc.insert(0, "PV", pv_txt)
+                        df_export_calc.insert(1, "Posto", str(posto.get("Razão Social", "") or ""))
+                        df_export_calc.insert(
+                            2,
+                            "Destino",
+                            f"{posto.get('Municipio', '')}/{posto.get('UF', '')}"
+                        )
+                        render_exportacao_modulo(
+                            df_export_calc,
+                            f"Calculadora_Custos_PV_{pv_txt}",
+                            nome_aba="Comparativo Custos",
+                            legenda="Exporta o comparativo calculado para o posto selecionado."
+                        )
 
 elif modulo == "📥 Importador Inteligente":
     render_importador_inteligente()
@@ -4548,6 +4654,13 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
             df_fila_view = df_fila_view[df_fila_view["Status_Contato"].astype(str).isin(status_call)]
 
         st.caption(f"👥 Exibindo {len(df_fila_view):,} de {len(df_base):,} clientes.")
+
+        render_exportacao_modulo(
+            df_fila_view,
+            "Call_Center",
+            nome_aba="Call Center",
+            legenda="Exporta os clientes atualmente exibidos após busca e filtros do Call Center."
+        )
 
         c_left, c_right = st.columns([1.2, 1.8])
 
@@ -4807,6 +4920,13 @@ elif modulo == "👔 Equipe de Instrutores":
             ]
             if c in df_instrutores_view.columns
         ]
+
+        render_exportacao_modulo(
+            df_instrutores_view[colunas_seguras].copy(),
+            "Equipe_de_Instrutores",
+            nome_aba="Instrutores",
+            legenda="Exporta a equipe completa, incluindo ativos e histórico de quem saiu."
+        )
 
         if usuario_e_admin():
             st.markdown("### ☑️ Controle de atividade")
