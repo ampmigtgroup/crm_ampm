@@ -1807,21 +1807,118 @@ def carregar_bases_do_disco(caminho, assinatura=None):
     return _processar_excelfile(xls, exigir_lojas=True)
 
 
+def _valor_util(valor):
+    """Retorna True quando a célula contém informação real."""
+    if valor is None:
+        return False
+    try:
+        if pd.isna(valor):
+            return False
+    except (TypeError, ValueError):
+        pass
+    texto = str(valor).strip().lower()
+    return texto not in {"", "nan", "nat", "none", "null", "<na>"}
+
+
+def _coalescer_colunas(df, base, candidatos):
+    """Escolhe o primeiro valor preenchido entre colunas equivalentes."""
+    existentes = [c for c in candidatos if c in df.columns]
+    if not existentes:
+        return df
+    principal = base
+    if principal not in df.columns:
+        df[principal] = pd.NA
+    for col in existentes:
+        if col == principal:
+            continue
+        mask = ~df[principal].map(_valor_util)
+        if mask.any():
+            df.loc[mask, principal] = df.loc[mask, col]
+    extras = [c for c in existentes if c != principal]
+    if extras:
+        df.drop(columns=extras, inplace=True, errors='ignore')
+    return df
+
+
+def _merge_base_por_pv(df_base, df_extra, chave_base, chave_extra):
+    """Merge seguro por PV, coalescendo colunas repetidas em vez de criar _x/_y."""
+    if df_extra is None or df_extra.empty or chave_extra not in df_extra.columns:
+        return df_base
+    base = df_base.copy()
+    extra = df_extra.copy()
+    if chave_base not in base.columns:
+        return base
+
+    base[chave_base] = pd.to_numeric(base[chave_base], errors='coerce')
+    extra[chave_extra] = pd.to_numeric(extra[chave_extra], errors='coerce')
+    extra = extra.dropna(subset=[chave_extra]).copy()
+    if extra.empty:
+        return base
+    extra = extra.drop_duplicates(subset=[chave_extra], keep='last')
+
+    # Renomeia somente colunas do extra que já existem no base para evitar _x/_y.
+    extra_cols = [c for c in extra.columns if c != chave_extra]
+    temp_names = {}
+    for c in extra_cols:
+        if c in base.columns:
+            temp_names[c] = f"__extra__{c}"
+    extra = extra.rename(columns=temp_names)
+
+    merged = base.merge(
+        extra,
+        left_on=chave_base,
+        right_on=chave_extra,
+        how='left',
+        suffixes=('', '__duplicata')
+    )
+    if chave_extra != chave_base and chave_extra in merged.columns:
+        merged.drop(columns=[chave_extra], inplace=True, errors='ignore')
+
+    # Coalesce campos repetidos e novos campos.
+    for original, tmp in temp_names.items():
+        if tmp in merged.columns:
+            if original not in merged.columns:
+                merged[original] = merged[tmp]
+            else:
+                mask = ~merged[original].map(_valor_util)
+                merged.loc[mask, original] = merged.loc[mask, tmp]
+            merged.drop(columns=[tmp], inplace=True, errors='ignore')
+
+    for c in list(merged.columns):
+        if c.endswith('__duplicata'):
+            original = c[:-11]
+            if original in merged.columns:
+                mask = ~merged[original].map(_valor_util)
+                merged.loc[mask, original] = merged.loc[mask, c]
+                merged.drop(columns=[c], inplace=True, errors='ignore')
+    return merged
+
+
 def construir_base_unificada(df_lojas, df_fila, df_inaug):
+    """Constrói a visão do PROCV sem perder dados de nenhuma entidade.
+    Campos que existem em mais de uma origem são coalescidos por PV.
+    """
     if df_lojas is None or df_lojas.empty:
         return pd.DataFrame()
 
     df_base = df_lojas.copy()
 
     if df_fila is not None and not df_fila.empty and "PV_Abadi" in df_fila.columns:
-        colunas_fila = [c for c in df_fila.columns if c != "PV_Abadi"]
-        df_fila_merge = df_fila[["PV_Abadi"] + colunas_fila].copy()
-        df_base = pd.merge(df_base, df_fila_merge, left_on="PV Abadi", right_on="PV_Abadi", how="left")
+        df_base = _merge_base_por_pv(df_base, df_fila, "PV Abadi", "PV_Abadi")
 
     if df_inaug is not None and not df_inaug.empty and "PV ABADI" in df_inaug.columns:
-        colunas_inaug = [c for c in df_inaug.columns if c != "PV ABADI"]
-        df_inaug_merge = df_inaug[["PV ABADI"] + colunas_inaug].copy()
-        df_base = pd.merge(df_base, df_inaug_merge, left_on="PV Abadi", right_on="PV ABADI", how="left")
+        df_base = _merge_base_por_pv(df_base, df_inaug, "PV Abadi", "PV ABADI")
+
+    # Limpa sufixos já existentes de bases antigas (_x/_y), mantendo o primeiro valor preenchido.
+    for coluna in list(df_base.columns):
+        if coluna.endswith('_x') and f"{coluna[:-2]}_y" in df_base.columns:
+            base_col = coluna[:-2]
+            y_col = f"{base_col}_y"
+            if base_col not in df_base.columns:
+                df_base[base_col] = pd.NA
+            mask = ~df_base[base_col].map(_valor_util)
+            df_base.loc[mask, base_col] = df_base.loc[mask, coluna]
+            df_base.loc[~df_base[base_col].map(_valor_util), base_col] = df_base.loc[~df_base[base_col].map(_valor_util), y_col]
 
     defaults = {
         "Status_Contato": "A Contatar",
@@ -1829,13 +1926,16 @@ def construir_base_unificada(df_lojas, df_fila, df_inaug):
         "Instrutor_Sugerido": "Pendente de Alocação",
         "Nome_Contato": "",
         "Material_Em_Loja": "Não Informado",
+        "Tem_Funcionarios": "Não",
     }
     for coluna, valor in defaults.items():
         if coluna in df_base.columns:
             df_base[coluna] = df_base[coluna].fillna(valor)
 
     if "Qtd_Funcionarios" in df_base.columns:
-        df_base["Qtd_Funcionarios"] = pd.to_numeric(df_base["Qtd_Funcionarios"], errors="coerce").fillna(0).astype(int)
+        qtd = pd.to_numeric(df_base["Qtd_Funcionarios"], errors="coerce").fillna(0).clip(lower=0).astype(int)
+        df_base["Qtd_Funcionarios"] = qtd
+        df_base["Tem_Funcionarios"] = qtd.gt(0).map({True: "Sim", False: "Não"})
 
     return df_base
 
