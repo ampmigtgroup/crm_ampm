@@ -65,6 +65,30 @@ PRODUTOS_TREINAMENTO = [
     "Treinamento de Cafeteria",
     "Treinamento em Pizzaria Pizza Hut",
     "Treinamento em Padaria",
+    "Deslocamento Aéreo",
+    "Deslocamento Rodoviário",
+    "Hospedagem",
+    "Aluguel de Carro",
+    "Transporte por Aplicativo",
+]
+
+UNIDADE_PADRAO_ORCAMENTO = {
+    "Treinamento de Cafeteria": "Dia",
+    "Treinamento em Pizzaria Pizza Hut": "Dia",
+    "Treinamento em Padaria": "Dia",
+    "Deslocamento Aéreo": "Trecho",
+    "Deslocamento Rodoviário": "Trecho",
+    "Hospedagem": "Diária",
+    "Aluguel de Carro": "Diária",
+    "Transporte por Aplicativo": "Corrida",
+}
+
+UNIDADES_ORCAMENTO = [
+    "Dia",
+    "Diária",
+    "Trecho",
+    "Corrida",
+    "Unidade",
 ]
 
 
@@ -85,37 +109,72 @@ def _orcamento_vazio(posto):
 
 
 def _normalizar_itens_orcamento(itens):
+    """
+    Normaliza itens antigos e novos.
+    Orçamentos antigos com Dias/Valor por Dia continuam funcionando.
+    Novos itens usam Quantidade/Unidade/Valor Unitário.
+    """
     linhas = []
     for item in itens or []:
         if not isinstance(item, dict):
             continue
-        produto = str(item.get("Produto", item.get("Descrição", item.get("descricao", ""))) or "").strip()
+
+        produto = str(
+            item.get(
+                "Produto",
+                item.get("Descrição", item.get("descricao", ""))
+            ) or ""
+        ).strip()
         if not produto:
             continue
-        if produto not in PRODUTOS_TREINAMENTO:
-            produto = str(item.get("Descrição", produto) or produto).strip()
+
         try:
-            dias = float(item.get("Dias", item.get("Qtd", item.get("qtd", 1))) or 0)
+            quantidade = float(
+                item.get(
+                    "Quantidade",
+                    item.get("Dias", item.get("Qtd", item.get("qtd", 1)))
+                ) or 0
+            )
         except (TypeError, ValueError):
-            dias = 0.0
+            quantidade = 0.0
+
         try:
-            valor_dia = float(item.get("Valor por Dia", item.get("Valor Unitário", item.get("valor_unitario", 0))) or 0)
+            valor_unitario = float(
+                item.get(
+                    "Valor Unitário",
+                    item.get(
+                        "Valor por Dia",
+                        item.get("valor_unitario", 0)
+                    )
+                ) or 0
+            )
         except (TypeError, ValueError):
-            valor_dia = 0.0
-        total = dias * valor_dia
+            valor_unitario = 0.0
+
+        unidade = str(
+            item.get(
+                "Unidade",
+                UNIDADE_PADRAO_ORCAMENTO.get(produto, "Unidade")
+            ) or UNIDADE_PADRAO_ORCAMENTO.get(produto, "Unidade")
+        ).strip()
+
+        total = quantidade * valor_unitario
+
         linhas.append({
             "Item": str(item.get("Item", len(linhas) + 1)),
             "Produto": produto,
-            "Dias": dias,
-            "Valor por Dia": valor_dia,
+            "Quantidade": quantidade,
+            "Unidade": unidade,
+            "Valor Unitário": valor_unitario,
             "Total": total,
         })
+
     return linhas
 
 
 def _gerar_excel_orcamento(orcamento, posto, pv):
     itens = _normalizar_itens_orcamento(orcamento.get("itens", []))
-    colunas = ["Item", "Produto", "Dias", "Valor por Dia", "Total"]
+    colunas = ["Item", "Produto", "Quantidade", "Unidade", "Valor Unitário", "Total"]
     df_itens = pd.DataFrame(itens, columns=colunas)
     if df_itens.empty:
         df_itens = pd.DataFrame(columns=colunas)
@@ -144,14 +203,14 @@ def _gerar_excel_orcamento(orcamento, posto, pv):
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         resumo.to_excel(writer, index=False, sheet_name="Orçamento")
-        df_itens.to_excel(writer, index=False, sheet_name="Treinamentos")
+        df_itens.to_excel(writer, index=False, sheet_name="Itens Orçamento")
 
         ws = writer.sheets["Orçamento"]
         ws.freeze_panes = "A2"
         ws.column_dimensions["A"].width = 28
         ws.column_dimensions["B"].width = 65
 
-        ws2 = writer.sheets["Treinamentos"]
+        ws2 = writer.sheets["Itens Orçamento"]
         ws2.freeze_panes = "A2"
         ws2.auto_filter.ref = ws2.dimensions
         for col in ws2.columns:
@@ -159,8 +218,8 @@ def _gerar_excel_orcamento(orcamento, posto, pv):
             maior = max([len(str(c.value or "")) for c in col[:100]] + [10])
             ws2.column_dimensions[letra].width = min(maior + 2, 45)
         for linha in range(2, ws2.max_row + 1):
-            ws2.cell(linha, 4).number_format = 'R$ #,##0.00'
             ws2.cell(linha, 5).number_format = 'R$ #,##0.00'
+            ws2.cell(linha, 6).number_format = 'R$ #,##0.00'
 
         for linha in range(1, ws.max_row + 1):
             if ws.cell(linha, 1).value in ("Subtotal", "Desconto (R$)", "TOTAL"):
@@ -263,17 +322,32 @@ def _renderizar_mini_orcamento(posto, pv):
             ),
         )
 
-    st.markdown("#### 🧾 Treinamentos")
-    st.caption("Os três produtos abaixo são os tipos de treinamento comercializados. O cálculo é feito por dias de treinamento.")
-    itens_iniciais = _normalizar_itens_orcamento(orcamento.get("itens", []))
+    st.markdown("#### 🧾 Treinamentos e Logística")
+    st.caption(
+        "Inclua treinamentos e os custos necessários à execução: deslocamento, "
+        "hospedagem, aluguel de carro e transporte por aplicativo."
+    )
+
+    itens_iniciais = _normalizar_itens_orcamento(
+        orcamento.get("itens", [])
+    )
     df_itens_inicial = pd.DataFrame(
         itens_iniciais,
-        columns=["Item", "Produto", "Dias", "Valor por Dia", "Total"],
+        columns=[
+            "Item", "Produto", "Quantidade", "Unidade",
+            "Valor Unitário", "Total"
+        ],
     )
+
     if df_itens_inicial.empty:
-        df_itens_inicial = pd.DataFrame([
-            {"Item": 1, "Produto": PRODUTOS_TREINAMENTO[0], "Dias": 1.0, "Valor por Dia": 0.0, "Total": 0.0}
-        ])
+        df_itens_inicial = pd.DataFrame([{
+            "Item": 1,
+            "Produto": PRODUTOS_TREINAMENTO[0],
+            "Quantidade": 1.0,
+            "Unidade": "Dia",
+            "Valor Unitário": 0.0,
+            "Total": 0.0,
+        }])
 
     df_editado = st.data_editor(
         df_itens_inicial,
@@ -281,19 +355,57 @@ def _renderizar_mini_orcamento(posto, pv):
         num_rows="dynamic",
         hide_index=True,
         column_config={
-            "Item": st.column_config.TextColumn("Item", disabled=True),
-            "Produto": st.column_config.SelectboxColumn("Produto", options=PRODUTOS_TREINAMENTO, required=True),
-            "Dias": st.column_config.NumberColumn("Dias de treinamento", min_value=0.5, step=0.5),
-            "Valor por Dia": st.column_config.NumberColumn("Valor por Dia (R$)", min_value=0.0, step=0.01, format="R$ %.2f"),
-            "Total": st.column_config.NumberColumn("Total (R$)", disabled=True, format="R$ %.2f"),
+            "Item": st.column_config.TextColumn(
+                "Item",
+                disabled=True
+            ),
+            "Produto": st.column_config.SelectboxColumn(
+                "Produto / Serviço",
+                options=PRODUTOS_TREINAMENTO,
+                required=True
+            ),
+            "Quantidade": st.column_config.NumberColumn(
+                "Quantidade",
+                min_value=0.0,
+                step=0.5
+            ),
+            "Unidade": st.column_config.SelectboxColumn(
+                "Unidade",
+                options=UNIDADES_ORCAMENTO,
+                required=True
+            ),
+            "Valor Unitário": st.column_config.NumberColumn(
+                "Valor Unitário (R$)",
+                min_value=0.0,
+                step=0.01,
+                format="R$ %.2f"
+            ),
+            "Total": st.column_config.NumberColumn(
+                "Total (R$)",
+                disabled=True,
+                format="R$ %.2f"
+            ),
         },
         key=f"orcamento_editor_{chave}",
     ).copy()
 
     if not df_editado.empty:
+        # Ajusta automaticamente a unidade padrão para linhas novas ou vazias.
+        for idx, linha in df_editado.iterrows():
+            produto = str(linha.get("Produto", "") or "").strip()
+            unidade = str(linha.get("Unidade", "") or "").strip()
+            if not unidade:
+                df_editado.at[idx, "Unidade"] = UNIDADE_PADRAO_ORCAMENTO.get(
+                    produto, "Unidade"
+                )
+
         df_editado["Total"] = (
-            pd.to_numeric(df_editado["Dias"], errors="coerce").fillna(0)
-            * pd.to_numeric(df_editado["Valor por Dia"], errors="coerce").fillna(0)
+            pd.to_numeric(
+                df_editado["Quantidade"], errors="coerce"
+            ).fillna(0)
+            * pd.to_numeric(
+                df_editado["Valor Unitário"], errors="coerce"
+            ).fillna(0)
         )
 
     st.markdown("#### 🧮 Fechamento")
@@ -307,7 +419,7 @@ def _renderizar_mini_orcamento(posto, pv):
         subtotal = float(pd.to_numeric(df_editado["Total"], errors="coerce").fillna(0).sum()) if not df_editado.empty else 0.0
         desconto_valor = subtotal * desconto / 100
         total = subtotal - desconto_valor
-        st.metric("💰 Total do treinamento", f"R$ {total:,.2f}")
+        st.metric("💰 Total do orçamento", f"R$ {total:,.2f}")
 
     observacoes = st.text_area(
         "Observações / condições comerciais",
@@ -365,8 +477,16 @@ def _renderizar_mini_orcamento(posto, pv):
             itens_salvos.append({
                 "Item": str(linha.get("Item", len(itens_salvos) + 1)),
                 "Produto": produto,
-                "Dias": float(linha.get("Dias", 0) or 0),
-                "Valor por Dia": float(linha.get("Valor por Dia", 0) or 0),
+                "Quantidade": float(linha.get("Quantidade", 0) or 0),
+                "Unidade": str(
+                    linha.get(
+                        "Unidade",
+                        UNIDADE_PADRAO_ORCAMENTO.get(produto, "Unidade")
+                    ) or ""
+                ),
+                "Valor Unitário": float(
+                    linha.get("Valor Unitário", 0) or 0
+                ),
                 "Total": float(linha.get("Total", 0) or 0),
             })
 
@@ -388,7 +508,7 @@ def _renderizar_mini_orcamento(posto, pv):
         orcamentos[chave] = orcamento
         st.session_state["orcamentos_crm"] = orcamentos
         _salvar_orcamentos(orcamentos)
-        st.success("✅ Orçamento de treinamento salvo com sucesso!")
+        st.success("✅ Orçamento de treinamento e logística salvo com sucesso!")
 
     if limpar:
         orcamentos[chave] = _orcamento_vazio(posto)
