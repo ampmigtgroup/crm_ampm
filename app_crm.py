@@ -1258,6 +1258,85 @@ def adicionar_instrutor_admin(nome, telefone="", email="", cidade="", uf=""):
 
     return acao
 
+def atualizar_status_instrutor_admin(nome, ativo):
+    """Ativa/inativa um instrutor no Supabase e sincroniza a sessão."""
+    if not usuario_e_admin():
+        raise PermissionError("Somente administradores podem alterar o status de instrutores.")
+
+    nome = str(nome or "").strip()
+    if not nome:
+        raise ValueError("Instrutor inválido.")
+
+    novo_status = "Ativo" if bool(ativo) else "Saiu"
+
+    # Fonte oficial: Supabase.
+    (
+        _supabase_client()
+        .table("crm_instrutores")
+        .update({"status": novo_status})
+        .eq("nome_completo", nome)
+        .execute()
+    )
+
+    # Sincroniza a cópia em memória imediatamente.
+    bases = st.session_state.get("bases", {})
+    df = bases.get("instrutores", pd.DataFrame()).copy()
+
+    if not df.empty and "NOME_COMPLETO" in df.columns:
+        mask = (
+            df["NOME_COMPLETO"]
+            .map(_texto_seguro_instrutor)
+            .str.strip()
+            .str.casefold()
+            .eq(nome.casefold())
+        )
+        if mask.any():
+            if "STATUS" not in df.columns:
+                df["STATUS"] = ""
+            df.loc[mask, "STATUS"] = novo_status
+            bases["instrutores"] = df
+            st.session_state["bases"] = bases
+
+    st.cache_data.clear()
+    return novo_status
+
+
+def salvar_status_instrutores_admin(df_editor, df_original):
+    """Aplica somente as mudanças feitas nas caixas de seleção."""
+    if not usuario_e_admin():
+        raise PermissionError("Somente administradores podem alterar o status de instrutores.")
+
+    if df_editor is None or df_editor.empty:
+        return 0
+
+    alteracoes = 0
+
+    orig_map = {}
+    for _, row in df_original.iterrows():
+        nome = str(row.get("NOME_COMPLETO", "") or "").strip()
+        if nome:
+            orig_map[nome.casefold()] = (
+                str(row.get("STATUS", "") or "").strip().casefold() == "ativo"
+            )
+
+    for _, row in df_editor.iterrows():
+        nome = str(row.get("NOME_COMPLETO", "") or "").strip()
+        if not nome:
+            continue
+
+        ativo_novo = bool(row.get("Em atividade", False))
+        ativo_antigo = orig_map.get(nome.casefold())
+
+        if ativo_antigo is None or ativo_novo == ativo_antigo:
+            continue
+
+        atualizar_status_instrutor_admin(nome, ativo_novo)
+        alteracoes += 1
+
+    return alteracoes
+
+
+
 # --- HELPERS DE APRESENTAÇÃO ---
 def render_section_header(icone, titulo, subtitulo=""):
     st.markdown(f"""
@@ -4526,104 +4605,195 @@ elif modulo == "👔 Equipe de Instrutores":
     render_section_header(
         "👔",
         "Equipe de Instrutores",
-        "Instrutores atualmente em atividade"
+        "Equipe oficial — status operacional controlado pelo administrador"
     )
 
-    instrutores_ativos = filtrar_instrutores_ativos(df_instrutores)
-
-    # O banco continua contendo também os instrutores que já saíram.
-    # Aqui exibimos somente quem está explicitamente com STATUS = Ativo.
-    if "STATUS" not in df_instrutores.columns and not df_instrutores.empty:
-        st.warning(
-            "⚠️ A base de instrutores não possui a coluna `STATUS`. "
-            "Por segurança, os registros estão sendo exibidos, mas "
-            "adicione essa coluna com `Ativo` ou o status correspondente."
-        )
-
-    total_base = len(df_instrutores) if df_instrutores is not None else 0
-    total_ativos = len(instrutores_ativos)
-
-    col_m1, col_m2 = st.columns(2)
-    with col_m1:
-        st.metric("👔 Instrutores em atividade", total_ativos)
-    with col_m2:
-        st.metric("📚 Registros no banco", total_base)
-
-    if not instrutores_ativos.empty:
-        st.dataframe(
-            instrutores_ativos,
-            use_container_width=True,
-            hide_index=True
-        )
+    if df_instrutores is None or df_instrutores.empty:
+        st.info("📭 Nenhum instrutor cadastrado no banco central.")
     else:
-        st.info("📭 Nenhum instrutor com STATUS = Ativo foi encontrado.")
+        df_instrutores_view = df_instrutores.copy()
 
-    st.divider()
+        if "STATUS" not in df_instrutores_view.columns:
+            df_instrutores_view["STATUS"] = "Ativo"
 
-    # Somente usuários explicitamente definidos em ADMIN_USERNAMES
-    # conseguem abrir o formulário de cadastro.
-    if usuario_e_admin():
-        st.markdown("### ➕ Cadastrar novo instrutor")
-        st.caption(
-            "Somente administradores podem adicionar instrutores. "
-            "O novo cadastro será gravado com STATUS = Ativo."
-        )
+        # A Base_Unificada enviada possui 13 registros; somente STATUS=Ativo
+        # participa de cálculo de proximidade, agenda e sugestões.
+        instrutores_ativos = filtrar_instrutores_ativos(df_instrutores_view)
+        total_base = len(df_instrutores_view)
+        total_ativos = len(instrutores_ativos)
+        total_inativos = max(total_base - total_ativos, 0)
 
-        with st.form("form_novo_instrutor", clear_on_submit=True):
-            col1, col2 = st.columns(2)
+        m1, m2, m3 = st.columns(3)
+        m1.metric("✅ Em atividade", total_ativos)
+        m2.metric("⏸️ Fora de atividade", total_inativos)
+        m3.metric("📚 Total no histórico", total_base)
 
-            with col1:
-                novo_nome = st.text_input(
-                    "Nome completo *",
-                    placeholder="Ex.: João da Silva"
-                )
-                novo_telefone = st.text_input(
-                    "Telefone",
-                    placeholder="(00) 00000-0000"
-                )
-                novo_email = st.text_input(
-                    "E-mail",
-                    placeholder="instrutor@empresa.com"
-                )
+        colunas_seguras = [
+            c for c in [
+                "NOME_COMPLETO", "STATUS", "Cidade", "UF", "TELEFONE", "EMAIL"
+            ]
+            if c in df_instrutores_view.columns
+        ]
 
-            with col2:
-                nova_cidade = st.text_input(
-                    "Cidade",
-                    placeholder="Ex.: Rio de Janeiro"
-                )
-                nova_uf = st.text_input(
-                    "UF",
-                    max_chars=2,
-                    placeholder="RJ"
-                )
-                st.text_input(
-                    "Status",
-                    value="Ativo",
-                    disabled=True
-                )
-
-            cadastrar = st.form_submit_button(
-                "💾 Cadastrar Instrutor",
-                use_container_width=True
+        if usuario_e_admin():
+            st.markdown("### ☑️ Controle de atividade")
+            st.caption(
+                "Marque somente quem está trabalhando atualmente. "
+                "Instrutores desmarcados continuam no histórico, mas deixam de aparecer "
+                "na Calculadora, sugestões de proximidade e novas alocações."
             )
 
-        if cadastrar:
-            try:
-                acao = adicionar_instrutor_admin(
-                    novo_nome,
-                    novo_telefone,
-                    novo_email,
-                    nova_cidade,
-                    nova_uf,
+            tabela_admin = df_instrutores_view[colunas_seguras].copy()
+            tabela_admin.insert(
+                0,
+                "Em atividade",
+                tabela_admin["STATUS"]
+                .map(_texto_seguro_instrutor)
+                .str.strip()
+                .str.casefold()
+                .eq("ativo")
+            )
+
+            tabela_editada = st.data_editor(
+                tabela_admin,
+                use_container_width=True,
+                hide_index=True,
+                disabled=[c for c in tabela_admin.columns if c != "Em atividade"],
+                column_config={
+                    "Em atividade": st.column_config.CheckboxColumn(
+                        "✅ Em atividade",
+                        help="Marcado = Ativo. Desmarcado = Saiu/inativo.",
+                    ),
+                    "NOME_COMPLETO": st.column_config.TextColumn("Instrutor"),
+                    "STATUS": st.column_config.TextColumn("Status atual"),
+                },
+                key="editor_status_instrutores_v41",
+            )
+
+            b1, b2 = st.columns([1, 2])
+            with b1:
+                salvar_status = st.button(
+                    "💾 Salvar status",
+                    type="primary",
+                    use_container_width=True,
+                    key="salvar_status_instrutores_v41",
                 )
-                st.success(f"✅ Instrutor {acao} com STATUS = Ativo.")
-                st.rerun()
-            except PermissionError as exc:
-                st.error(f"🚫 {exc}")
-            except Exception as exc:
-                st.error(f"❌ Não foi possível cadastrar o instrutor: {exc}")
-    else:
-        st.caption("🔒 Cadastro de novos instrutores disponível somente para administradores.")
+
+            if salvar_status:
+                try:
+                    alteracoes = salvar_status_instrutores_admin(
+                        tabela_editada,
+                        tabela_admin,
+                    )
+                    if alteracoes:
+                        # Recarrega a fonte oficial depois das alterações.
+                        st.session_state["bases"] = carregar_bases_supabase()
+                        st.success(
+                            f"✅ {alteracoes} alteração(ões) de status salva(s) no Supabase."
+                        )
+                        st.rerun()
+                    else:
+                        st.info("Nenhuma alteração de status para salvar.")
+                except PermissionError as exc:
+                    st.error(f"🚫 {exc}")
+                except Exception as exc:
+                    st.error(f"❌ Falha ao salvar status: {exc}")
+
+            st.divider()
+            st.markdown("### 👥 Equipe ativa")
+            if not instrutores_ativos.empty:
+                st.dataframe(
+                    instrutores_ativos[
+                        [c for c in colunas_seguras if c in instrutores_ativos.columns]
+                    ],
+                    use_container_width=True,
+                    hide_index=True,
+                )
+            else:
+                st.info("📭 Nenhum instrutor marcado como Ativo.")
+
+        else:
+            st.markdown("### 👥 Instrutores em atividade")
+            if not instrutores_ativos.empty:
+                st.dataframe(
+                    instrutores_ativos[
+                        [c for c in colunas_seguras if c in instrutores_ativos.columns]
+                    ],
+                    use_container_width=True,
+                    hide_index=True,
+                )
+            else:
+                st.info("📭 Nenhum instrutor marcado como Ativo.")
+
+        st.divider()
+
+        if usuario_e_admin():
+            st.markdown("### ➕ Cadastrar novo instrutor")
+            st.caption(
+                "Novos instrutores entram inicialmente como Ativo e podem ser "
+                "desativados depois nas caixas acima."
+            )
+
+            with st.form("form_novo_instrutor", clear_on_submit=True):
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    novo_nome = st.text_input(
+                        "Nome completo *",
+                        placeholder="Ex.: João da Silva"
+                    )
+                    novo_telefone = st.text_input(
+                        "Telefone",
+                        placeholder="(00) 00000-0000"
+                    )
+                    novo_email = st.text_input(
+                        "E-mail",
+                        placeholder="instrutor@empresa.com"
+                    )
+
+                with col2:
+                    nova_cidade = st.text_input(
+                        "Cidade",
+                        placeholder="Ex.: Rio de Janeiro"
+                    )
+                    nova_uf = st.text_input(
+                        "UF",
+                        max_chars=2,
+                        placeholder="RJ"
+                    )
+                    st.text_input(
+                        "Status inicial",
+                        value="Ativo",
+                        disabled=True
+                    )
+
+                cadastrar = st.form_submit_button(
+                    "💾 Cadastrar Instrutor",
+                    use_container_width=True
+                )
+
+            if cadastrar:
+                try:
+                    acao = adicionar_instrutor_admin(
+                        novo_nome,
+                        novo_telefone,
+                        novo_email,
+                        nova_cidade,
+                        nova_uf,
+                    )
+                    st.session_state["bases"] = carregar_bases_supabase()
+                    st.success(f"✅ Instrutor {acao} com STATUS = Ativo.")
+                    st.rerun()
+                except PermissionError as exc:
+                    st.error(f"🚫 {exc}")
+                except Exception as exc:
+                    st.error(f"❌ Não foi possível cadastrar o instrutor: {exc}")
+        else:
+            st.caption(
+                "🔒 Alteração de atividade e cadastro de instrutores disponíveis "
+                "somente para administradores."
+            )
+
 
 elif modulo == "📂 Relatórios & Exportação":
     render_section_header(
