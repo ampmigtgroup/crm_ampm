@@ -3447,6 +3447,23 @@ def _obter_rota_rodoviaria(lat_origem, lon_origem, lat_destino, lon_destino):
 
 
 
+
+def _amostrar_pontos_rota(path, quantidade=14):
+    """Retorna poucos pontos distribuídos ao longo da geometria da rota."""
+    if not path or len(path) < 2:
+        return []
+
+    quantidade = max(2, int(quantidade))
+    if len(path) <= quantidade:
+        return path
+
+    indices = {
+        round(i * (len(path) - 1) / (quantidade - 1))
+        for i in range(quantidade)
+    }
+    return [path[i] for i in sorted(indices)]
+
+
 def _zoom_para_pontos(pontos):
     """Calcula um zoom aproximado para enquadrar todos os pontos no mapa."""
     if not pontos:
@@ -5270,46 +5287,115 @@ elif modulo == "📍 Calculadora & Otimizador de Custos":
                             )
                             duracao_rota = None
 
+                        # Cor da rota acompanha o instrutor selecionado.
+                        ranking_mapa = int(row_mapa.get("Ranking_Proximidade", 1) or 1)
+                        cores_rota = {
+                            1: [255, 43, 32, 245],    # vermelho AmPm
+                            2: [255, 196, 0, 245],    # amarelo
+                            3: [28, 35, 43, 245],     # carvão
+                        }
+                        cor_rota = cores_rota.get(ranking_mapa, [255, 43, 32, 245])
+
                         df_rota_mapa = pd.DataFrame([{
                             "Instrutor": nome_mapa,
                             "Tipo": tipo_rota,
                             "path": path,
+                            "cor": [cor_rota],
                         }])
 
-                        df_pontos_mapa = pd.DataFrame([
-                            {
-                                "name": f"Posto {row_mapa.get('PV_ABADI', '')}",
-                                "tipo": "Posto",
-                                "lat": p_lat,
-                                "lon": p_lon,
-                            },
+                        # Marcadores discretos ao longo da rota, como no layout aprovado.
+                        pontos_amostrados = _amostrar_pontos_rota(path, quantidade=14)
+                        registros_pontos_rota = []
+                        for lon_pt, lat_pt in pontos_amostrados:
+                            registros_pontos_rota.append({
+                                "name": nome_mapa,
+                                "tipo": "Rota",
+                                "lat": float(lat_pt),
+                                "lon": float(lon_pt),
+                                "cor": cor_rota,
+                            })
+                        df_pontos_rota = pd.DataFrame(registros_pontos_rota)
+
+                        df_extremos_mapa = pd.DataFrame([
                             {
                                 "name": nome_mapa,
-                                "tipo": "Instrutor",
+                                "tipo": "Origem do instrutor",
                                 "lat": i_lat,
                                 "lon": i_lon,
+                                "cor": cor_rota,
+                            },
+                            {
+                                "name": f"Posto {row_mapa.get('PV_ABADI', '')}",
+                                "tipo": "Destino",
+                                "lat": p_lat,
+                                "lon": p_lon,
+                                "cor": [255, 138, 0, 255],
                             },
                         ])
 
+                        # Halo branco fino para separar a rota do mapa sem criar borrão.
+                        layer_rota_halo = pdk.Layer(
+                            "PathLayer",
+                            df_rota_mapa,
+                            get_path="path",
+                            get_color=[255, 255, 255, 235],
+                            get_width=6,
+                            width_units="pixels",
+                            width_min_pixels=5,
+                            width_max_pixels=7,
+                            joint_rounded=True,
+                            cap_rounded=True,
+                            pickable=False,
+                        )
+
+                        # Linha principal: fina e nítida.
                         layer_rota = pdk.Layer(
                             "PathLayer",
                             df_rota_mapa,
                             get_path="path",
-                            get_width=5,
+                            get_color="cor",
+                            get_width=2.8,
                             width_units="pixels",
-                            width_min_pixels=4,
+                            width_min_pixels=2,
+                            width_max_pixels=4,
                             joint_rounded=True,
                             cap_rounded=True,
                             pickable=True,
                         )
 
-                        layer_pontos = pdk.Layer(
+                        # Pequenos pontos de referência na rota.
+                        layer_pontos_rota = pdk.Layer(
                             "ScatterplotLayer",
-                            df_pontos_mapa,
+                            df_pontos_rota,
                             get_position="[lon, lat]",
-                            get_radius=16000,
-                            radius_min_pixels=7,
-                            radius_max_pixels=18,
+                            get_fill_color="cor",
+                            get_line_color=[255, 255, 255, 255],
+                            stroked=True,
+                            filled=True,
+                            radius_units="pixels",
+                            get_radius=4.2,
+                            radius_min_pixels=3,
+                            radius_max_pixels=5,
+                            line_width_units="pixels",
+                            get_line_width=1.5,
+                            pickable=False,
+                        )
+
+                        # Origem e destino um pouco maiores.
+                        layer_extremos = pdk.Layer(
+                            "ScatterplotLayer",
+                            df_extremos_mapa,
+                            get_position="[lon, lat]",
+                            get_fill_color="cor",
+                            get_line_color=[255, 255, 255, 255],
+                            stroked=True,
+                            filled=True,
+                            radius_units="pixels",
+                            get_radius=7,
+                            radius_min_pixels=6,
+                            radius_max_pixels=9,
+                            line_width_units="pixels",
+                            get_line_width=2,
                             pickable=True,
                         )
 
@@ -5321,12 +5407,18 @@ elif modulo == "📍 Calculadora & Otimizador de Custos":
                         st.pydeck_chart(
                             pdk.Deck(
                                 map_style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
-                                layers=[layer_rota, layer_pontos],
+                                layers=[
+                                    layer_rota_halo,
+                                    layer_rota,
+                                    layer_pontos_rota,
+                                    layer_extremos,
+                                ],
                                 initial_view_state=pdk.ViewState(
                                     latitude=centro_lat,
                                     longitude=centro_lon,
                                     zoom=zoom_mapa,
                                     pitch=0,
+                                    bearing=0,
                                 ),
                                 tooltip={"text": "{name}\n{tipo}"},
                             ),
