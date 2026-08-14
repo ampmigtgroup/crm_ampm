@@ -14,6 +14,7 @@ import re
 import unicodedata
 from difflib import SequenceMatcher
 import streamlit_authenticator as stauth
+from supabase import create_client, Client
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(
@@ -25,6 +26,16 @@ st.set_page_config(
 
 CAMINHO_ARQUIVO = "Base_Unificada_AmPm.xlsx"
 CAMINHO_BACKUP = "Base_Unificada_AmPm.backup.xlsx"
+
+# Banco central online. O Excel permanece apenas como fonte de importação/fallback.
+SUPABASE_PROJECT_URL_PADRAO = "https://nptazzfvwhhmotfrvgdj.supabase.co"
+SUPABASE_TABLES = {
+    "lojas": "crm_lojas",
+    "fila": "crm_fila_callcenter",
+    "inaug": "crm_inauguracoes",
+    "instrutores": "crm_instrutores",
+    "rec": "crm_recomendacao_deslocamento",
+}
 
 CAMINHO_ORCAMENTOS = "orcamentos_crm.json"
 PASTA_DOCUMENTOS_ORCAMENTO = "documentos_orcamentos"
@@ -1963,57 +1974,276 @@ def construir_base_unificada(df_lojas, df_fila, df_inaug):
     return df_base
 
 
-def salvar_bases_combinadas_no_disco(bases, caminho=CAMINHO_ARQUIVO):
-    """Persiste as entidades no Excel preservando abas que não pertencem ao CRM."""
-    if os.path.exists(caminho):
-        with pd.ExcelFile(caminho, engine="openpyxl") as xls:
-            abas_originais = {}
-            for aba in xls.sheet_names:
-                try:
-                    abas_originais[aba] = pd.read_excel(xls, sheet_name=aba)
-                except Exception:
-                    pass
-    else:
-        abas_originais = {}
 
-    nomes_entidades = {
-        "lojas": "Rede_de_Lojas",
-        "fila": "Fila_CallCenter",
-        "inaug": "Previsao_Inauguracao",
-        "instrutores": "Instrutores",
-        "rec": "Recomendacao_Deslocamento",
+@st.cache_resource
+def _supabase_client():
+    """Cliente server-side. A chave secreta fica somente nos Secrets do Streamlit."""
+    try:
+        url = st.secrets.get("SUPABASE_URL", SUPABASE_PROJECT_URL_PADRAO)
+        key = (
+            st.secrets.get("SUPABASE_SERVICE_ROLE_KEY")
+            or st.secrets.get("SUPABASE_SECRET_KEY")
+        )
+    except Exception:
+        url = SUPABASE_PROJECT_URL_PADRAO
+        key = None
+
+    if not key:
+        raise RuntimeError(
+            "SUPABASE_SERVICE_ROLE_KEY não configurada nos Secrets do Streamlit."
+        )
+    return create_client(str(url), str(key))
+
+
+def _valor_json_seguro(valor):
+    if valor is None:
+        return None
+    try:
+        vazio = pd.isna(valor)
+        if isinstance(vazio, bool) and vazio:
+            return None
+    except Exception:
+        pass
+    if isinstance(valor, (pd.Timestamp, datetime, date)):
+        return valor.isoformat()
+    if hasattr(valor, "item"):
+        try:
+            valor = valor.item()
+        except Exception:
+            pass
+    if isinstance(valor, float):
+        if pd.isna(valor):
+            return None
+        if valor.is_integer():
+            return int(valor)
+    return valor
+
+
+def _supabase_fetch_all(tabela, page_size=1000):
+    client = _supabase_client()
+    dados = []
+    inicio = 0
+    while True:
+        resposta = (
+            client.table(tabela)
+            .select("*")
+            .range(inicio, inicio + page_size - 1)
+            .execute()
+        )
+        lote = resposta.data or []
+        dados.extend(lote)
+        if len(lote) < page_size:
+            break
+        inicio += page_size
+    return dados
+
+
+def _expandir_raw_data(registros):
+    saida = []
+    for item in registros or []:
+        item = dict(item)
+        raw = item.pop("raw_data", None)
+        if isinstance(raw, dict):
+            for chave, valor in raw.items():
+                item.setdefault(chave, valor)
+        saida.append(item)
+    return saida
+
+
+def _renomear_db_para_dataframe(registros, mapa):
+    registros = _expandir_raw_data(registros)
+    if not registros:
+        return pd.DataFrame()
+    df = pd.DataFrame(registros)
+    return df.rename(columns=mapa)
+
+
+MAPA_DB_PARA_DF = {
+    "lojas": {
+        "pv_abadi": "PV Abadi",
+        "cnpj": "CNPJ",
+        "razao_social": "Razão Social",
+        "status_loja": "Status Loja",
+        "grupo_economico": "Grupo Econômico",
+        "gf": "GF",
+        "cf": "CF",
+        "endereco": "Endereço",
+        "bairro": "Bairro",
+        "municipio": "Municipio",
+        "uf": "UF",
+        "cep": "CEP",
+        "nome_contato": "Nome_Contato",
+        "telefone_contato": "Telefone_Contato",
+        "email_contato": "Email_Contato",
+        "data_inauguracao": "Data Inauguração Atual",
+        "tipo_modelo": "Tipo de Modelo",
+    },
+    "fila": {
+        "pv_abadi": "PV_Abadi",
+        "tipo_necessidade": "Tipo_Necessidade",
+        "data_ultimo_treinamento": "Data_Ultimo_Treinamento",
+        "dias_desde_ultimo_treinamento": "Dias_desde_Ultimo_Treinamento",
+        "instrutor_sugerido": "Instrutor_Sugerido",
+        "semana_sugerida": "Semana_Sugerida",
+        "telefone_contato": "Telefone_Contato",
+        "email_contato": "Email_Contato",
+        "status_contato": "Status_Contato",
+        "data_do_contato": "Data_do_Contato",
+        "observacoes": "Observacoes",
+        "nome_contato": "Nome_Contato",
+        "tem_funcionarios": "Tem_Funcionarios",
+        "qtd_funcionarios": "Qtd_Funcionarios",
+        "material_em_loja": "Material_Em_Loja",
+        "data_agendada": "Data_Agendada",
+        "tipo_pagamento": "Tipo_Pagamento",
+        "data_pagamento": "Data_Pagamento",
+        "data_liberacao_treinamento": "Data_Liberacao_Treinamento",
+    },
+    "inaug": {
+        "pv_abadi": "PV ABADI",
+        "previsao_inauguracao": "Previsão Inauguração",
+        "instrutor_inauguracao": "Instrutor_Inauguracao",
+    },
+    "instrutores": {
+        "id": "ID",
+        "nome_completo": "NOME_COMPLETO",
+        "status": "STATUS",
+        "telefone": "TELEFONE",
+        "email": "EMAIL",
+        "cidade": "Cidade",
+        "uf": "UF",
+    },
+    "rec": {
+        "id": "ID",
+        "pv_abadi": "PV_ABADI",
+        "instrutor_sugerido": "Instrutor_Sugerido",
+        "ranking_proximidade": "Ranking_Proximidade",
+        "distancia_km_linha_reta": "Distancia_km_linha_reta",
+        "municipio_loja": "Municipio_Loja",
+        "uf_loja": "UF_Loja",
+        "lat_loja": "Lat_Loja",
+        "lon_loja": "Lon_Loja",
+        "lat_instrutor": "Lat_Instrutor",
+        "lon_instrutor": "Lon_Instrutor",
+    },
+}
+
+MAPA_DF_PARA_DB = {
+    entidade: {v: k for k, v in mapa.items()}
+    for entidade, mapa in MAPA_DB_PARA_DF.items()
+}
+
+
+def carregar_bases_supabase():
+    """Carrega todas as entidades do banco central em DataFrames compatíveis com o CRM."""
+    bases = _bases_vazias()
+    for entidade, tabela in SUPABASE_TABLES.items():
+        registros = _supabase_fetch_all(tabela)
+        bases[entidade] = _renomear_db_para_dataframe(
+            registros,
+            MAPA_DB_PARA_DF[entidade]
+        )
+
+    # Colunas operacionais sempre existem, mesmo em uma base ainda vazia.
+    for col in COLUNAS_FILA:
+        if col not in bases["fila"].columns:
+            bases["fila"][col] = pd.NA
+
+    return bases
+
+
+def _registro_dataframe_para_db(linha, entidade):
+    mapa = MAPA_DF_PARA_DB[entidade]
+    registro = {}
+    raw = {}
+
+    for coluna, valor in linha.items():
+        valor = _valor_json_seguro(valor)
+        if coluna in mapa:
+            campo_db = mapa[coluna]
+            # IDs identity não são necessários para novos registros.
+            if campo_db == "id" and valor is None:
+                continue
+            registro[campo_db] = valor
+        else:
+            # Guarda campos ainda não modelados sem perdê-los.
+            if valor is not None:
+                raw[str(coluna)] = valor
+
+    if entidade in {"lojas", "fila", "inaug", "instrutores", "rec"}:
+        registro["raw_data"] = raw
+
+    return registro
+
+
+def _upsert_dataframe_supabase(entidade, df, tamanho_lote=400):
+    if df is None or df.empty:
+        return
+
+    tabela = SUPABASE_TABLES[entidade]
+    client = _supabase_client()
+
+    conflitos = {
+        "lojas": "pv_abadi",
+        "fila": "pv_abadi",
+        "inaug": "pv_abadi",
+        "instrutores": "nome_completo",
+        "rec": "pv_abadi,instrutor_sugerido",
     }
 
-    for entidade, nome_aba in nomes_entidades.items():
-        abas_originais[nome_aba] = bases.get(entidade, pd.DataFrame())
+    registros = []
+    for _, linha in df.iterrows():
+        registro = _registro_dataframe_para_db(linha.to_dict(), entidade)
 
-    with pd.ExcelWriter(caminho, engine="openpyxl", mode="w") as writer:
-        for nome_aba, df in abas_originais.items():
-            nome_seguro = str(nome_aba)[:31] or "Dados"
-            df.to_excel(writer, sheet_name=nome_seguro, index=False)
+        chave = conflitos[entidade].split(",")[0]
+        if not registro.get(chave):
+            continue
+
+        # Em recomendações, instrutor também é parte da chave.
+        if entidade == "rec" and not registro.get("instrutor_sugerido"):
+            continue
+
+        registros.append(registro)
+
+    for inicio in range(0, len(registros), tamanho_lote):
+        lote = registros[inicio:inicio + tamanho_lote]
+        (
+            client.table(tabela)
+            .upsert(lote, on_conflict=conflitos[entidade])
+            .execute()
+        )
+
+
+def salvar_bases_combinadas_no_disco(bases, caminho=CAMINHO_ARQUIVO):
+    """
+    Compatibilidade com o código legado: o nome da função foi mantido,
+    mas a persistência agora é feita no Supabase/PostgreSQL.
+    """
+    for entidade in ("lojas", "fila", "inaug", "instrutores", "rec"):
+        _upsert_dataframe_supabase(entidade, bases.get(entidade, pd.DataFrame()))
 
 
 def salvar_fila_no_disco():
-    if not os.path.exists(CAMINHO_ARQUIVO):
-        st.toast("⚠️ Arquivo local não encontrado — alterações mantidas apenas na sessão.", icon="⚠️")
-        return
     try:
-        bases = st.session_state["bases"]
-        salvar_bases_combinadas_no_disco(bases)
-        st.toast("💾 Banco de dados salvo com sucesso!", icon="✅")
+        _upsert_dataframe_supabase(
+            "fila",
+            st.session_state["bases"].get("fila", pd.DataFrame())
+        )
+        st.toast("💾 Call Center salvo no banco central!", icon="✅")
     except Exception as e:
-        st.toast(f"⚠️ Erro ao salvar banco de dados: {e}", icon="⚠️")
+        st.toast(f"⚠️ Erro ao salvar no banco central: {e}", icon="⚠️")
 
 
 def salvar_lojas_no_disco():
-    if not os.path.exists(CAMINHO_ARQUIVO):
-        st.toast("⚠️ Arquivo local não encontrado — alterações mantidas apenas na sessão.", icon="⚠️")
-        return
     try:
-        salvar_bases_combinadas_no_disco(st.session_state["bases"])
-        st.toast("💾 Rede de Lojas salva no banco de dados!", icon="✅")
+        _upsert_dataframe_supabase(
+            "lojas",
+            st.session_state["bases"].get("lojas", pd.DataFrame())
+        )
+        st.toast("💾 Rede de Lojas salva no banco central!", icon="✅")
     except Exception as e:
-        st.toast(f"⚠️ Erro ao salvar banco de dados: {e}", icon="⚠️")
+        st.toast(f"⚠️ Erro ao salvar no banco central: {e}", icon="⚠️")
+
 
 def buscar_telefone_google_places(endereco_completo, nome_loja, api_key, timeout=8):
     consulta = f"{nome_loja}, {endereco_completo}" if nome_loja else endereco_completo
@@ -2110,20 +2340,41 @@ def _bases_vazias():
 def inicializar_estado():
     if 'bases' in st.session_state:
         return
+
     st.session_state.setdefault('erro_carga', None)
     st.session_state.setdefault('relatorio_importacao', None)
-    if not os.path.exists(CAMINHO_ARQUIVO):
-        st.session_state['bases'] = _bases_vazias()
-        return
+
+    # Produção: Supabase é a fonte oficial.
     try:
-        assinatura = os.path.getmtime(CAMINHO_ARQUIVO)
-        bases, relatorio = carregar_bases_do_disco(CAMINHO_ARQUIVO, assinatura)
-        st.session_state['bases'] = bases if bases is not None else _bases_vazias()
-        st.session_state['relatorio_importacao'] = relatorio
+        st.session_state['bases'] = carregar_bases_supabase()
         st.session_state['erro_carga'] = None
-    except Exception as e:
-        st.session_state['erro_carga'] = str(e)
-        st.session_state['bases'] = _bases_vazias()
+        st.session_state['fonte_dados'] = "Supabase"
+        return
+    except Exception as e_supabase:
+        # Fallback temporário para não derrubar o app enquanto os Secrets
+        # ainda não foram configurados no Streamlit Cloud.
+        st.session_state['erro_carga'] = (
+            "Banco central indisponível: " + str(e_supabase)
+        )
+
+    if os.path.exists(CAMINHO_ARQUIVO):
+        try:
+            assinatura = os.path.getmtime(CAMINHO_ARQUIVO)
+            bases, relatorio = carregar_bases_do_disco(
+                CAMINHO_ARQUIVO,
+                assinatura
+            )
+            st.session_state['bases'] = (
+                bases if bases is not None else _bases_vazias()
+            )
+            st.session_state['relatorio_importacao'] = relatorio
+            st.session_state['fonte_dados'] = "Excel fallback"
+            return
+        except Exception as e_excel:
+            st.session_state['erro_carga'] += " | Fallback Excel: " + str(e_excel)
+
+    st.session_state['bases'] = _bases_vazias()
+    st.session_state['fonte_dados'] = "Nenhuma"
 
 inicializar_estado()
 
@@ -2144,11 +2395,17 @@ df_base = construir_base_unificada(df_lojas, df_fila, df_inaug)
 filtro_uf = "Todas"
 
 if st.session_state.get('erro_carga'):
-    st.error(
-        "⚠️ Não foi possível carregar `Base_Unificada_AmPm.xlsx`:\n\n"
-        f"{st.session_state['erro_carga']}\n\n"
-        "Envie um arquivo válido na barra lateral."
-    )
+    if st.session_state.get("fonte_dados") == "Excel fallback":
+        st.warning(
+            "⚠️ O CRM está usando temporariamente o Excel porque o banco central "
+            "ainda não está configurado nos Secrets.\n\n"
+            f"{st.session_state['erro_carga']}"
+        )
+    else:
+        st.error(
+            "⚠️ Não foi possível carregar o banco central.\n\n"
+            f"{st.session_state['erro_carga']}"
+        )
 
 
 # ============================================================
@@ -2485,6 +2742,24 @@ def render_importador_inteligente():
                 )
 
             st.session_state["relatorio_importacao"] = estatisticas
+            try:
+                _supabase_client().table("crm_importacoes").insert({
+                    "arquivo": arquivo.name,
+                    "aba": None,
+                    "registros_lidos": int(sum(
+                        int(x.get("linhas_lidas", 0) or 0)
+                        for x in (diagnostico if isinstance(diagnostico, list) else [])
+                    )),
+                    "novos": int(total_novos),
+                    "atualizados": int(total_atualizados),
+                    "status": "concluida",
+                    "detalhes": {
+                        "estatisticas": estatisticas,
+                        "diagnostico": diagnostico,
+                    },
+                }).execute()
+            except Exception:
+                pass
             st.rerun()
 
     except Exception as exc:
@@ -2493,6 +2768,7 @@ def render_importador_inteligente():
 
 # --- SIDEBAR & NAVEGAÇÃO ---
 with st.sidebar:
+    st.caption(f"🗄️ Fonte de dados: {st.session_state.get('fonte_dados', '-')}")
     st.markdown("""
         <div class="sidebar-brand">
             <div class="logo-chip">⛽</div>
