@@ -2425,6 +2425,285 @@ def salvar_importacao_supabase(bases_resultado, bases_novas):
     return salvas
 
 
+
+def _extrair_contatos_dataframe(df_bruto):
+    """Extrai TODOS os contatos de uma tabela com PV, sem colapsar um PV em uma única linha."""
+    if df_bruto is None or df_bruto.empty:
+        return pd.DataFrame(columns=["PV Abadi", "Nome_Contato", "Telefone_Contato", "Email_Contato"])
+
+    preparado, _, canonicas, _ = _preparar_dataframe_entidade(
+        df_bruto,
+        ENTIDADES["lojas"],
+    )
+
+    if "PV Abadi" not in canonicas or "PV Abadi" not in preparado.columns:
+        return pd.DataFrame(columns=["PV Abadi", "Nome_Contato", "Telefone_Contato", "Email_Contato"])
+
+    for col in ["Nome_Contato", "Telefone_Contato", "Email_Contato"]:
+        if col not in preparado.columns:
+            preparado[col] = pd.NA
+
+    contatos = preparado[
+        ["PV Abadi", "Nome_Contato", "Telefone_Contato", "Email_Contato"]
+    ].copy()
+
+    contatos["PV Abadi"] = pd.to_numeric(
+        contatos["PV Abadi"], errors="coerce"
+    ).astype("Int64")
+
+    contatos = contatos[contatos["PV Abadi"].notna()].copy()
+
+    tem_contato = (
+        contatos["Nome_Contato"].map(_valor_preenchido)
+        | contatos["Telefone_Contato"].map(_valor_preenchido)
+        | contatos["Email_Contato"].map(_valor_preenchido)
+    )
+    contatos = contatos[tem_contato].copy()
+
+    # Remove apenas duplicatas EXATAS; múltiplos contatos diferentes do mesmo PV são preservados.
+    contatos = contatos.drop_duplicates(
+        subset=["PV Abadi", "Nome_Contato", "Telefone_Contato", "Email_Contato"],
+        keep="last",
+    ).reset_index(drop=True)
+
+    return contatos
+
+
+def _extrair_contatos_workbook(xls):
+    partes = []
+    for sheet_name in xls.sheet_names:
+        try:
+            bruto = pd.read_excel(xls, sheet_name=sheet_name)
+        except Exception:
+            continue
+        parte = _extrair_contatos_dataframe(bruto)
+        if parte is not None and not parte.empty:
+            partes.append(parte)
+
+    if not partes:
+        return pd.DataFrame(columns=["PV Abadi", "Nome_Contato", "Telefone_Contato", "Email_Contato"])
+
+    return (
+        pd.concat(partes, ignore_index=True, sort=False)
+        .drop_duplicates(
+            subset=["PV Abadi", "Nome_Contato", "Telefone_Contato", "Email_Contato"],
+            keep="last",
+        )
+        .reset_index(drop=True)
+    )
+
+
+def _chave_contato(pv, nome, telefone, email):
+    texto = "|".join([
+        str(pv or "").strip(),
+        str(nome or "").strip().lower(),
+        str(telefone or "").strip().lower(),
+        str(email or "").strip().lower(),
+    ])
+    return hashlib.sha256(texto.encode("utf-8")).hexdigest()
+
+
+def _upsert_contatos_supabase(df_contatos, tamanho_lote=500):
+    if df_contatos is None or df_contatos.empty:
+        return 0
+
+    registros = []
+    for _, row in df_contatos.iterrows():
+        pv = row.get("PV Abadi")
+        if not _valor_preenchido(pv):
+            continue
+
+        try:
+            pv_txt = str(int(float(pv)))
+        except Exception:
+            pv_txt = str(pv).strip()
+
+        nome = _valor_json_seguro(row.get("Nome_Contato"))
+        telefone = _valor_json_seguro(row.get("Telefone_Contato"))
+        email = _valor_json_seguro(row.get("Email_Contato"))
+
+        if not any(_valor_preenchido(v) for v in [nome, telefone, email]):
+            continue
+
+        registros.append({
+            "pv_abadi": pv_txt,
+            "nome_contato": None if not _valor_preenchido(nome) else str(nome),
+            "telefone": None if not _valor_preenchido(telefone) else str(telefone),
+            "email": None if not _valor_preenchido(email) else str(email),
+            "origem": "importador_inteligente",
+            "dedupe_key": _chave_contato(pv_txt, nome, telefone, email),
+            "raw_data": {},
+        })
+
+    client = _supabase_client()
+    total = 0
+    for inicio in range(0, len(registros), tamanho_lote):
+        lote = registros[inicio:inicio + tamanho_lote]
+        if not lote:
+            continue
+        (
+            client.table("crm_contatos")
+            .upsert(lote, on_conflict="dedupe_key")
+            .execute()
+        )
+        total += len(lote)
+    return total
+
+
+def _contar_contatos_supabase():
+    """Conta contatos únicos persistidos. Falha silenciosamente para não derrubar dashboard."""
+    try:
+        resposta = (
+            _supabase_client()
+            .table("crm_contatos")
+            .select("id", count="exact")
+            .limit(1)
+            .execute()
+        )
+        return int(resposta.count or 0)
+    except Exception:
+        return 0
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def _geocodificar_municipio(municipio, uf):
+    """
+    Geocodificação sob demanda da cidade do posto.
+    Uma consulta por município/UF fica em cache por 24 horas.
+    """
+    municipio = str(municipio or "").strip()
+    uf = str(uf or "").strip()
+    if not municipio:
+        return None, None
+
+    try:
+        resposta = requests.get(
+            "https://nominatim.openstreetmap.org/search",
+            params={
+                "city": municipio,
+                "state": uf,
+                "country": "Brazil",
+                "format": "jsonv2",
+                "limit": 1,
+            },
+            headers={
+                "User-Agent": "crm-ampm-operacional/1.0 (geocodificacao de municipios)"
+            },
+            timeout=8,
+        )
+        resposta.raise_for_status()
+        dados = resposta.json()
+        if dados:
+            return float(dados[0]["lat"]), float(dados[0]["lon"])
+    except Exception:
+        pass
+
+    # Fallback com consulta livre, útil quando o município está sem acentos.
+    try:
+        resposta = requests.get(
+            "https://nominatim.openstreetmap.org/search",
+            params={
+                "q": f"{municipio}, {uf}, Brasil",
+                "format": "jsonv2",
+                "limit": 1,
+            },
+            headers={
+                "User-Agent": "crm-ampm-operacional/1.0 (geocodificacao de municipios)"
+            },
+            timeout=8,
+        )
+        resposta.raise_for_status()
+        dados = resposta.json()
+        if dados:
+            return float(dados[0]["lat"]), float(dados[0]["lon"])
+    except Exception:
+        pass
+
+    return None, None
+
+
+def _haversine_km(lat1, lon1, lat2, lon2):
+    import math
+    r = 6371.0088
+    p1 = math.radians(float(lat1))
+    p2 = math.radians(float(lat2))
+    dp = math.radians(float(lat2) - float(lat1))
+    dl = math.radians(float(lon2) - float(lon1))
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+def _top_instrutores_proximos(posto, df_instrutores, limite=3):
+    if posto is None or df_instrutores is None or df_instrutores.empty:
+        return pd.DataFrame()
+
+    municipio = posto.get("Municipio")
+    uf_loja = posto.get("UF")
+    lat_loja, lon_loja = _geocodificar_municipio(municipio, uf_loja)
+
+    if lat_loja is None or lon_loja is None:
+        return pd.DataFrame()
+
+    instr = df_instrutores.copy()
+
+    # Somente instrutores atualmente ativos.
+    status_col = "STATUS" if "STATUS" in instr.columns else ("status" if "status" in instr.columns else None)
+    if status_col:
+        mask_ativos = instr[status_col].astype(str).str.strip().str.lower().isin(
+            ["ativo", "ativa", "em atividade", "active", "sim"]
+        )
+        instr = instr[mask_ativos].copy()
+
+    candidatos = []
+    for _, row in instr.iterrows():
+        nome = (
+            row.get("NOME_COMPLETO")
+            or row.get("Nome Completo")
+            or row.get("nome_completo")
+            or row.get("nome")
+        )
+        cidade = row.get("Cidade") or row.get("cidade")
+        uf = row.get("UF") or row.get("uf")
+
+        lat = row.get("lat")
+        lon = row.get("lon")
+        if not _valor_preenchido(lat):
+            lat = row.get("Latitude")
+        if not _valor_preenchido(lon):
+            lon = row.get("Longitude")
+
+        if not (_valor_preenchido(nome) and _valor_preenchido(lat) and _valor_preenchido(lon)):
+            continue
+
+        try:
+            dist = _haversine_km(lat_loja, lon_loja, float(lat), float(lon))
+        except Exception:
+            continue
+
+        candidatos.append({
+            "PV_ABADI": posto.get("PV Abadi"),
+            "Razao_Social": posto.get("Razão Social"),
+            "Municipio_Loja": municipio,
+            "UF_Loja": uf_loja,
+            "Lat_Loja": lat_loja,
+            "Lon_Loja": lon_loja,
+            "Instrutor_Sugerido": str(nome),
+            "Cidade_Instrutor": cidade,
+            "UF_Instrutor": uf,
+            "Lat_Instrutor": float(lat),
+            "Lon_Instrutor": float(lon),
+            "Distancia_km_linha_reta": float(dist),
+        })
+
+    if not candidatos:
+        return pd.DataFrame()
+
+    resultado = pd.DataFrame(candidatos).sort_values(
+        "Distancia_km_linha_reta"
+    ).head(int(limite)).reset_index(drop=True)
+    resultado["Ranking_Proximidade"] = range(1, len(resultado) + 1)
+    return resultado
+
 def salvar_bases_combinadas_no_disco(bases, caminho=CAMINHO_ARQUIVO):
     """
     Compatibilidade com o código legado: o nome da função foi mantido,
@@ -2795,8 +3074,13 @@ def render_importador_inteligente():
     assinatura = _fingerprint_upload(conteudo) if "_fingerprint_upload" in globals() else str(len(conteudo))
 
     try:
+        contatos_novos = pd.DataFrame(
+            columns=["PV Abadi", "Nome_Contato", "Telefone_Contato", "Email_Contato"]
+        )
+
         if arquivo.name.lower().endswith(".csv"):
             df_csv = _ler_csv_flexivel(arquivo)
+            contatos_novos = _extrair_contatos_dataframe(df_csv)
 
             candidatos = []
             for entidade, definicao in ENTIDADES.items():
@@ -2847,6 +3131,7 @@ def render_importador_inteligente():
 
         else:
             xls = _abrir_excel_resiliente(conteudo)
+            contatos_novos = _extrair_contatos_workbook(xls)
             bases_novas, relatorio = _processar_excelfile(
                 xls,
                 exigir_lojas=False
@@ -2925,6 +3210,8 @@ def render_importador_inteligente():
                     bases_novas
                 )
 
+                contatos_gravados = _upsert_contatos_supabase(contatos_novos)
+
                 if not entidades_salvas:
                     raise RuntimeError(
                         "Nenhuma entidade com dados foi encontrada para gravar."
@@ -2977,10 +3264,16 @@ def render_importador_inteligente():
                 st.session_state["fonte_dados"] = "Supabase"
 
                 st.success("✅ Importação gravada e conferida diretamente no Supabase.")
+                total_contatos_db = _contar_contatos_supabase()
                 st.info(
-                    f"🗄️ Banco central: {total_db:,} lojas · "
-                    f"CNPJ: {cnpj_db:,} · Telefones: {tel_db:,} · "
-                    f"E-mails: {email_db:,} · Contatos: {contato_db:,}"
+                    f"🗄️ Banco central: {total_db:,} lojas únicas · "
+                    f"CNPJ: {cnpj_db:,} · Telefones principais: {tel_db:,} · "
+                    f"E-mails principais: {email_db:,} · "
+                    f"Contatos únicos: {total_contatos_db:,}"
+                )
+                st.caption(
+                    f"Linhas de contato reconhecidas neste arquivo: {len(contatos_novos):,} · "
+                    f"enviadas ao Supabase nesta operação: {contatos_gravados:,}"
                 )
                 st.caption(
                     f"Entidades gravadas: {', '.join(entidades_salvas)} · "
@@ -3127,9 +3420,9 @@ elif modulo == "📊 Dashboard Executivo":
         with c1:
             st.markdown(f"""
                 <div class="kpi-card">
-                    <div class="kpi-header"><span class="kpi-title">Rede Filtrada</span><span class="kpi-icon-circle">🏪</span></div>
+                    <div class="kpi-header"><span class="kpi-title">Lojas Únicas</span><span class="kpi-icon-circle">🏪</span></div>
                     <div class="kpi-value">{len(df_base)}</div>
-                    <div class="kpi-footer">unidades na seleção</div>
+                    <div class="kpi-footer">PVs únicos na base central</div>
                 </div>
             """, unsafe_allow_html=True)
         with c2:
@@ -3159,6 +3452,12 @@ elif modulo == "📊 Dashboard Executivo":
                     <div class="kpi-footer">com previsão de abertura</div>
                 </div>
             """, unsafe_allow_html=True)
+
+        total_contatos_central = _contar_contatos_supabase()
+        st.caption(
+            f"📇 Contatos únicos preservados separadamente: {total_contatos_central:,}. "
+            "Uma loja pode possuir mais de um contato; por isso o total de contatos pode ser maior que o total de PVs."
+        )
 
         st.divider()
         col_A, col_B = st.columns(2)
@@ -3404,305 +3703,223 @@ elif modulo == "📍 Calculadora & Otimizador de Custos":
     render_section_header(
         "📍",
         "Calculadora & Otimizador de Custos",
-        "Simulação de rotas, custos estimados e comparação entre instrutores"
+        "Top 3 instrutores ativos por proximidade e simulação de custos"
     )
 
-    if not df_rec.empty:
-        df_rec_filtrado = df_rec.copy()
-        if filtro_uf != "Todas" and 'UF_Loja' in df_rec_filtrado.columns:
-            df_rec_filtrado = df_rec_filtrado[df_rec_filtrado['UF_Loja'] == filtro_uf]
+    if df_lojas is None or df_lojas.empty:
+        st.info("📭 Nenhuma loja disponível na base central.")
+    elif df_instrutores is None or df_instrutores.empty:
+        st.info("📭 Nenhum instrutor disponível na base central.")
+    else:
+        lojas_calc = df_lojas.copy()
 
-        postos_unicos = df_rec_filtrado[
-            ['PV_ABADI', 'Razao_Social', 'Municipio_Loja', 'UF_Loja']
-        ].drop_duplicates()
+        if filtro_uf != "Todas" and "UF" in lojas_calc.columns:
+            lojas_calc = lojas_calc[lojas_calc["UF"] == filtro_uf].copy()
 
-        if not postos_unicos.empty:
-            postos_unicos['label'] = (
-                postos_unicos['PV_ABADI'].astype(str)
-                + " - " + postos_unicos['Razao_Social'].astype(str)
-                + " (" + postos_unicos['Municipio_Loja'].astype(str)
-                + "/" + postos_unicos['UF_Loja'].astype(str) + ")"
+        cols_postos = [
+            c for c in ["PV Abadi", "Razão Social", "Municipio", "UF"]
+            if c in lojas_calc.columns
+        ]
+        postos_unicos = lojas_calc[cols_postos].drop_duplicates(subset=["PV Abadi"])
+
+        if postos_unicos.empty:
+            st.info("📭 Nenhum posto disponível para cálculo.")
+        else:
+            postos_unicos["label"] = (
+                postos_unicos["PV Abadi"].astype(str)
+                + " - "
+                + postos_unicos.get("Razão Social", pd.Series("", index=postos_unicos.index)).fillna("").astype(str)
+                + " ("
+                + postos_unicos.get("Municipio", pd.Series("", index=postos_unicos.index)).fillna("").astype(str)
+                + "/"
+                + postos_unicos.get("UF", pd.Series("", index=postos_unicos.index)).fillna("").astype(str)
+                + ")"
             )
 
             posto_sel = st.selectbox(
                 "⛽ Selecione o Posto Alvo:",
-                postos_unicos['label'].tolist()
+                postos_unicos["label"].tolist()
             )
-            pv_sel = int(posto_sel.split(" - ")[0])
+            pv_txt = posto_sel.split(" - ")[0].strip()
 
-            top_3 = (
-                df_rec_filtrado[df_rec_filtrado['PV_ABADI'] == pv_sel]
-                .sort_values(by='Ranking_Proximidade')
-                .head(3)
-            )
+            posto_match = lojas_calc[
+                lojas_calc["PV Abadi"].astype(str).str.replace(".0", "", regex=False) == pv_txt
+            ]
+            if posto_match.empty:
+                st.warning("Não foi possível localizar o PV selecionado.")
+            else:
+                posto = posto_match.iloc[0].to_dict()
 
-            if not top_3.empty:
-                primeira = top_3.iloc[0]
-
-                # Mapa continua mostrando o instrutor mais próximo.
-                if (
-                    pd.notna(primeira.get('Lat_Loja'))
-                    and pd.notna(primeira.get('Lon_Loja'))
-                    and pd.notna(primeira.get('Lat_Instrutor'))
-                    and pd.notna(primeira.get('Lon_Instrutor'))
-                ):
-                    p_lat, p_lon = float(primeira['Lat_Loja']), float(primeira['Lon_Loja'])
-                    i_lat, i_lon = float(primeira['Lat_Instrutor']), float(primeira['Lon_Instrutor'])
-
-                    df_mapa_pontos = pd.DataFrame([
-                        {
-                            "name": f"Posto {primeira['PV_ABADI']}",
-                            "lat": p_lat,
-                            "lon": p_lon,
-                            "color": [226, 123, 0, 220]
-                        },
-                        {
-                            "name": f"Instrutor {primeira['Instrutor_Sugerido']}",
-                            "lat": i_lat,
-                            "lon": i_lon,
-                            "color": [76, 175, 80, 220]
-                        }
-                    ])
-                    df_mapa_arco = pd.DataFrame([{
-                        "from_lat": i_lat,
-                        "from_lon": i_lon,
-                        "to_lat": p_lat,
-                        "to_lon": p_lon
-                    }])
-
-                    layer_pontos = pdk.Layer(
-                        "ScatterplotLayer",
-                        df_mapa_pontos,
-                        get_position="[lon, lat]",
-                        get_color="color",
-                        get_radius=20000,
-                        pickable=True
+                with st.spinner("Calculando os instrutores ativos mais próximos..."):
+                    top_3 = _top_instrutores_proximos(
+                        posto,
+                        df_instrutores,
+                        limite=3
                     )
-                    layer_arco = pdk.Layer(
-                        "ArcLayer",
-                        df_mapa_arco,
-                        get_source_position="[from_lon, from_lat]",
-                        get_target_position="[to_lon, to_lat]",
-                        get_source_color=[76, 175, 80, 180],
-                        get_target_color=[226, 123, 0, 180],
-                        get_width=4
+
+                if top_3.empty:
+                    st.warning(
+                        "Não foi possível calcular a proximidade deste posto. "
+                        "Verifique Município/UF da loja e a localização dos instrutores."
                     )
-                    view_state = pdk.ViewState(
-                        latitude=(p_lat + i_lat) / 2,
-                        longitude=(p_lon + i_lon) / 2,
-                        zoom=5,
-                        pitch=40
+                else:
+                    st.success(
+                        f"✅ {len(top_3)} instrutor(es) ativo(s) mais próximo(s) calculado(s) em tempo real."
                     )
-                    st.pydeck_chart(
-                        pdk.Deck(
-                            layers=[layer_pontos, layer_arco],
-                            initial_view_state=view_state,
-                            tooltip={"text": "{name}"}
+
+                    primeira = top_3.iloc[0]
+
+                    if all(
+                        _valor_preenchido(primeira.get(c))
+                        for c in ["Lat_Loja", "Lon_Loja", "Lat_Instrutor", "Lon_Instrutor"]
+                    ):
+                        p_lat = float(primeira["Lat_Loja"])
+                        p_lon = float(primeira["Lon_Loja"])
+                        i_lat = float(primeira["Lat_Instrutor"])
+                        i_lon = float(primeira["Lon_Instrutor"])
+
+                        df_mapa_pontos = pd.DataFrame([
+                            {"name": f"Posto {primeira['PV_ABADI']}", "lat": p_lat, "lon": p_lon},
+                            {"name": f"Instrutor {primeira['Instrutor_Sugerido']}", "lat": i_lat, "lon": i_lon},
+                        ])
+                        df_mapa_arco = pd.DataFrame([{
+                            "from_lat": i_lat,
+                            "from_lon": i_lon,
+                            "to_lat": p_lat,
+                            "to_lon": p_lon,
+                        }])
+
+                        layer_pontos = pdk.Layer(
+                            "ScatterplotLayer",
+                            df_mapa_pontos,
+                            get_position="[lon, lat]",
+                            get_radius=18000,
+                            pickable=True
                         )
+                        layer_arco = pdk.Layer(
+                            "ArcLayer",
+                            df_mapa_arco,
+                            get_source_position="[from_lon, from_lat]",
+                            get_target_position="[to_lon, to_lat]",
+                            get_width=4
+                        )
+                        st.pydeck_chart(
+                            pdk.Deck(
+                                layers=[layer_pontos, layer_arco],
+                                initial_view_state=pdk.ViewState(
+                                    latitude=(p_lat + i_lat) / 2,
+                                    longitude=(p_lon + i_lon) / 2,
+                                    zoom=5,
+                                    pitch=35
+                                ),
+                                tooltip={"text": "{name}"}
+                            )
+                        )
+
+                    st.markdown("### 💰 Composição estimada de custos")
+                    st.caption(
+                        "Os três candidatos abaixo são ordenados pela distância em linha reta. "
+                        "Agenda e disponibilidade continuam podendo alterar a escolha final."
                     )
 
-                st.markdown("### 💰 Composição estimada de custos")
-                st.caption(
-                    "Os valores abaixo são estimativas e podem ser alterados para cada instrutor. "
-                    "As caixas de seleção definem quais custos entram no cálculo."
-                )
+                    resultados_custos = []
+                    cols = st.columns(len(top_3))
 
-                # Valores iniciais de referência. Não são valores fixos da empresa.
-                # No futuro poderão ser substituídos por uma tabela de valores fixos.
-                st.markdown(
-                    "**Valores iniciais de referência:** "
-                    "diária R$ 280/dia · hospedagem R$ 250/dia · carro R$ 180/dia · "
-                    "rodoviário calculado pela distância · avião R$ 800/deslocamento · "
-                    "treinamento R$ 280/dia."
-                )
+                    for idx, (_, row) in enumerate(top_3.iterrows()):
+                        nome_instrutor = str(row.get("Instrutor_Sugerido", "Instrutor"))
+                        dist = float(row.get("Distancia_km_linha_reta", 0) or 0)
 
-                resultados_custos = []
-
-                col1, col2, col3 = st.columns(3)
-                cols = [col1, col2, col3]
-
-                for idx, (_, row) in enumerate(top_3.iterrows()):
-                    nome_instrutor = str(row.get('Instrutor_Sugerido', 'Instrutor não informado'))
-                    dist = float(row.get('Distancia_km_linha_reta', 0) or 0)
-
-                    try:
-                        dias_base = float(row.get('Dias_Treinamento_Necessarios', 1) or 1)
-                    except (TypeError, ValueError):
-                        dias_base = 1.0
-                    dias_base = max(0.5, dias_base)
-
-                    # Cada instrutor possui suas próprias flags e valores.
-                    with cols[idx]:
-                        st.markdown(
-                            f"""
-                            <div class="top-instructor-card">
-                                <h4>#{idx+1} {nome_instrutor}</h4>
+                        with cols[idx]:
+                            st.markdown(
+                                f"""<div class="top-instructor-card">
+                                <h4>#{idx + 1} {nome_instrutor}</h4>
                                 <p>Origem: {row.get('Cidade_Instrutor', '-')} / {row.get('UF_Instrutor', '-')}</p>
-                                <p>Distância: {dist:.1f} km</p>
-                            </div>
-                            """,
-                            unsafe_allow_html=True
-                        )
-
-                        with st.expander("⚙️ Configurar custos deste instrutor", expanded=True):
-                            dias = st.number_input(
-                                "📅 Dias de treinamento",
-                                min_value=0.5,
-                                value=float(dias_base),
-                                step=0.5,
-                                key=f"custos_dias_{pv_sel}_{idx}"
+                                <p>Distância estimada: {dist:.1f} km</p>
+                                </div>""",
+                                unsafe_allow_html=True
                             )
 
-                            st.markdown("**Selecione os custos que serão considerados:**")
-
-                            usar_diaria = st.checkbox(
-                                "☑ Diárias",
-                                value=True,
-                                key=f"usar_diaria_{pv_sel}_{idx}"
-                            )
-                            valor_diaria = st.number_input(
-                                "Valor da diária (R$/dia)",
-                                min_value=0.0,
-                                value=280.0,
-                                step=10.0,
-                                key=f"valor_diaria_{pv_sel}_{idx}"
-                            )
-
-                            usar_hospedagem = st.checkbox(
-                                "☑ Hospedagem",
-                                value=True,
-                                key=f"usar_hospedagem_{pv_sel}_{idx}"
-                            )
-                            valor_hospedagem = st.number_input(
-                                "Hospedagem (R$/dia)",
-                                min_value=0.0,
-                                value=250.0,
-                                step=10.0,
-                                key=f"valor_hospedagem_{pv_sel}_{idx}"
-                            )
-
-                            usar_carro = st.checkbox(
-                                "☑ Aluguel de carro",
-                                value=False,
-                                key=f"usar_carro_{pv_sel}_{idx}"
-                            )
-                            valor_carro = st.number_input(
-                                "Aluguel de carro (R$/dia)",
-                                min_value=0.0,
-                                value=180.0,
-                                step=10.0,
-                                key=f"valor_carro_{pv_sel}_{idx}"
-                            )
-
-                            usar_rodoviario = st.checkbox(
-                                "☐ Deslocamento rodoviário",
-                                value=False,
-                                key=f"usar_rodoviario_{pv_sel}_{idx}"
-                            )
-                            valor_rodoviario = st.number_input(
-                                "Deslocamento rodoviário (R$/viagem)",
-                                min_value=0.0,
-                                value=float(max(0.0, dist * 2 * 2.10)),
-                                step=10.0,
-                                key=f"valor_rodoviario_{pv_sel}_{idx}"
-                            )
-
-                            usar_aviao = st.checkbox(
-                                "☐ Deslocamento de avião",
-                                value=False,
-                                key=f"usar_aviao_{pv_sel}_{idx}"
-                            )
-                            valor_aviao = st.number_input(
-                                "Deslocamento de avião (R$/viagem)",
-                                min_value=0.0,
-                                value=800.0,
-                                step=50.0,
-                                key=f"valor_aviao_{pv_sel}_{idx}"
-                            )
-
-                            usar_treinamento = st.checkbox(
-                                "☑ Valor do treinamento",
-                                value=True,
-                                key=f"usar_treinamento_{pv_sel}_{idx}"
-                            )
-                            valor_treinamento = st.number_input(
-                                "Valor do treinamento (R$/dia)",
-                                min_value=0.0,
-                                value=280.0,
-                                step=10.0,
-                                key=f"valor_treinamento_{pv_sel}_{idx}"
-                            )
-
-                            subtotal_diaria = valor_diaria * dias if usar_diaria else 0.0
-                            subtotal_hospedagem = valor_hospedagem * dias if usar_hospedagem else 0.0
-                            subtotal_carro = valor_carro * dias if usar_carro else 0.0
-                            subtotal_rodoviario = valor_rodoviario if usar_rodoviario else 0.0
-                            subtotal_aviao = valor_aviao if usar_aviao else 0.0
-                            subtotal_treinamento = valor_treinamento * dias if usar_treinamento else 0.0
-
-                            custo_total = (
-                                subtotal_diaria
-                                + subtotal_hospedagem
-                                + subtotal_carro
-                                + subtotal_rodoviario
-                                + subtotal_aviao
-                                + subtotal_treinamento
-                            )
-
-                            if usar_rodoviario and usar_aviao:
-                                st.warning(
-                                    "⚠️ Rodoviário e avião estão selecionados ao mesmo tempo. "
-                                    "O sistema soma os dois. Se for uma alternativa de transporte, "
-                                    "desmarque um deles."
+                            with st.expander("⚙️ Configurar custos", expanded=True):
+                                dias = st.number_input(
+                                    "📅 Dias de treinamento",
+                                    min_value=0.5,
+                                    value=1.0,
+                                    step=0.5,
+                                    key=f"v35_dias_{pv_txt}_{idx}"
                                 )
 
-                            st.markdown("**Resumo deste instrutor**")
-                            st.write(f"Diárias: R$ {subtotal_diaria:,.2f}")
-                            st.write(f"Hospedagem: R$ {subtotal_hospedagem:,.2f}")
-                            st.write(f"Carro: R$ {subtotal_carro:,.2f}")
-                            st.write(f"Rodoviário: R$ {subtotal_rodoviario:,.2f}")
-                            st.write(f"Avião: R$ {subtotal_aviao:,.2f}")
-                            st.write(f"Treinamento: R$ {subtotal_treinamento:,.2f}")
-                            st.metric("💰 Custo total estimado", f"R$ {custo_total:,.2f}")
+                                usar_diaria = st.checkbox("Diárias", True, key=f"v35_diaria_{pv_txt}_{idx}")
+                                valor_diaria = st.number_input(
+                                    "Diária (R$/dia)", min_value=0.0, value=280.0, step=10.0,
+                                    key=f"v35_vdiaria_{pv_txt}_{idx}"
+                                )
 
-                            resultados_custos.append({
-                                "Instrutor": nome_instrutor,
-                                "Dias": dias,
-                                "Diárias": subtotal_diaria,
-                                "Hospedagem": subtotal_hospedagem,
-                                "Carro": subtotal_carro,
-                                "Rodoviário": subtotal_rodoviario,
-                                "Avião": subtotal_aviao,
-                                "Treinamento": subtotal_treinamento,
-                                "Total Estimado": custo_total,
-                            })
+                                usar_hosp = st.checkbox("Hospedagem", True, key=f"v35_hosp_{pv_txt}_{idx}")
+                                valor_hosp = st.number_input(
+                                    "Hospedagem (R$/dia)", min_value=0.0, value=250.0, step=10.0,
+                                    key=f"v35_vhosp_{pv_txt}_{idx}"
+                                )
 
-                if resultados_custos:
-                    st.divider()
-                    st.markdown("### 📊 Comparativo dos instrutores sugeridos")
-                    df_custos = pd.DataFrame(resultados_custos).sort_values(
-                        "Total Estimado", ascending=True
-                    )
-                    st.dataframe(
-                        df_custos,
-                        use_container_width=True,
-                        hide_index=True,
-                        column_config={
-                            "Diárias": st.column_config.NumberColumn("Diárias", format="R$ %.2f"),
-                            "Hospedagem": st.column_config.NumberColumn("Hospedagem", format="R$ %.2f"),
-                            "Carro": st.column_config.NumberColumn("Carro", format="R$ %.2f"),
-                            "Rodoviário": st.column_config.NumberColumn("Rodoviário", format="R$ %.2f"),
-                            "Avião": st.column_config.NumberColumn("Avião", format="R$ %.2f"),
-                            "Treinamento": st.column_config.NumberColumn("Treinamento", format="R$ %.2f"),
-                            "Total Estimado": st.column_config.NumberColumn("Total Estimado", format="R$ %.2f"),
-                        }
-                    )
+                                usar_carro = st.checkbox("Aluguel de carro", False, key=f"v35_carro_{pv_txt}_{idx}")
+                                valor_carro = st.number_input(
+                                    "Carro (R$/dia)", min_value=0.0, value=180.0, step=10.0,
+                                    key=f"v35_vcarro_{pv_txt}_{idx}"
+                                )
 
-                    melhor = df_custos.iloc[0]
-                    st.success(
-                        f"🏆 Menor custo estimado entre os instrutores selecionados: "
-                        f"{melhor['Instrutor']} — R$ {melhor['Total Estimado']:,.2f}"
-                    )
+                                usar_rod = st.checkbox("Deslocamento rodoviário", False, key=f"v35_rod_{pv_txt}_{idx}")
+                                valor_rod = st.number_input(
+                                    "Rodoviário (R$/viagem)",
+                                    min_value=0.0,
+                                    value=float(max(0.0, dist * 2 * 2.10)),
+                                    step=10.0,
+                                    key=f"v35_vrod_{pv_txt}_{idx}"
+                                )
+
+                                usar_aviao = st.checkbox("Deslocamento de avião", False, key=f"v35_aviao_{pv_txt}_{idx}")
+                                valor_aviao = st.number_input(
+                                    "Avião (R$/viagem)", min_value=0.0, value=800.0, step=50.0,
+                                    key=f"v35_vaviao_{pv_txt}_{idx}"
+                                )
+
+                                usar_treino = st.checkbox("Valor do treinamento", True, key=f"v35_treino_{pv_txt}_{idx}")
+                                valor_treino = st.number_input(
+                                    "Treinamento (R$/dia)", min_value=0.0, value=280.0, step=10.0,
+                                    key=f"v35_vtreino_{pv_txt}_{idx}"
+                                )
+
+                                total = (
+                                    (valor_diaria * dias if usar_diaria else 0)
+                                    + (valor_hosp * dias if usar_hosp else 0)
+                                    + (valor_carro * dias if usar_carro else 0)
+                                    + (valor_rod if usar_rod else 0)
+                                    + (valor_aviao if usar_aviao else 0)
+                                    + (valor_treino * dias if usar_treino else 0)
+                                )
+
+                                st.metric("💰 Total estimado", f"R$ {total:,.2f}")
+
+                                resultados_custos.append({
+                                    "Ranking": idx + 1,
+                                    "Instrutor": nome_instrutor,
+                                    "Origem": f"{row.get('Cidade_Instrutor', '-')}/{row.get('UF_Instrutor', '-')}",
+                                    "Distância (km)": dist,
+                                    "Total Estimado": total,
+                                })
+
+                    if resultados_custos:
+                        st.markdown("### 📊 Comparativo")
+                        df_comparativo = pd.DataFrame(resultados_custos).sort_values(
+                            "Total Estimado"
+                        )
+                        st.dataframe(
+                            df_comparativo,
+                            use_container_width=True,
+                            hide_index=True,
+                            column_config={
+                                "Distância (km)": st.column_config.NumberColumn(format="%.1f km"),
+                                "Total Estimado": st.column_config.NumberColumn(format="R$ %.2f"),
+                            }
+                        )
 
 elif modulo == "📥 Importador Inteligente":
     render_importador_inteligente()
