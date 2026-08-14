@@ -1344,6 +1344,9 @@ ENTIDADES = {
             "Municipio": ["municipio", "cidade", "municipio loja"],
             "UF": ["uf", "estado", "uf loja"],
             "CNPJ": ["cnpj", "cnpj loja", "documento cnpj", "cnpj da loja", "cnpj posto", "cnpj completo"],
+            "Telefone_Contato": ["telefone", "telefone contato", "telefone da loja", "telefone loja", "celular", "whatsapp", "fone", "telefone comercial"],
+            "Email_Contato": ["email", "e mail", "e-mail", "email contato", "email da loja", "email loja", "correio eletronico", "correio eletrônico"],
+            "Nome_Contato": ["nome contato", "nome do contato", "responsavel", "responsável", "responsavel loja", "responsável loja", "contato"],
             "Endereço": ["endereco", "endereco completo", "logradouro", "endereço"],
             "Status Loja": ["status loja", "status", "situacao loja", "situacao"],
             "GF": ["gf", "gerente franquia", "gerente"],
@@ -2473,6 +2476,18 @@ def _valor_historico_instrutor(posto, *campos):
             return texto
     return "Não informado"
 
+def _procv_valor_flexivel(posto, campo, aliases=()):
+    """Busca um valor no registro pelo campo canônico ou por aliases de planilhas."""
+    candidatos = [campo] + list(aliases)
+    normalizados = {_normalizar_nome(str(k)): k for k in posto.keys()}
+    for candidato in candidatos:
+        if candidato in posto and _valor_preenchido(posto.get(candidato)):
+            return posto.get(candidato)
+        chave_real = normalizados.get(_normalizar_nome(candidato))
+        if chave_real is not None and _valor_preenchido(posto.get(chave_real)):
+            return posto.get(chave_real)
+    return "Não informado"
+
 def _historico_instrutor_procv(posto):
     """Mostra o histórico do instrutor mesmo quando ele não está mais ativo."""
     treinamento = _valor_historico_instrutor(posto, "Instrutor_Treinamento", "Instrutor_Sugerido")
@@ -2729,7 +2744,7 @@ elif modulo == "🔍 PROCV Gestão e Franquia AMPM":
             ]
         if f_necessidade != "Todas" and 'Tipo_Necessidade' in df_view.columns:
             df_view = df_view[df_view['Tipo_Necessidade'] == f_necessidade]
-        cols_mostrar = [c for c in ['PV Abadi', 'Razão Social', 'CNPJ', 'Municipio', 'UF', 'Status Loja', 'Tipo_Necessidade', 'Instrutor_Treinamento', 'Instrutor_Sugerido', 'Status_Contato'] if c in df_view.columns]
+        cols_mostrar = [c for c in ['PV Abadi', 'Razão Social', 'CNPJ', 'Telefone_Contato', 'Email_Contato', 'Nome_Contato', 'Municipio', 'UF', 'Status Loja', 'Tipo_Necessidade', 'Instrutor_Treinamento', 'Instrutor_Inauguracao', 'Instrutor_Sugerido', 'Status_Contato'] if c in df_view.columns]
         evento = st.dataframe(df_view[cols_mostrar], use_container_width=True, hide_index=True, selection_mode="single-row", on_select="rerun")
         linhas = evento.selection.get("rows", [])
         if linhas:
@@ -2738,12 +2753,28 @@ elif modulo == "🔍 PROCV Gestão e Franquia AMPM":
             st.divider()
             st.markdown(f"**📋 Gestão e Franquia AMPM — PV {p.get('PV Abadi', '-')} · {p.get('Razão Social', '-')}**")
             k1, k2, k3 = st.columns(3)
+            cnpj_procv = _procv_valor_flexivel(
+                p, "CNPJ", ["CNPJ Completo", "CNPJ Loja", "CNPJ da Loja", "Documento CNPJ", "CNPJ Posto"]
+            )
+            telefone_procv = _procv_valor_flexivel(
+                p, "Telefone_Contato", ["Telefone", "Telefone da Loja", "Telefone Loja", "Celular", "WhatsApp", "Fone", "Telefone Comercial"]
+            )
+            email_procv = _procv_valor_flexivel(
+                p, "Email_Contato", ["Email", "E-mail", "E Mail", "Email da Loja", "Email Loja", "Correio Eletrônico"]
+            )
+            nome_contato_procv = _procv_valor_flexivel(
+                p, "Nome_Contato", ["Nome do Contato", "Responsável", "Responsavel", "Responsável Loja", "Contato"]
+            )
+            qtd_func_procv = _procv_valor_flexivel(
+                p, "Qtd_Funcionarios", ["Qtd Funcionários", "Quantidade de Funcionários", "Funcionários"]
+            )
+
             with k1:
-                st.markdown(f"""<div class="procv-card"><h4>🏪 Cadastro da Loja</h4><p>🧾 <b>CNPJ:</b> {p.get('CNPJ', 'Não informado')}</p><p>📍 <b>Endereço:</b> {p.get('Endereço', '-')}</p><p>🏙️ <b>Cidade/UF:</b> {p.get('Municipio', '-')}/{p.get('UF', '-')}</p><p>⚙️ <b>Status da loja:</b> {p.get('Status Loja', '-')}</p></div>""", unsafe_allow_html=True)
+                st.markdown(f"""<div class="procv-card"><h4>🏪 Cadastro da Loja</h4><p>🧾 <b>CNPJ:</b> {cnpj_procv}</p><p>📍 <b>Endereço:</b> {p.get('Endereço', '-')}</p><p>🏙️ <b>Cidade/UF:</b> {p.get('Municipio', '-')}/{p.get('UF', '-')}</p><p>⚙️ <b>Status da loja:</b> {p.get('Status Loja', '-')}</p></div>""", unsafe_allow_html=True)
             with k2:
-                st.markdown(f"""<div class="procv-card"><h4>👔 Gestão & Franquia</h4><p>👤 <b>Gerente (GF):</b> {p.get('GF', '-')}</p><p>👔 <b>Consultor (CF):</b> {p.get('CF', '-')}</p><p>📅 <b>Inauguração:</b> {p.get('Previsão Inauguração', 'N/A')}</p></div>""", unsafe_allow_html=True)
+                st.markdown(f"""<div class="procv-card"><h4>📞 Contatos da Loja</h4><p>👤 <b>Responsável:</b> {nome_contato_procv}</p><p>📞 <b>Telefone:</b> {telefone_procv}</p><p>✉️ <b>E-mail:</b> {email_procv}</p><p>👥 <b>Funcionários:</b> {qtd_func_procv}</p></div>""", unsafe_allow_html=True)
             with k3:
-                st.markdown(f"""<div class="procv-card"><h4>👨‍🏫 Histórico de Treinamento</h4><p>🎓 <b>Instrutor do treinamento:</b> {instrutor_treinamento}</p><p>🚀 <b>Instrutor da inauguração:</b> {instrutor_inauguracao}</p><p>📅 <b>Último treinamento:</b> {p.get('Data_Ultimo_Treinamento', 'Não informado')}</p><p>🎯 <b>Necessidade atual:</b> {p.get('Tipo_Necessidade', '-')}</p><p>🔄 <b>Status do atendimento:</b> {badge_status_html(p.get('Status_Contato', '-'))}</p></div>""", unsafe_allow_html=True)
+                st.markdown(f"""<div class="procv-card"><h4>👔 Gestão & Histórico</h4><p>👤 <b>Gerente (GF):</b> {p.get('GF', 'Não informado')}</p><p>👔 <b>Consultor (CF):</b> {p.get('CF', 'Não informado')}</p><p>📅 <b>Inauguração:</b> {p.get('Previsão Inauguração', 'Não informado')}</p><hr><p>🎓 <b>Instrutor do treinamento:</b> {instrutor_treinamento}</p><p>🚀 <b>Instrutor da inauguração:</b> {instrutor_inauguracao}</p><p>📅 <b>Último treinamento:</b> {p.get('Data_Ultimo_Treinamento', 'Não informado')}</p><p>🎯 <b>Necessidade atual:</b> {p.get('Tipo_Necessidade', '-')}</p><p>🔄 <b>Status do atendimento:</b> {badge_status_html(p.get('Status_Contato', '-'))}</p></div>""", unsafe_allow_html=True)
     else:
         st.info("📭 Nenhum dado carregado ainda.")
 
