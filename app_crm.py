@@ -854,6 +854,297 @@ div[data-testid="stAlert"] {
 ::-webkit-scrollbar-track { background:transparent; }
 ::-webkit-scrollbar-thumb { background:#C9CDD2; border-radius:8px; }
 ::-webkit-scrollbar-thumb:hover { background:#AEB4BA; }
+
+/* ==========================================================
+   V49 — APRESENTAÇÃO APROVADA: DASHBOARD / SISTEMA
+   ========================================================== */
+
+/* Barra superior AmPm + IGT */
+.brand-topbar {
+    margin: -0.15rem 0 1.25rem 0;
+    min-height: 82px;
+    border-radius: 0 0 26px 26px;
+    background:
+        linear-gradient(105deg, #FF3D00 0%, #FF4D00 46%, #FF8A00 61%,
+        #FFD300 72%, #FFFFFF 72.2%, #FFFFFF 100%);
+    box-shadow: 0 7px 24px rgba(26,26,26,.10);
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding: 0 28px 0 30px;
+    overflow:hidden;
+    border-bottom:1px solid #ECECEC;
+}
+.brand-top-left {
+    display:flex; align-items:center; gap:22px; color:#fff;
+}
+.ampm-wordmark {
+    color:#FFD300;
+    font-size:2.45rem;
+    font-weight:900;
+    font-style:italic;
+    letter-spacing:-.13rem;
+    line-height:1;
+    text-shadow:0 1px 1px rgba(0,0,0,.05);
+}
+.brand-divider {
+    width:1px; height:46px; background:rgba(255,255,255,.7);
+}
+.brand-product {
+    color:#fff; line-height:1.08;
+}
+.brand-product strong {
+    display:block; font-size:1.03rem; font-weight:800; letter-spacing:.02rem;
+}
+.brand-product span {
+    display:block; font-size:1.24rem; font-weight:800; margin-top:3px;
+}
+.brand-top-right {
+    display:flex; align-items:center; gap:18px;
+}
+.igt-wordmark {
+    color:#16181C; line-height:.8; text-align:center;
+    font-weight:900; font-size:2.2rem; letter-spacing:-.12rem;
+}
+.igt-wordmark small {
+    display:block; font-size:.48rem; letter-spacing:.16rem;
+    font-weight:750; margin-top:9px;
+}
+.top-user-chip {
+    background:#F5F6F8;
+    border:1px solid #ECEEF1;
+    border-radius:999px;
+    color:#181A1F;
+    padding:9px 16px;
+    font-size:.79rem;
+    font-weight:700;
+    box-shadow:0 2px 8px rgba(0,0,0,.04);
+}
+
+/* Sidebar aprovada */
+section[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #171A20 0%, #20242C 100%) !important;
+}
+section[data-testid="stSidebar"] .sidebar-brand {
+    padding: 8px 4px 14px;
+}
+.sidebar-ampm {
+    color:#FFD300 !important;
+    font-size:2.02rem;
+    font-weight:900;
+    font-style:italic;
+    letter-spacing:-.11rem;
+}
+.sidebar-igt {
+    margin-top:20px;
+    padding:18px 14px;
+    border-top:1px solid rgba(255,255,255,.12);
+    color:#fff;
+}
+.sidebar-igt-logo {
+    font-size:2rem; font-weight:900; letter-spacing:-.08rem;
+    line-height:1; color:#fff;
+}
+.sidebar-igt-logo span {
+    font-size:.67rem; letter-spacing:.10rem; font-weight:650;
+}
+.sidebar-igt p {
+    font-size:.72rem !important;
+    color:#C8CCD3 !important;
+    line-height:1.45;
+    margin:.75rem 0 0;
+}
+
+/* Dashboard */
+.dashboard-title {
+    display:flex; align-items:center; gap:13px; margin: 3px 0 5px;
+}
+.dashboard-title-icon {
+    width:44px; height:44px; border-radius:12px;
+    display:flex; align-items:center; justify-content:center;
+    background:linear-gradient(135deg,#FF4D00,#FFD300);
+    color:#fff; font-size:1.25rem;
+    box-shadow:0 5px 14px rgba(255,77,0,.18);
+}
+.dashboard-title h1 {
+    margin:0; font-size:1.75rem; font-weight:850; color:#17191E;
+}
+.dashboard-subtitle {
+    color:#686D75; margin:0 0 17px 57px; font-size:.88rem;
+}
+
+.dashboard-kpi {
+    background:#fff;
+    border:1px solid #E7E9ED;
+    border-radius:17px;
+    padding:17px 17px 15px;
+    min-height:120px;
+    box-shadow:0 4px 14px rgba(23,25,30,.055);
+}
+.dashboard-kpi-top {
+    display:flex; align-items:center; gap:10px;
+}
+.dashboard-kpi-icon {
+    width:39px; height:39px; border-radius:11px;
+    display:flex; align-items:center; justify-content:center;
+    color:#fff; font-size:1.05rem; font-weight:800;
+}
+.dk-orange { background:linear-gradient(135deg,#FF3D00,#FF7200); }
+.dk-yellow { background:linear-gradient(135deg,#FFB800,#FFD300); color:#222; }
+.dk-blue { background:linear-gradient(135deg,#0D47A1,#1976D2); }
+.dk-cyan { background:linear-gradient(135deg,#25AFC5,#64D3E3); }
+.dk-purple { background:linear-gradient(135deg,#6F31D7,#A742F4); }
+.dashboard-kpi-label {
+    color:#333840; font-size:.66rem; text-transform:uppercase;
+    font-weight:800; letter-spacing:.035rem; line-height:1.25;
+}
+.dashboard-kpi-value {
+    font-family:'JetBrains Mono', monospace;
+    font-size:1.67rem; font-weight:800; color:#15171B;
+    margin:9px 0 2px;
+}
+.dashboard-kpi-note {
+    font-size:.68rem; color:#777C84; margin-left:49px;
+}
+
+.dashboard-panel {
+    background:#fff;
+    border:1px solid #E6E8EC;
+    border-radius:18px;
+    padding:17px 18px;
+    box-shadow:0 4px 15px rgba(23,25,30,.05);
+    height:100%;
+}
+.dashboard-panel-title {
+    font-size:.94rem; font-weight:800; color:#20232A;
+    margin-bottom:14px;
+}
+.dashboard-panel-link {
+    color:#FF4D00; text-align:center; font-size:.72rem;
+    font-weight:750; margin-top:12px;
+}
+.dashboard-mini-row {
+    padding:10px 2px;
+    display:flex; align-items:center; justify-content:space-between;
+    border-bottom:1px solid #F0F1F3;
+    gap:8px;
+}
+.dashboard-mini-row:last-child { border-bottom:none; }
+.dashboard-mini-main { font-size:.76rem; font-weight:700; color:#24272D; }
+.dashboard-mini-sub { font-size:.66rem; color:#757B84; margin-top:2px; }
+.dashboard-mini-badge {
+    width:30px; height:30px; border-radius:9px;
+    display:flex; align-items:center; justify-content:center;
+    background:#FFF0E9;
+}
+.dashboard-model-row {
+    display:grid; grid-template-columns:90px 1fr 45px;
+    gap:10px; align-items:center; margin:17px 0;
+    font-size:.77rem; color:#2C3036;
+}
+.dashboard-progress {
+    height:12px; background:#ECEFF2; border-radius:999px; overflow:hidden;
+}
+.dashboard-progress > span {
+    display:block; height:100%; border-radius:999px;
+}
+.dashboard-pipeline-strip {
+    display:grid;
+    grid-template-columns:repeat(6,minmax(90px,1fr));
+    gap:8px;
+}
+.pipeline-stat {
+    border-radius:13px;
+    padding:11px 8px;
+    text-align:center;
+    font-size:.67rem;
+    line-height:1.2;
+}
+.pipeline-stat strong {
+    display:block; font-size:1.25rem; color:#181A1F; margin-top:4px;
+}
+.ps-blue {background:#E8F1FF;color:#0D47A1}
+.ps-yellow {background:#FFF5CF;color:#8D6A00}
+.ps-orange {background:#FFE6D9;color:#D94700}
+.ps-green {background:#DCF6E7;color:#087A3D}
+.ps-gray {background:#EEF0F2;color:#5F6368}
+.ps-red {background:#FDE7E4;color:#B3261E}
+
+.donut-wrap {
+    display:flex; align-items:center; gap:22px; min-height:180px;
+}
+.dashboard-donut {
+    width:150px; height:150px; min-width:150px;
+    border-radius:50%;
+    position:relative;
+}
+.dashboard-donut::after {
+    content:"";
+    position:absolute; inset:34px;
+    background:#fff; border-radius:50%;
+    box-shadow:inset 0 0 0 1px #ECEEF1;
+}
+.donut-center {
+    position:absolute; inset:0; z-index:2;
+    display:flex; align-items:center; justify-content:center;
+    flex-direction:column; pointer-events:none;
+}
+.donut-center strong { font-size:1.3rem; color:#202329; }
+.donut-center span { font-size:.62rem; color:#777D85; }
+.donut-legend { flex:1; }
+.donut-legend-row {
+    display:grid; grid-template-columns:10px 1fr auto;
+    gap:8px; align-items:center; margin:7px 0;
+    font-size:.69rem;
+}
+.legend-dot { width:9px; height:9px; border-radius:50%; }
+
+.dashboard-html-table {
+    width:100%; border-collapse:separate; border-spacing:0;
+    font-size:.69rem;
+    overflow:hidden; border-radius:10px;
+    border:1px solid #ECEEF1;
+}
+.dashboard-html-table th {
+    background:linear-gradient(90deg,#FF4D00,#FF7200);
+    color:#fff; padding:8px 9px; text-align:left; font-weight:750;
+}
+.dashboard-html-table td {
+    padding:8px 9px; border-top:1px solid #EEF0F2; color:#34383F;
+}
+.dashboard-html-table tr:nth-child(even) td { background:#FCFCFD; }
+
+.quick-actions-grid {
+    display:grid; grid-template-columns:repeat(6,1fr);
+    gap:11px;
+}
+.quick-action-card {
+    min-height:66px;
+    border-radius:13px;
+    border:1px solid #E6E8EC;
+    background:#fff;
+    box-shadow:0 3px 10px rgba(0,0,0,.04);
+    display:flex; align-items:center; justify-content:center;
+    gap:9px; padding:9px;
+    font-size:.72rem; font-weight:700; color:#24272D;
+}
+.quick-action-card span { font-size:1.2rem; }
+
+/* Deixa os controles superiores com aparência do mockup */
+div[data-baseweb="select"] > div,
+.stDateInput input,
+.stTextInput input {
+    min-height:40px;
+    border-radius:10px !important;
+}
+
+/* responsivo */
+@media (max-width: 1100px) {
+    .brand-topbar { padding:0 15px; }
+    .brand-top-right .top-user-chip { display:none; }
+    .dashboard-pipeline-strip { grid-template-columns:repeat(3,1fr); }
+    .quick-actions-grid { grid-template-columns:repeat(3,1fr); }
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -4023,10 +4314,9 @@ with st.sidebar:
             st.error(f"Falha ao recarregar Supabase: {_e}")
     st.markdown("""
         <div class="sidebar-brand">
-            <div class="logo-chip">⛽</div>
             <div>
-                <div style="font-weight:800; font-size:1.05rem; line-height:1.1;">CRM AmPm</div>
-                <div style="font-size:0.74rem; color:var(--text-tertiary);">Plataforma Integrada de Operações</div>
+                <div class="sidebar-ampm">ampm☀</div>
+                <div style="font-weight:750; font-size:.76rem; color:#F0F1F3;">CRM OPERACIONAL</div>
             </div>
         </div>
     """, unsafe_allow_html=True)
@@ -4058,6 +4348,13 @@ with st.sidebar:
         "📌 **Módulos do Sistema:**",
         [nome for _, nome in opcoes_modulos]
     )
+
+    st.markdown("""
+        <div class="sidebar-igt">
+            <div class="sidebar-igt-logo">igt <span>IGT GROUP</span></div>
+            <p>Excelência em Treinamentos.<br>Resultados que transformam.</p>
+        </div>
+    """, unsafe_allow_html=True)
 
     st.divider()
 
@@ -4105,71 +4402,503 @@ def _historico_instrutor_procv(posto):
     return treinamento, inauguracao
 
 
+# --- CABEÇALHO VISUAL GLOBAL AMPM + IGT ---
+_nome_topo = str(st.session_state.get("name") or _usuario_atual() or "Usuário")
+st.markdown(
+    f"""
+    <div class="brand-topbar">
+        <div class="brand-top-left">
+            <div class="ampm-wordmark">ampm☀</div>
+            <div class="brand-divider"></div>
+            <div class="brand-product">
+                <strong>CRM OPERACIONAL</strong>
+                <span>AmPm</span>
+            </div>
+        </div>
+        <div class="brand-top-right">
+            <div class="igt-wordmark">igt<small>IGT GROUP</small></div>
+            <div class="top-user-chip">👤 {_nome_topo}</div>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
 if modulo == "🛡️ Administração":
     render_administracao()
 
 elif modulo == "📊 Dashboard Executivo":
-    render_section_header("📊", "Dashboard Executivo", "Panorama consolidado da operação")
-    if not df_base.empty:
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            st.markdown(f"""
-                <div class="kpi-card">
-                    <div class="kpi-header"><span class="kpi-title">Lojas Únicas</span><span class="kpi-icon-circle">🏪</span></div>
-                    <div class="kpi-value">{len(df_base)}</div>
-                    <div class="kpi-footer">PVs únicos na base central</div>
-                </div>
-            """, unsafe_allow_html=True)
-        with c2:
-            pendentes = len(df_base[df_base['Tipo_Necessidade'] != 'Rede Ativa (Sem Pendência)']) if 'Tipo_Necessidade' in df_base.columns else 0
-            st.markdown(f"""
-                <div class="kpi-card">
-                    <div class="kpi-header"><span class="kpi-title">Fila Treinamento</span><span class="kpi-icon-circle">🎓</span></div>
-                    <div class="kpi-value">{pendentes}</div>
-                    <div class="kpi-footer">lojas com pendência</div>
-                </div>
-            """, unsafe_allow_html=True)
-        with c3:
-            a_contatar = len(df_base[df_base['Status_Contato'] == 'A Contatar']) if 'Status_Contato' in df_base.columns else 0
-            st.markdown(f"""
-                <div class="kpi-card">
-                    <div class="kpi-header"><span class="kpi-title">Pendentes Contato</span><span class="kpi-icon-circle">📞</span></div>
-                    <div class="kpi-value">{a_contatar}</div>
-                    <div class="kpi-footer">aguardando contato</div>
-                </div>
-            """, unsafe_allow_html=True)
-        with c4:
-            inaug = len(df_base[df_base['Previsão Inauguração'].notna()]) if 'Previsão Inauguração' in df_base.columns else 0
-            st.markdown(f"""
-                <div class="kpi-card">
-                    <div class="kpi-header"><span class="kpi-title">Inaugurações</span><span class="kpi-icon-circle">🚀</span></div>
-                    <div class="kpi-value">{inaug}</div>
-                    <div class="kpi-footer">com previsão de abertura</div>
-                </div>
-            """, unsafe_allow_html=True)
-
-        total_contatos_central = _contar_contatos_supabase()
-        st.caption(
-            f"📇 Contatos únicos preservados separadamente: {total_contatos_central:,}. "
-            "Uma loja pode possuir mais de um contato; por isso o total de contatos pode ser maior que o total de PVs."
+    if df_base.empty:
+        st.info("📭 Nenhum dado carregado ainda.")
+    else:
+        # --------------------------------------------------------
+        # TÍTULO E FILTROS
+        # --------------------------------------------------------
+        st.markdown(
+            """
+            <div class="dashboard-title">
+                <div class="dashboard-title-icon">📊</div>
+                <h1>Dashboard Executivo</h1>
+            </div>
+            <div class="dashboard-subtitle">
+                Visão geral do desempenho operacional dos treinamentos
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
 
-        st.divider()
-        col_A, col_B = st.columns(2)
-        with col_A:
-            render_section_header("🗺️", "Concentração por Estado", "Top 10 UFs")
-            if 'UF' in df_base.columns:
-                st.bar_chart(df_base['UF'].value_counts().head(10), color="#FF9800")
-        with col_B:
-            render_section_header("📶", "Situação dos Contatos", "Distribuição no Call Center")
-            if 'Status_Contato' in df_base.columns:
-                st.bar_chart(df_base['Status_Contato'].value_counts(), color="#3B9EFF")
+        df_dash = df_base.copy()
+
+        # Modelo real da loja, quando disponível.
+        coluna_modelo = next(
+            (
+                c for c in [
+                    "Tipo de Modelo", "Tipo Modelo", "Modelo da Loja",
+                    "Modelo Loja", "Modelo"
+                ]
+                if c in df_dash.columns
+            ),
+            None,
+        )
+
+        filtros = st.columns([1.1, 1.1, 1.1, .85])
+        with filtros[0]:
+            ufs_dash = ["Todos os Estados"]
+            if "UF" in df_dash.columns:
+                ufs_dash += sorted(
+                    [
+                        str(x) for x in df_dash["UF"].dropna().unique()
+                        if str(x).strip()
+                    ]
+                )
+            uf_dash = st.selectbox(
+                "Estado",
+                ufs_dash,
+                label_visibility="collapsed",
+                key="dash_filtro_uf_v49",
+            )
+
+        with filtros[1]:
+            modelos_dash = ["Todos os Modelos"]
+            if coluna_modelo:
+                modelos_dash += sorted(
+                    [
+                        str(x) for x in df_dash[coluna_modelo].dropna().unique()
+                        if str(x).strip()
+                    ]
+                )
+            modelo_dash = st.selectbox(
+                "Modelo",
+                modelos_dash,
+                label_visibility="collapsed",
+                key="dash_filtro_modelo_v49",
+            )
+
+        with filtros[2]:
+            necessidades_dash = ["Todas as Necessidades"]
+            if "Tipo_Necessidade" in df_dash.columns:
+                necessidades_dash += sorted(
+                    [
+                        str(x)
+                        for x in df_dash["Tipo_Necessidade"].dropna().unique()
+                        if str(x).strip()
+                    ]
+                )
+            necessidade_dash = st.selectbox(
+                "Necessidade",
+                necessidades_dash,
+                label_visibility="collapsed",
+                key="dash_filtro_nec_v49",
+            )
+
+        with filtros[3]:
+            st.markdown(
+                "<div style='height:2px'></div>",
+                unsafe_allow_html=True,
+            )
+            st.caption("📡 Dados em tempo real")
+
+        if uf_dash != "Todos os Estados" and "UF" in df_dash.columns:
+            df_dash = df_dash[df_dash["UF"].astype(str) == uf_dash].copy()
+        if (
+            modelo_dash != "Todos os Modelos"
+            and coluna_modelo
+        ):
+            df_dash = df_dash[
+                df_dash[coluna_modelo].astype(str) == modelo_dash
+            ].copy()
+        if (
+            necessidade_dash != "Todas as Necessidades"
+            and "Tipo_Necessidade" in df_dash.columns
+        ):
+            df_dash = df_dash[
+                df_dash["Tipo_Necessidade"].astype(str) == necessidade_dash
+            ].copy()
+
+        # --------------------------------------------------------
+        # KPIs
+        # --------------------------------------------------------
+        total_postos = len(df_dash)
+        agendados = (
+            int((df_dash["Status_Contato"].astype(str) == "Agendado").sum())
+            if "Status_Contato" in df_dash.columns else 0
+        )
+        concluidos = (
+            int(
+                df_dash["Status_Contato"].astype(str).isin(
+                    ["Treinamento Realizado", "Concluído", "Concluido"]
+                ).sum()
+            )
+            if "Status_Contato" in df_dash.columns else 0
+        )
+        taxa_conclusao = (
+            (concluidos / total_postos * 100.0)
+            if total_postos else 0.0
+        )
+        clientes_ativos = (
+            int(
+                df_dash["Status Loja"]
+                .astype(str)
+                .str.contains("ativ", case=False, na=False)
+                .sum()
+            )
+            if "Status Loja" in df_dash.columns
+            else total_postos
+        )
+
+        k1, k2, k3, k4, k5 = st.columns(5)
+        kpis = [
+            (k1, "🏪", "dk-orange", "TOTAL DE POSTOS", total_postos, "PVs na visão atual"),
+            (k2, "📅", "dk-yellow", "TREINAMENTOS AGENDADOS", agendados, "agenda operacional"),
+            (k3, "✅", "dk-blue", "TREINAMENTOS CONCLUÍDOS", concluidos, "treinamentos realizados"),
+            (k4, "🎯", "dk-cyan", "TAXA DE CONCLUSÃO", f"{taxa_conclusao:.1f}%", "concluídos / total"),
+            (k5, "👥", "dk-purple", "CLIENTES ATIVOS", clientes_ativos, "status ativo na rede"),
+        ]
+        for col, icon, cls, label, value, note in kpis:
+            with col:
+                st.markdown(
+                    f"""
+                    <div class="dashboard-kpi">
+                        <div class="dashboard-kpi-top">
+                            <div class="dashboard-kpi-icon {cls}">{icon}</div>
+                            <div class="dashboard-kpi-label">{label}</div>
+                        </div>
+                        <div class="dashboard-kpi-value">{value}</div>
+                        <div class="dashboard-kpi-note">{note}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+        st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+
+        # --------------------------------------------------------
+        # STATUS / MODELO / ATIVIDADES
+        # --------------------------------------------------------
+        row_a = st.columns([1.25, 1.05, 1.15])
+
+        status_cores = {
+            "A Contatar": "#1976D2",
+            "Aguardando Pagamento": "#FFD300",
+            "Em Negociação": "#FF8A00",
+            "Agendado": "#FF4D00",
+            "Treinamento Realizado": "#149B55",
+            "Recusado": "#9AA0A6",
+        }
+        status_counts = {}
+        if "Status_Contato" in df_dash.columns:
+            for status in status_cores:
+                status_counts[status] = int(
+                    (df_dash["Status_Contato"].astype(str) == status).sum()
+                )
+        else:
+            status_counts = {s: 0 for s in status_cores}
+
+        total_status = sum(status_counts.values()) or 1
+        inicio = 0.0
+        partes_gradiente = []
+        legenda_html = []
+        for status, cor in status_cores.items():
+            valor = status_counts.get(status, 0)
+            pct = valor / total_status * 100
+            fim = inicio + pct
+            partes_gradiente.append(
+                f"{cor} {inicio:.2f}% {fim:.2f}%"
+            )
+            legenda_html.append(
+                f"""
+                <div class="donut-legend-row">
+                    <span class="legend-dot" style="background:{cor}"></span>
+                    <span>{status}</span>
+                    <strong>{valor}</strong>
+                </div>
+                """
+            )
+            inicio = fim
+
+        donut_gradient = ", ".join(partes_gradiente) if partes_gradiente else "#E6E8EC 0 100%"
+
+        with row_a[0]:
+            st.markdown(
+                f"""
+                <div class="dashboard-panel">
+                    <div class="dashboard-panel-title">Treinamentos por Status (Pipeline)</div>
+                    <div class="donut-wrap">
+                        <div class="dashboard-donut"
+                             style="background:conic-gradient({donut_gradient});">
+                            <div class="donut-center">
+                                <strong>{sum(status_counts.values())}</strong>
+                                <span>pipeline</span>
+                            </div>
+                        </div>
+                        <div class="donut-legend">
+                            {''.join(legenda_html)}
+                        </div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        with row_a[1]:
+            if coluna_modelo:
+                modelo_counts = (
+                    df_dash[coluna_modelo]
+                    .fillna("Não informado")
+                    .astype(str)
+                    .value_counts()
+                    .head(5)
+                )
+            else:
+                modelo_counts = pd.Series(dtype=int)
+
+            max_modelo = int(modelo_counts.max()) if not modelo_counts.empty else 1
+            barras = []
+            cores_modelo = ["#FF4D00", "#FFD300", "#1976D2", "#149B55", "#8E44E8"]
+            for idx, (nome_modelo, qtd) in enumerate(modelo_counts.items()):
+                largura = max(3.0, float(qtd) / max_modelo * 100)
+                cor = cores_modelo[idx % len(cores_modelo)]
+                barras.append(
+                    f"""
+                    <div class="dashboard-model-row">
+                        <span>{html.escape(str(nome_modelo))}</span>
+                        <div class="dashboard-progress">
+                            <span style="width:{largura:.1f}%;background:{cor};"></span>
+                        </div>
+                        <strong>{int(qtd)}</strong>
+                    </div>
+                    """
+                )
+            if not barras:
+                barras.append(
+                    "<div class='dashboard-mini-sub'>Modelo da loja ainda não disponível na visão filtrada.</div>"
+                )
+
+            st.markdown(
+                f"""
+                <div class="dashboard-panel">
+                    <div class="dashboard-panel-title">Treinamentos por Modelo</div>
+                    {''.join(barras)}
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        with row_a[2]:
+            atividades_html = []
+            df_ativ = df_dash.copy()
+            if "Data_do_Contato" in df_ativ.columns:
+                df_ativ["_dt_dash"] = pd.to_datetime(
+                    df_ativ["Data_do_Contato"],
+                    errors="coerce",
+                    dayfirst=True,
+                )
+                df_ativ = df_ativ.sort_values(
+                    "_dt_dash", ascending=False
+                )
+            for _, row in df_ativ.head(4).iterrows():
+                status = str(row.get("Status_Contato", "") or "Atualização")
+                pv = str(row.get("PV Abadi", "") or "")
+                razao = html.escape(str(row.get("Razão Social", "") or "Cliente"))
+                atividades_html.append(
+                    f"""
+                    <div class="dashboard-mini-row">
+                        <div class="dashboard-mini-badge">📌</div>
+                        <div style="flex:1">
+                            <div class="dashboard-mini-main">{html.escape(status)}</div>
+                            <div class="dashboard-mini-sub">{razao} · PV {html.escape(pv)}</div>
+                        </div>
+                    </div>
+                    """
+                )
+            st.markdown(
+                f"""
+                <div class="dashboard-panel">
+                    <div class="dashboard-panel-title">Atividades Recentes</div>
+                    {''.join(atividades_html) if atividades_html else '<div class="dashboard-mini-sub">Sem atividades recentes.</div>'}
+                    <div class="dashboard-panel-link">Acompanhamento central do CRM →</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+
+        # --------------------------------------------------------
+        # PIPELINE RESUMIDO
+        # --------------------------------------------------------
+        ordem_pipeline_dash = [
+            ("A Contatar", "ps-blue"),
+            ("Aguardando Pagamento", "ps-yellow"),
+            ("Em Negociação", "ps-orange"),
+            ("Agendado", "ps-orange"),
+            ("Treinamento Realizado", "ps-green"),
+            ("Recusado", "ps-gray"),
+        ]
+        pipeline_cards = []
+        for nome_status, classe in ordem_pipeline_dash:
+            pipeline_cards.append(
+                f"""
+                <div class="pipeline-stat {classe}">
+                    {nome_status}
+                    <strong>{status_counts.get(nome_status, 0)}</strong>
+                </div>
+                """
+            )
+
+        st.markdown(
+            f"""
+            <div class="dashboard-panel">
+                <div class="dashboard-panel-title">Resumo do Pipeline</div>
+                <div class="dashboard-pipeline-strip">
+                    {''.join(pipeline_cards)}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+
+        # --------------------------------------------------------
+        # ESTADOS + INSTRUTORES
+        # --------------------------------------------------------
+        row_b = st.columns([1.15, 1])
+
+        with row_b[0]:
+            if "UF" in df_dash.columns:
+                estados = []
+                for uf, grupo in df_dash.groupby("UF", dropna=True):
+                    total_uf = len(grupo)
+                    ag_uf = (
+                        int((grupo["Status_Contato"].astype(str) == "Agendado").sum())
+                        if "Status_Contato" in grupo.columns else 0
+                    )
+                    conc_uf = (
+                        int(
+                            grupo["Status_Contato"].astype(str).isin(
+                                ["Treinamento Realizado", "Concluído", "Concluido"]
+                            ).sum()
+                        )
+                        if "Status_Contato" in grupo.columns else 0
+                    )
+                    taxa_uf = conc_uf / total_uf * 100 if total_uf else 0
+                    estados.append((str(uf), total_uf, ag_uf, conc_uf, taxa_uf))
+                estados = sorted(
+                    estados,
+                    key=lambda x: x[1],
+                    reverse=True
+                )[:7]
+            else:
+                estados = []
+
+            linhas_estado = "".join(
+                f"<tr><td><b>{html.escape(uf)}</b></td><td>{total}</td><td>{ag}</td><td>{conc}</td><td>{taxa:.1f}%</td></tr>"
+                for uf, total, ag, conc, taxa in estados
+            )
+            st.markdown(
+                f"""
+                <div class="dashboard-panel">
+                    <div class="dashboard-panel-title">Treinamentos por Estado</div>
+                    <table class="dashboard-html-table">
+                        <thead>
+                            <tr><th>Estado</th><th>Postos</th><th>Agendados</th><th>Concluídos</th><th>Taxa</th></tr>
+                        </thead>
+                        <tbody>{linhas_estado}</tbody>
+                    </table>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        with row_b[1]:
+            top_instrutores = pd.DataFrame()
+            if (
+                "Instrutor_Sugerido" in df_dash.columns
+                and "Status_Contato" in df_dash.columns
+            ):
+                df_conc = df_dash[
+                    df_dash["Status_Contato"].astype(str).isin(
+                        ["Treinamento Realizado", "Concluído", "Concluido"]
+                    )
+                ].copy()
+                top_instrutores = (
+                    df_conc["Instrutor_Sugerido"]
+                    .dropna()
+                    .astype(str)
+                    .loc[lambda s: ~s.str.contains("Pendente", case=False, na=False)]
+                    .value_counts()
+                    .head(7)
+                    .rename_axis("Instrutor")
+                    .reset_index(name="Concluídos")
+                )
+
+            linhas_instr = "".join(
+                f"<tr><td><b>{html.escape(str(r['Instrutor']))}</b></td><td>{int(r['Concluídos'])}</td><td>⭐</td></tr>"
+                for _, r in top_instrutores.iterrows()
+            )
+            if not linhas_instr:
+                linhas_instr = "<tr><td colspan='3'>Ainda não há treinamentos concluídos com instrutor identificado.</td></tr>"
+
+            st.markdown(
+                f"""
+                <div class="dashboard-panel">
+                    <div class="dashboard-panel-title">Top Instrutores (Concluídos)</div>
+                    <table class="dashboard-html-table">
+                        <thead>
+                            <tr><th>Instrutor</th><th>Concluídos</th><th>Status</th></tr>
+                        </thead>
+                        <tbody>{linhas_instr}</tbody>
+                    </table>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        # --------------------------------------------------------
+        # AÇÕES RÁPIDAS VISUAIS
+        # --------------------------------------------------------
+        st.markdown("<div style='height:13px'></div>", unsafe_allow_html=True)
+        st.markdown(
+            """
+            <div class="dashboard-panel-title">Ações Rápidas</div>
+            <div class="quick-actions-grid">
+                <div class="quick-action-card"><span>📞</span>Registrar<br>Novo Contato</div>
+                <div class="quick-action-card"><span>📅</span>Agendar<br>Treinamento</div>
+                <div class="quick-action-card"><span>📄</span>Nova Solicitação<br>de Orçamento</div>
+                <div class="quick-action-card"><span>🔎</span>Consultar<br>PROCV</div>
+                <div class="quick-action-card"><span>🧮</span>Calculadora<br>de Custos</div>
+                <div class="quick-action-card"><span>📊</span>Relatórios<br>Gerenciais</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
         render_exportacao_modulo(
-            df_base,
+            df_dash,
             "Dashboard_Executivo",
             nome_aba="Dashboard",
-            legenda="Exporta a base consolidada usada pelos indicadores do Dashboard."
+            legenda="Exporta a visão atual do Dashboard após os filtros aplicados."
         )
 
 elif modulo == "📋 Pipeline AmPm":
