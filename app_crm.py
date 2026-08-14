@@ -1254,7 +1254,7 @@ def adicionar_instrutor_admin(nome, telefone="", email="", cidade="", uf=""):
     bases["instrutores"] = df
     st.session_state["bases"] = bases
     salvar_bases_combinadas_no_disco(bases)
-    st.cache_data.clear()
+    _sincronizar_modulos_apos_mutacao("instrutores")
 
     return acao
 
@@ -1297,7 +1297,7 @@ def atualizar_status_instrutor_admin(nome, ativo):
             bases["instrutores"] = df
             st.session_state["bases"] = bases
 
-    st.cache_data.clear()
+    _sincronizar_modulos_apos_mutacao("instrutores")
     return novo_status
 
 
@@ -3132,6 +3132,18 @@ def treinamento_liberado(data_pagamento):
     return bool(data_liberacao and date.today() >= data_liberacao)
 
 
+
+def _sincronizar_modulos_apos_mutacao(entidade=None):
+    """
+    Mantém todos os módulos usando o mesmo estado após qualquer gravação.
+    Dashboard, Pipeline, PROCV, Call Center e Calculadora são reconstruídos
+    a partir de st.session_state['bases'] no rerun seguinte.
+    """
+    st.cache_data.clear()
+    st.session_state["ultima_mutacao_entidade"] = entidade
+    st.session_state["revisao_dados"] = int(st.session_state.get("revisao_dados", 0)) + 1
+
+
 def atualizar_fila(pv_abadi, campos: dict):
     df_fila = st.session_state['bases']['fila']
     pv_abadi = float(pv_abadi) if pd.notna(pv_abadi) else pv_abadi
@@ -3150,6 +3162,7 @@ def atualizar_fila(pv_abadi, campos: dict):
 
     st.session_state['bases']['fila'] = df_fila
     salvar_fila_no_disco()
+    _sincronizar_modulos_apos_mutacao("fila")
 
 def _bases_vazias():
     return {
@@ -4459,6 +4472,11 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                                 <p>🏬 <b>Razão Social:</b> {posto.get('Razão Social', '-')}</p>
                                 <p>📍 <b>Cidade/UF:</b> {posto.get('Municipio', '-')}/{posto.get('UF', '-')}</p>
                                 <p>🏠 <b>Endereço:</b> {posto.get('Endereço', '-')}</p>
+                                <p>🏷️ <b>Tipo de Modelo:</b> {_procv_valor_flexivel(
+                                    posto,
+                                    "Tipo de Modelo",
+                                    ["Tipo Modelo", "Modelo", "Modelo da Loja", "Modelo Loja"]
+                                )}</p>
                             </div>
                             <div style="flex: 1; min-width: 200px;">
                                 <p>👔 <b>Consultor (CF):</b> {posto.get('CF', '-')}</p>
@@ -4502,8 +4520,19 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                     st.markdown(f"👉 **[Clique aqui para chamar no WhatsApp Direct]({link_wa})**")
 
                 lista_instrutores = ["Pendente de Alocação"]
-                if not df_instrutores.empty and 'NOME_COMPLETO' in df_instrutores.columns:
-                    lista_instrutores += sorted(df_instrutores['NOME_COMPLETO'].dropna().unique().tolist())
+                df_instrutores_ativos_call = filtrar_instrutores_ativos(df_instrutores)
+                if (
+                    df_instrutores_ativos_call is not None
+                    and not df_instrutores_ativos_call.empty
+                    and 'NOME_COMPLETO' in df_instrutores_ativos_call.columns
+                ):
+                    lista_instrutores += sorted(
+                        df_instrutores_ativos_call['NOME_COMPLETO']
+                        .dropna()
+                        .astype(str)
+                        .unique()
+                        .tolist()
+                    )
 
                 instrutor_atual = str(posto.get('Instrutor_Sugerido', 'Pendente de Alocação'))
                 idx_instrutor = lista_instrutores.index(instrutor_atual) if instrutor_atual in lista_instrutores else 0
@@ -4511,43 +4540,67 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                 data_inicial = parse_data_flexivel(posto.get('Data_Agendada')) or date.today()
 
                 # --- REGISTROS RÁPIDOS DA LIGAÇÃO ---
-                with st.form("form_callcenter_editavel"):
-                    st.markdown("#### ✍️ Registros Rápidos da Ligação")
+                st.markdown("#### ✍️ Registros Rápidos da Ligação")
 
+                # Estes dois controles ficam FORA do st.form porque widgets dentro
+                # de formulários só atualizam após Submit. Assim "Sim" habilita
+                # imediatamente a quantidade de funcionários.
+                tem_func_atual = _texto_seguro_callcenter(
+                    posto.get('Tem_Funcionarios', 'Sim')
+                ) or 'Sim'
+                tem_func_opcoes = ["Sim", "Não"]
+                qtd_func_atual = _texto_seguro_callcenter(
+                    posto.get('Qtd_Funcionarios', 0)
+                )
+                try:
+                    qtd_func_padrao = int(float(qtd_func_atual or 0))
+                except (TypeError, ValueError):
+                    qtd_func_padrao = 0
+                qtd_func_padrao = max(0, qtd_func_padrao)
+
+                if qtd_func_padrao == 0 and tem_func_atual not in tem_func_opcoes:
+                    tem_func_atual = "Não"
+                elif tem_func_atual not in tem_func_opcoes:
+                    tem_func_atual = "Sim"
+
+                chave_pv_widget = str(pv_alvo).replace(".", "_")
+                idx_tem_func = tem_func_opcoes.index(tem_func_atual)
+
+                cf1, cf2 = st.columns(2)
+                with cf1:
+                    tem_funcionarios = st.selectbox(
+                        "👥 Há funcionários para treinar?",
+                        tem_func_opcoes,
+                        index=idx_tem_func,
+                        key=f"tem_func_call_{chave_pv_widget}",
+                    )
+                with cf2:
+                    qtd_func = st.number_input(
+                        "🔢 Qtd. de Funcionários para Treinar:",
+                        value=(qtd_func_padrao if tem_funcionarios == "Sim" else 0),
+                        min_value=0,
+                        step=1,
+                        disabled=(tem_funcionarios == "Não"),
+                        key=f"qtd_func_call_{chave_pv_widget}",
+                    )
+
+                if tem_funcionarios == "Não":
+                    qtd_func = 0
+
+                with st.form("form_callcenter_editavel"):
                     col_f1, col_f2 = st.columns(2)
                     with col_f1:
                         nome_c = st.text_input("👤 Nome do Responsável na Loja:", value=_texto_seguro_callcenter(posto.get('Nome_Contato', '')))
                         tel_c = st.text_input("📞 Telefone de Contato:", value=_texto_seguro_callcenter(posto.get('Telefone_Contato', '')))
                         email_c = st.text_input("✉️ E-mail do Contato:", value=_texto_seguro_callcenter(posto.get('Email_Contato', '')))
-                        tem_func_atual = _texto_seguro_callcenter(posto.get('Tem_Funcionarios', 'Sim')) or 'Sim'
-                        tem_func_opcoes = ["Sim", "Não"]
-                        qtd_func_atual = _texto_seguro_callcenter(posto.get('Qtd_Funcionarios', 0))
-                        try:
-                            qtd_func_padrao = int(float(qtd_func_atual or 0))
-                        except (TypeError, ValueError):
-                            qtd_func_padrao = 0
-                        qtd_func_padrao = max(0, qtd_func_padrao)
-
-                        # Regra de negócio: zero funcionários significa automaticamente "Não".
-                        # Isso também corrige registros antigos que estejam inconsistentes.
-                        if qtd_func_padrao == 0:
-                            tem_func_atual = "Não"
-                        elif tem_func_atual not in tem_func_opcoes:
-                            tem_func_atual = "Sim"
-
-                        idx_tem_func = tem_func_opcoes.index(tem_func_atual)
-                        tem_funcionarios = st.selectbox("👥 Há funcionários para treinar?", tem_func_opcoes, index=idx_tem_func)
-                        qtd_func = st.number_input(
-                            "🔢 Qtd. de Funcionários para Treinar:",
-                            value=qtd_func_padrao, min_value=0, step=1,
-                            disabled=(tem_funcionarios == "Não")
+                        instrutor_escolhido = st.selectbox(
+                            "👨‍🏫 Instrutor Designado:",
+                            lista_instrutores,
+                            index=idx_instrutor
                         )
-                        # Se a quantidade for zero, a regra prevalece sobre a seleção anterior.
-                        if qtd_func == 0:
-                            tem_funcionarios = "Não"
-                        elif tem_funcionarios == "Não":
-                            qtd_func = 0
-                        instrutor_escolhido = st.selectbox("👨‍🏫 Instrutor Designado:", lista_instrutores, index=idx_instrutor)
+                        st.caption(
+                            f"✅ {max(len(lista_instrutores)-1, 0)} instrutor(es) ativo(s) disponível(is)."
+                        )
 
                     with col_f2:
                         status_opcoes = ["A Contatar", "Em Negociação", "Agendado", "Treinamento Realizado", "Recusado"]
@@ -4568,7 +4621,7 @@ elif modulo == "📞 Call Center & Timeline WhatsApp":
                             'Nome_Contato': nome_c,
                             'Telefone_Contato': tel_c,
                             'Email_Contato': email_c,
-                            'Tem_Funcionarios': 'Não' if int(qtd_func) == 0 else 'Sim',
+                            'Tem_Funcionarios': 'Sim' if tem_funcionarios == 'Sim' and int(qtd_func) > 0 else 'Não',
                             'Qtd_Funcionarios': int(qtd_func),
                             'Instrutor_Sugerido': instrutor_escolhido,
                             'Material_Em_Loja': mat_loja,
