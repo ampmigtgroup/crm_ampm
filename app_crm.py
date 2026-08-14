@@ -12,6 +12,7 @@ import json
 import hashlib
 import re
 import unicodedata
+import html
 from difflib import SequenceMatcher
 import streamlit_authenticator as stauth
 from supabase import create_client, Client
