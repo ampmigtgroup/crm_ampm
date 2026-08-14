@@ -1,5 +1,6 @@
 streamlit
 streamlit-authenticator
+supabase
 pandas
 numpy
 openpyxl
