@@ -328,95 +328,110 @@ st.markdown(
 
 
         /* =====================================================
-           CAMPOS DE RESPOSTA — AZUL IGT
-           Troca as caixas escuras/preta por azul institucional,
-           mantendo texto branco e alto contraste.
+           CAMPOS DE RESPOSTA — AZUL UNIFICADO
+           Todas as caixas ficam na mesma cor para padronização.
         ====================================================== */
 
-        /* Inputs de texto, e-mail, telefone, CNPJ e município */
-        div[data-baseweb="input"] > div {
-            background:#1F4E8C !important;
-            border:1px solid #2E65A8 !important;
-            box-shadow:none !important;
+        :root {
+            --igt-field-bg: #2C63A7;
+            --igt-field-border: #2C63A7;
+            --igt-field-focus: #3C79C6;
+            --igt-field-text: #FFFFFF;
+            --igt-field-placeholder: #D9E8FB;
+            --igt-field-btn: #2C63A7;
+            --igt-field-btn-hover: #245792;
         }
 
-        div[data-baseweb="input"] input {
-            background:transparent !important;
-            color:#FFFFFF !important;
-            -webkit-text-fill-color:#FFFFFF !important;
-            caret-color:#FFFFFF !important;
-            font-weight:600 !important;
+        /* Wrapper comum dos inputs */
+        div[data-baseweb="input"] > div,
+        div[data-testid="stDateInput"] div[data-baseweb="input"] > div,
+        div[data-testid="stNumberInput"] div[data-baseweb="input"] > div {
+            background: var(--igt-field-bg) !important;
+            border: 1px solid var(--igt-field-border) !important;
+            box-shadow: none !important;
+            border-radius: 10px !important;
         }
 
-        div[data-baseweb="input"] input::placeholder {
-            color:#DCEBFA !important;
-            -webkit-text-fill-color:#DCEBFA !important;
-            opacity:1 !important;
+        /* Inputs internos */
+        div[data-baseweb="input"] input,
+        div[data-testid="stDateInput"] input,
+        div[data-testid="stNumberInput"] input {
+            background: transparent !important;
+            color: var(--igt-field-text) !important;
+            -webkit-text-fill-color: var(--igt-field-text) !important;
+            caret-color: var(--igt-field-text) !important;
+            font-weight: 600 !important;
+        }
+
+        div[data-baseweb="input"] input::placeholder,
+        textarea::placeholder {
+            color: var(--igt-field-placeholder) !important;
+            -webkit-text-fill-color: var(--igt-field-placeholder) !important;
+            opacity: 1 !important;
         }
 
         /* Selectboxes */
         div[data-baseweb="select"] > div {
-            background:#1F4E8C !important;
-            border-color:#2E65A8 !important;
-            color:#FFFFFF !important;
+            background: var(--igt-field-bg) !important;
+            border: 1px solid var(--igt-field-border) !important;
+            border-radius: 10px !important;
+            box-shadow: none !important;
         }
 
-        div[data-baseweb="select"] > div * {
-            color:#FFFFFF !important;
-            -webkit-text-fill-color:#FFFFFF !important;
+        div[data-baseweb="select"] > div *,
+        div[data-baseweb="select"] span,
+        div[data-baseweb="select"] svg {
+            color: var(--igt-field-text) !important;
+            fill: var(--igt-field-text) !important;
+            -webkit-text-fill-color: var(--igt-field-text) !important;
         }
 
-        /* Textareas */
+        /* Área de texto */
         textarea {
-            background:#1F4E8C !important;
-            color:#FFFFFF !important;
-            -webkit-text-fill-color:#FFFFFF !important;
-            border:1px solid #2E65A8 !important;
-            caret-color:#FFFFFF !important;
-            font-weight:600 !important;
+            background: var(--igt-field-bg) !important;
+            color: var(--igt-field-text) !important;
+            -webkit-text-fill-color: var(--igt-field-text) !important;
+            border: 1px solid var(--igt-field-border) !important;
+            caret-color: var(--igt-field-text) !important;
+            font-weight: 600 !important;
+            border-radius: 10px !important;
         }
 
-        textarea::placeholder {
-            color:#DCEBFA !important;
-            -webkit-text-fill-color:#DCEBFA !important;
-            opacity:1 !important;
-        }
-
-        /* Campo de data */
-        div[data-testid="stDateInput"] div[data-baseweb="input"] > div {
-            background:#1F4E8C !important;
-            border-color:#2E65A8 !important;
-        }
-
-        div[data-testid="stDateInput"] input {
-            color:#FFFFFF !important;
-            -webkit-text-fill-color:#FFFFFF !important;
-        }
-
-        /* Campo numérico e botões +/- */
-        div[data-testid="stNumberInput"] div[data-baseweb="input"] > div {
-            background:#1F4E8C !important;
-            border-color:#2E65A8 !important;
-        }
-
+        /* Botões + / - do number input */
         div[data-testid="stNumberInput"] button {
-            background:#173D70 !important;
-            color:#FFFFFF !important;
-            border-color:#2E65A8 !important;
+            background: var(--igt-field-btn) !important;
+            color: var(--igt-field-text) !important;
+            border: 1px solid var(--igt-field-border) !important;
+        }
+
+        div[data-testid="stNumberInput"] button:hover {
+            background: var(--igt-field-btn-hover) !important;
         }
 
         div[data-testid="stNumberInput"] button * {
-            color:#FFFFFF !important;
-            fill:#FFFFFF !important;
+            color: var(--igt-field-text) !important;
+            fill: var(--igt-field-text) !important;
         }
 
-        /* Foco dos campos: azul mais vivo, sem preto */
+        /* Calendário / ícones auxiliares */
+        div[data-testid="stDateInput"] svg,
+        div[data-baseweb="input"] svg {
+            fill: var(--igt-field-text) !important;
+            color: var(--igt-field-text) !important;
+        }
+
+        /* Estado de foco unificado */
         div[data-baseweb="input"] > div:focus-within,
         div[data-baseweb="select"] > div:focus-within,
+        div[data-testid="stDateInput"] div[data-baseweb="input"] > div:focus-within,
+        div[data-testid="stNumberInput"] div[data-baseweb="input"] > div:focus-within,
         textarea:focus {
-            border-color:#4D8FD1 !important;
-            box-shadow:0 0 0 2px rgba(77,143,209,.20) !important;
+            border-color: var(--igt-field-focus) !important;
+            box-shadow: 0 0 0 2px rgba(60, 121, 198, .20) !important;
         }
+
+
+        
 
         div[data-testid="stMarkdownContainer"] p {
             line-height:1.4;
