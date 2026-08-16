@@ -1214,12 +1214,172 @@ div[data-baseweb="select"] > div,
 # --- AUTENTICAÇÃO ---
 CAMINHO_USUARIOS = "usuarios_ampm.json"
 
+@st.cache_resource(show_spinner=False)
+def _supabase_auth_client():
+    """
+    Cliente central usado antes mesmo do login.
+    Usuários e permissões ficam no Supabase para sobreviver a reboot/deploy.
+    """
+    try:
+        url = str(
+            st.secrets.get("SUPABASE_URL", SUPABASE_PROJECT_URL_PADRAO)
+            or SUPABASE_PROJECT_URL_PADRAO
+        ).strip()
+        chave = str(
+            st.secrets.get("SUPABASE_SERVICE_ROLE_KEY", "")
+            or ""
+        ).strip()
+        if not chave:
+            return None
+        return create_client(url, chave)
+    except Exception:
+        return None
+
+
+def _carregar_usuarios_supabase():
+    client = _supabase_auth_client()
+    if client is None:
+        return {"usernames": {}}
+
+    try:
+        resp = (
+            client.table("crm_usuarios")
+            .select("username,credential")
+            .execute()
+        )
+        usernames = {}
+        for row in resp.data or []:
+            username = str(row.get("username", "") or "").strip()
+            cred = row.get("credential")
+            if username and isinstance(cred, dict):
+                usernames[username] = cred
+        return {"usernames": usernames}
+    except Exception:
+        return {"usernames": {}}
+
+
+def _salvar_usuarios_supabase(credenciais_completas):
+    client = _supabase_auth_client()
+    if client is None:
+        raise RuntimeError("Supabase indisponível para persistência de usuários.")
+
+    secrets_usernames = set()
+    try:
+        secrets_usernames = set(
+            _secrets_para_dict(st.secrets["credentials"])
+            .get("usernames", {})
+            .keys()
+        )
+    except Exception:
+        pass
+
+    registros = []
+    for usuario, dados in credenciais_completas.get("usernames", {}).items():
+        usuario_txt = str(usuario or "").strip()
+        if not usuario_txt or usuario_txt in secrets_usernames:
+            continue
+        if not isinstance(dados, dict):
+            continue
+        registros.append({
+            "username": usuario_txt,
+            "credential": dados,
+            "updated_at": datetime.now().isoformat(),
+        })
+
+    if registros:
+        (
+            client.table("crm_usuarios")
+            .upsert(registros, on_conflict="username")
+            .execute()
+        )
+
+
+def _migrar_usuarios_locais_para_supabase():
+    if not os.path.exists(CAMINHO_USUARIOS):
+        return
+    try:
+        with open(CAMINHO_USUARIOS, "r", encoding="utf-8") as f:
+            dados = json.load(f)
+        if isinstance(dados, dict) and dados.get("usernames"):
+            _salvar_usuarios_supabase(dados)
+    except Exception:
+        pass
+
+
+def _carregar_permissoes_supabase():
+    client = _supabase_auth_client()
+    padrao = {"admins": {}, "usuarios": {}}
+    if client is None:
+        return padrao
+
+    try:
+        resp = (
+            client.table("crm_permissoes_usuarios")
+            .select("username,permissoes")
+            .execute()
+        )
+        usuarios = {}
+        for row in resp.data or []:
+            username = str(row.get("username", "") or "").strip().lower()
+            permissoes = row.get("permissoes")
+            if username and isinstance(permissoes, dict):
+                usuarios[username] = permissoes
+        return {"admins": {}, "usuarios": usuarios}
+    except Exception:
+        return padrao
+
+
+def _salvar_permissoes_supabase(permissoes):
+    client = _supabase_auth_client()
+    if client is None:
+        raise RuntimeError("Supabase indisponível para persistência de permissões.")
+
+    registros = []
+    for username, flags in permissoes.get("usuarios", {}).items():
+        username = str(username or "").strip().lower()
+        if username and isinstance(flags, dict):
+            registros.append({
+                "username": username,
+                "permissoes": {
+                    str(chave): bool(valor)
+                    for chave, valor in flags.items()
+                },
+                "updated_at": datetime.now().isoformat(),
+            })
+
+    if registros:
+        (
+            client.table("crm_permissoes_usuarios")
+            .upsert(registros, on_conflict="username")
+            .execute()
+        )
+
+
+def _migrar_permissoes_locais_para_supabase():
+    if not os.path.exists("permissoes_usuarios_ampm.json"):
+        return
+    try:
+        with open("permissoes_usuarios_ampm.json", "r", encoding="utf-8") as f:
+            dados = json.load(f)
+        if isinstance(dados, dict) and dados.get("usuarios"):
+            _salvar_permissoes_supabase(dados)
+    except Exception:
+        pass
+
+
 def _secrets_para_dict(obj):
     if hasattr(obj, "items"):
         return {chave: _secrets_para_dict(valor) for chave, valor in obj.items()}
     return obj
 
 def carregar_usuarios_arquivo():
+    """Fonte principal: Supabase. JSON local fica apenas como fallback/migração."""
+    _migrar_usuarios_locais_para_supabase()
+
+    remoto = _carregar_usuarios_supabase()
+    if remoto.get("usernames"):
+        return remoto
+
     if os.path.exists(CAMINHO_USUARIOS):
         try:
             with open(CAMINHO_USUARIOS, "r", encoding="utf-8") as f:
@@ -1228,23 +1388,41 @@ def carregar_usuarios_arquivo():
                 return dados
         except Exception:
             pass
+
     return {"usernames": {}}
 
 def salvar_usuarios_arquivo(credenciais_completas):
+    """Mantém o nome antigo, mas a gravação oficial agora é no Supabase."""
     try:
-        secrets_usernames = set()
+        _salvar_usuarios_supabase(credenciais_completas)
+    except Exception as e:
         try:
-            secrets_usernames = set(_secrets_para_dict(st.secrets["credentials"]).get("usernames", {}).keys())
+            secrets_usernames = set()
+            try:
+                secrets_usernames = set(
+                    _secrets_para_dict(st.secrets["credentials"])
+                    .get("usernames", {})
+                    .keys()
+                )
+            except Exception:
+                pass
+
+            usernames_para_salvar = {
+                usuario: dados
+                for usuario, dados in credenciais_completas.get("usernames", {}).items()
+                if usuario not in secrets_usernames
+            }
+
+            with open(CAMINHO_USUARIOS, "w", encoding="utf-8") as f:
+                json.dump(
+                    {"usernames": usernames_para_salvar},
+                    f,
+                    ensure_ascii=False,
+                    indent=2,
+                )
         except Exception:
             pass
-        usernames_para_salvar = {
-            usuario: dados for usuario, dados in credenciais_completas.get("usernames", {}).items()
-            if usuario not in secrets_usernames
-        }
-        with open(CAMINHO_USUARIOS, "w", encoding="utf-8") as f:
-            json.dump({"usernames": usernames_para_salvar}, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        st.toast(f"⚠️ Erro ao salvar cadastro: {e}", icon="⚠️")
+        st.toast(f"⚠️ Cadastro salvo em fallback local: {e}", icon="⚠️")
 
 def _tela_marca_login(subtitulo):
     st.markdown(f"""
@@ -1410,8 +1588,15 @@ def usuario_e_admin():
 
 def carregar_permissoes_usuarios():
     padrao = {"admins": {}, "usuarios": {}}
+
+    _migrar_permissoes_locais_para_supabase()
+    remoto = _carregar_permissoes_supabase()
+    if remoto.get("usuarios"):
+        return remoto
+
     if not os.path.exists(CAMINHO_PERMISSOES):
         return padrao
+
     try:
         with open(CAMINHO_PERMISSOES, "r", encoding="utf-8") as f:
             dados = json.load(f)
@@ -1425,9 +1610,12 @@ def carregar_permissoes_usuarios():
 
 
 def salvar_permissoes_usuarios(permissoes):
-    """Persiste apenas permissões; senhas nunca são armazenadas aqui."""
-    with open(CAMINHO_PERMISSOES, "w", encoding="utf-8") as f:
-        json.dump(permissoes, f, ensure_ascii=False, indent=2)
+    """Persiste permissões no Supabase; arquivo local fica somente como fallback."""
+    try:
+        _salvar_permissoes_supabase(permissoes)
+    except Exception:
+        with open(CAMINHO_PERMISSOES, "w", encoding="utf-8") as f:
+            json.dump(permissoes, f, ensure_ascii=False, indent=2)
 
 
 def permissoes_do_usuario(username=None):
@@ -1463,16 +1651,26 @@ def garantir_usuario_no_controle(username):
 
 
 def listar_usuarios_cadastrados():
-    """Lê os usernames do arquivo local e dos Secrets, sem retornar senhas."""
+    """Lista Supabase + Secrets sem expor hashes/senhas."""
     encontrados = set()
+
+    remoto = _carregar_usuarios_supabase()
+    encontrados.update(remoto.get("usernames", {}).keys())
+
     arquivo = carregar_usuarios_arquivo()
     encontrados.update(arquivo.get("usernames", {}).keys())
+
     try:
         secrets_cred = _secrets_para_dict(st.secrets.get("credentials", {}))
         encontrados.update(secrets_cred.get("usernames", {}).keys())
     except Exception:
         pass
-    return sorted(str(u).strip().lower() for u in encontrados if str(u).strip())
+
+    return sorted(
+        str(u).strip().lower()
+        for u in encontrados
+        if str(u).strip()
+    )
 
 
 def salvar_permissoes_admin(username, novas_permissoes):
@@ -3553,6 +3751,466 @@ def _obter_rota_rodoviaria(lat_origem, lon_origem, lat_destino, lon_destino):
         return None, None, None
 
 
+
+
+def _google_maps_api_key():
+    """Retorna a chave do Google Maps se configurada no Streamlit Secrets."""
+    try:
+        chave = str(st.secrets.get("GOOGLE_MAPS_API_KEY", "") or "").strip()
+        return chave
+    except Exception:
+        return ""
+
+
+def _render_mapa_rota_premium(
+    path,
+    origem_lat,
+    origem_lon,
+    destino_lat,
+    destino_lon,
+    nome_instrutor,
+    pv_destino,
+    distancia_km=None,
+    duracao_min=None,
+):
+    """
+    Mapa integrado de alto acabamento.
+
+    Prioridade:
+    1. Google Maps Embed Directions quando GOOGLE_MAPS_API_KEY estiver configurada.
+    2. Leaflet + CARTO Voyager, usando a mesma geometria rodoviária já calculada
+       pelo CRM/OSRM.
+
+    Todo o restante da Calculadora permanece independente deste renderizador.
+    """
+    chave_google = _google_maps_api_key()
+
+    # ----------------------------
+    # Google Maps oficial integrado
+    # ----------------------------
+    if chave_google:
+        origem = f"{float(origem_lat):.7f},{float(origem_lon):.7f}"
+        destino = f"{float(destino_lat):.7f},{float(destino_lon):.7f}"
+
+        url_google = (
+            "https://www.google.com/maps/embed/v1/directions"
+            f"?key={chave_google}"
+            f"&origin={origem}"
+            f"&destination={destino}"
+            "&mode=driving"
+            "&maptype=roadmap"
+            "&language=pt-BR"
+            "&region=BR"
+        )
+
+        resumo_dist = (
+            f"{float(distancia_km):.1f} km"
+            if distancia_km is not None
+            else "rota calculada"
+        )
+        resumo_tempo = (
+            f" · {float(duracao_min)/60:.1f} h"
+            if duracao_min is not None
+            else ""
+        )
+
+        st.markdown(
+            f"""
+            <div style="
+                background:#FFFFFF;
+                border:1px solid #E6E8EC;
+                border-radius:20px;
+                padding:12px;
+                box-shadow:0 10px 28px rgba(25,30,38,.08);
+                margin:4px 0 8px;
+            ">
+                <div style="
+                    display:flex;
+                    align-items:center;
+                    justify-content:space-between;
+                    gap:12px;
+                    padding:2px 5px 11px;
+                ">
+                    <div>
+                        <div style="font-weight:800;color:#20242A;font-size:.91rem;">
+                            🚗 {html.escape(str(nome_instrutor))}
+                        </div>
+                        <div style="font-size:.73rem;color:#70757D;margin-top:3px;">
+                            {resumo_dist}{resumo_tempo} · destino PV {html.escape(str(pv_destino))}
+                        </div>
+                    </div>
+                    <div style="
+                        background:#EAF3FD;
+                        color:#0D47A1;
+                        border-radius:999px;
+                        padding:5px 10px;
+                        font-size:.67rem;
+                        font-weight:800;
+                    ">GOOGLE MAPS</div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        components.iframe(
+            url_google,
+            height=520,
+            scrolling=False,
+        )
+        return "google"
+
+    # ----------------------------------------------------
+    # Fallback premium: Leaflet + CARTO Voyager integrado
+    # ----------------------------------------------------
+    try:
+        path_limpo = []
+        for ponto in path or []:
+            if isinstance(ponto, (list, tuple)) and len(ponto) >= 2:
+                lon, lat = float(ponto[0]), float(ponto[1])
+                path_limpo.append([lat, lon])
+    except Exception:
+        path_limpo = []
+
+    if len(path_limpo) < 2:
+        path_limpo = [
+            [float(origem_lat), float(origem_lon)],
+            [float(destino_lat), float(destino_lon)],
+        ]
+
+    mapa_id = (
+        "mapa_"
+        + re.sub(
+            r"[^A-Za-z0-9_]",
+            "_",
+            f"{pv_destino}_{nome_instrutor}",
+        )[:80]
+    )
+
+    rota_json = json.dumps(path_limpo, ensure_ascii=False)
+    nome_js = json.dumps(str(nome_instrutor), ensure_ascii=False)
+    pv_js = json.dumps(str(pv_destino), ensure_ascii=False)
+
+    distancia_txt = (
+        f"{float(distancia_km):.1f} km"
+        if distancia_km is not None
+        else "—"
+    )
+    tempo_txt = (
+        f"{float(duracao_min)/60:.1f} h"
+        if duracao_min is not None
+        else "—"
+    )
+
+    google_external = (
+        "https://www.google.com/maps/dir/?api=1"
+        f"&origin={float(origem_lat):.7f},{float(origem_lon):.7f}"
+        f"&destination={float(destino_lat):.7f},{float(destino_lon):.7f}"
+        "&travelmode=driving"
+    )
+
+    html_mapa = f"""
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+    html, body {{
+        margin:0;
+        padding:0;
+        background:transparent;
+        font-family:Inter, Arial, sans-serif;
+    }}
+    .map-shell {{
+        position:relative;
+        width:100%;
+        height:520px;
+        overflow:hidden;
+        border-radius:20px;
+        border:1px solid #E4E7EB;
+        background:#F4F6F8;
+        box-shadow:0 10px 30px rgba(25,30,38,.10);
+    }}
+    #{mapa_id} {{
+        position:absolute;
+        inset:0;
+        z-index:1;
+    }}
+    .leaflet-control-zoom {{
+        border:0 !important;
+        box-shadow:0 4px 14px rgba(0,0,0,.14) !important;
+        border-radius:12px !important;
+        overflow:hidden;
+        margin-top:16px !important;
+        margin-right:16px !important;
+    }}
+    .leaflet-control-zoom a {{
+        width:34px !important;
+        height:34px !important;
+        line-height:34px !important;
+        border:0 !important;
+        color:#34383F !important;
+    }}
+    .route-card {{
+        position:absolute;
+        top:16px;
+        left:16px;
+        z-index:500;
+        width:min(340px, calc(100% - 86px));
+        padding:13px 14px;
+        border-radius:15px;
+        background:rgba(255,255,255,.96);
+        box-shadow:0 8px 24px rgba(0,0,0,.14);
+        border:1px solid rgba(230,232,236,.95);
+        backdrop-filter:blur(8px);
+    }}
+    .route-title {{
+        display:flex;
+        align-items:center;
+        gap:9px;
+        font-size:13px;
+        font-weight:800;
+        color:#20242A;
+        white-space:nowrap;
+        overflow:hidden;
+        text-overflow:ellipsis;
+    }}
+    .route-dot {{
+        width:10px;
+        height:10px;
+        min-width:10px;
+        border-radius:50%;
+        background:#1A73E8;
+        box-shadow:0 0 0 4px rgba(26,115,232,.12);
+    }}
+    .route-sub {{
+        color:#6F757D;
+        font-size:11px;
+        margin-top:6px;
+        line-height:1.4;
+    }}
+    .route-stats {{
+        display:flex;
+        gap:7px;
+        margin-top:10px;
+    }}
+    .route-stat {{
+        flex:1;
+        background:#F6F8FA;
+        border:1px solid #ECEEF1;
+        border-radius:10px;
+        padding:7px 8px;
+    }}
+    .route-stat b {{
+        display:block;
+        color:#24282E;
+        font-size:12px;
+    }}
+    .route-stat span {{
+        color:#858A91;
+        font-size:9px;
+        text-transform:uppercase;
+        font-weight:700;
+        letter-spacing:.03em;
+    }}
+    .google-link {{
+        position:absolute;
+        right:16px;
+        bottom:18px;
+        z-index:500;
+        display:flex;
+        align-items:center;
+        gap:7px;
+        background:#fff;
+        border:1px solid #E2E5E8;
+        border-radius:999px;
+        padding:8px 13px;
+        color:#1A73E8;
+        text-decoration:none;
+        font-weight:800;
+        font-size:11px;
+        box-shadow:0 4px 16px rgba(0,0,0,.13);
+    }}
+    .pin {{
+        width:30px;
+        height:30px;
+        border-radius:50% 50% 50% 8px;
+        transform:rotate(-45deg);
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        border:3px solid white;
+        box-shadow:0 3px 9px rgba(0,0,0,.28);
+    }}
+    .pin > span {{
+        transform:rotate(45deg);
+        color:#fff;
+        font-size:11px;
+        font-weight:900;
+    }}
+    .pin-origin {{ background:#1A73E8; }}
+    .pin-destination {{ background:#FF4D00; }}
+    .leaflet-popup-content-wrapper {{
+        border-radius:12px;
+    }}
+    .leaflet-popup-content {{
+        margin:10px 12px;
+        font-size:12px;
+        line-height:1.45;
+    }}
+</style>
+</head>
+<body>
+<div class="map-shell">
+    <div id="{mapa_id}"></div>
+
+    <div class="route-card">
+        <div class="route-title">
+            <span class="route-dot"></span>
+            <span>{html.escape(str(nome_instrutor))}</span>
+        </div>
+        <div class="route-sub">
+            Origem do instrutor → PV {html.escape(str(pv_destino))}
+        </div>
+        <div class="route-stats">
+            <div class="route-stat">
+                <span>Distância</span>
+                <b>{distancia_txt}</b>
+            </div>
+            <div class="route-stat">
+                <span>Tempo estimado</span>
+                <b>{tempo_txt}</b>
+            </div>
+        </div>
+    </div>
+
+    <a
+      class="google-link"
+      href="{google_external}"
+      target="_blank"
+      rel="noopener noreferrer"
+    >↗ Abrir no Google Maps</a>
+</div>
+
+<script>
+(function() {{
+    const map = L.map(
+        {json.dumps(mapa_id)},
+        {{
+            zoomControl:false,
+            attributionControl:true,
+            preferCanvas:true
+        }}
+    );
+
+    L.control.zoom({{position:'topright'}}).addTo(map);
+
+    L.tileLayer(
+        'https://{{s}}.basemaps.cartocdn.com/rastertiles/voyager/{{z}}/{{x}}/{{y}}{{r}}.png',
+        {{
+            maxZoom:20,
+            subdomains:'abcd',
+            attribution:'&copy; OpenStreetMap &copy; CARTO'
+        }}
+    ).addTo(map);
+
+    const rota = {rota_json};
+
+    // Sombra curta e controlada, apenas para separar a rota das vias.
+    L.polyline(
+        rota,
+        {{
+            color:'#FFFFFF',
+            weight:7,
+            opacity:.88,
+            lineJoin:'round',
+            lineCap:'round'
+        }}
+    ).addTo(map);
+
+    const linha = L.polyline(
+        rota,
+        {{
+            color:'#1A73E8',
+            weight:4,
+            opacity:.98,
+            lineJoin:'round',
+            lineCap:'round'
+        }}
+    ).addTo(map);
+
+    const iconOrigem = L.divIcon({{
+        className:'',
+        html:'<div class="pin pin-origin"><span>●</span></div>',
+        iconSize:[30,30],
+        iconAnchor:[15,29],
+        popupAnchor:[0,-27]
+    }});
+
+    const iconDestino = L.divIcon({{
+        className:'',
+        html:'<div class="pin pin-destination"><span>PV</span></div>',
+        iconSize:[30,30],
+        iconAnchor:[15,29],
+        popupAnchor:[0,-27]
+    }});
+
+    L.marker(
+        [{float(origem_lat):.7f},{float(origem_lon):.7f}],
+        {{icon:iconOrigem}}
+    )
+    .addTo(map)
+    .bindPopup(
+        '<b>' + {nome_js} + '</b><br>Origem do instrutor'
+    );
+
+    L.marker(
+        [{float(destino_lat):.7f},{float(destino_lon):.7f}],
+        {{icon:iconDestino}}
+    )
+    .addTo(map)
+    .bindPopup(
+        '<b>PV ' + {pv_js} + '</b><br>Destino do treinamento'
+    );
+
+    const bounds = linha.getBounds();
+    if (bounds.isValid()) {{
+        map.fitBounds(
+            bounds,
+            {{
+                paddingTopLeft:[45,115],
+                paddingBottomRight:[45,55],
+                maxZoom:11
+            }}
+        );
+    }} else {{
+        map.setView(
+            [{float(destino_lat):.7f},{float(destino_lon):.7f}],
+            8
+        );
+    }}
+
+    setTimeout(function() {{
+        map.invalidateSize();
+    }}, 250);
+}})();
+</script>
+</body>
+</html>
+"""
+
+    components.html(
+        html_mapa,
+        height=540,
+        scrolling=False,
+    )
+    return "leaflet"
 
 
 def _haversine_km(lat1, lon1, lat2, lon2):
