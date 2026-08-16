@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import os
 from datetime import datetime, date
@@ -3487,6 +3488,467 @@ def _amostrar_pontos_rota(path, quantidade=14):
     return [path[i] for i in sorted(indices)]
 
 
+
+def _google_maps_api_key():
+    """Retorna a chave do Google Maps se configurada no Streamlit Secrets."""
+    try:
+        chave = str(st.secrets.get("GOOGLE_MAPS_API_KEY", "") or "").strip()
+        return chave
+    except Exception:
+        return ""
+
+
+def _render_mapa_rota_premium(
+    path,
+    origem_lat,
+    origem_lon,
+    destino_lat,
+    destino_lon,
+    nome_instrutor,
+    pv_destino,
+    distancia_km=None,
+    duracao_min=None,
+):
+    """
+    Mapa integrado de alto acabamento.
+
+    Prioridade:
+    1. Google Maps Embed Directions quando GOOGLE_MAPS_API_KEY estiver configurada.
+    2. Leaflet + CARTO Voyager, usando a mesma geometria rodoviária já calculada
+       pelo CRM/OSRM.
+
+    Todo o restante da Calculadora permanece independente deste renderizador.
+    """
+    chave_google = _google_maps_api_key()
+
+    # ----------------------------
+    # Google Maps oficial integrado
+    # ----------------------------
+    if chave_google:
+        origem = f"{float(origem_lat):.7f},{float(origem_lon):.7f}"
+        destino = f"{float(destino_lat):.7f},{float(destino_lon):.7f}"
+
+        url_google = (
+            "https://www.google.com/maps/embed/v1/directions"
+            f"?key={chave_google}"
+            f"&origin={origem}"
+            f"&destination={destino}"
+            "&mode=driving"
+            "&maptype=roadmap"
+            "&language=pt-BR"
+            "&region=BR"
+        )
+
+        resumo_dist = (
+            f"{float(distancia_km):.1f} km"
+            if distancia_km is not None
+            else "rota calculada"
+        )
+        resumo_tempo = (
+            f" · {float(duracao_min)/60:.1f} h"
+            if duracao_min is not None
+            else ""
+        )
+
+        st.markdown(
+            f"""
+            <div style="
+                background:#FFFFFF;
+                border:1px solid #E6E8EC;
+                border-radius:20px;
+                padding:12px;
+                box-shadow:0 10px 28px rgba(25,30,38,.08);
+                margin:4px 0 8px;
+            ">
+                <div style="
+                    display:flex;
+                    align-items:center;
+                    justify-content:space-between;
+                    gap:12px;
+                    padding:2px 5px 11px;
+                ">
+                    <div>
+                        <div style="font-weight:800;color:#20242A;font-size:.91rem;">
+                            🚗 {html.escape(str(nome_instrutor))}
+                        </div>
+                        <div style="font-size:.73rem;color:#70757D;margin-top:3px;">
+                            {resumo_dist}{resumo_tempo} · destino PV {html.escape(str(pv_destino))}
+                        </div>
+                    </div>
+                    <div style="
+                        background:#EAF3FD;
+                        color:#0D47A1;
+                        border-radius:999px;
+                        padding:5px 10px;
+                        font-size:.67rem;
+                        font-weight:800;
+                    ">GOOGLE MAPS</div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        components.iframe(
+            url_google,
+            height=520,
+            scrolling=False,
+        )
+        return "google"
+
+    # ----------------------------------------------------
+    # Fallback premium: Leaflet + CARTO Voyager integrado
+    # ----------------------------------------------------
+    try:
+        path_limpo = []
+        for ponto in path or []:
+            if isinstance(ponto, (list, tuple)) and len(ponto) >= 2:
+                lon, lat = float(ponto[0]), float(ponto[1])
+                path_limpo.append([lat, lon])
+    except Exception:
+        path_limpo = []
+
+    if len(path_limpo) < 2:
+        path_limpo = [
+            [float(origem_lat), float(origem_lon)],
+            [float(destino_lat), float(destino_lon)],
+        ]
+
+    mapa_id = (
+        "mapa_"
+        + re.sub(
+            r"[^A-Za-z0-9_]",
+            "_",
+            f"{pv_destino}_{nome_instrutor}",
+        )[:80]
+    )
+
+    rota_json = json.dumps(path_limpo, ensure_ascii=False)
+    nome_js = json.dumps(str(nome_instrutor), ensure_ascii=False)
+    pv_js = json.dumps(str(pv_destino), ensure_ascii=False)
+
+    distancia_txt = (
+        f"{float(distancia_km):.1f} km"
+        if distancia_km is not None
+        else "—"
+    )
+    tempo_txt = (
+        f"{float(duracao_min)/60:.1f} h"
+        if duracao_min is not None
+        else "—"
+    )
+
+    google_external = (
+        "https://www.google.com/maps/dir/?api=1"
+        f"&origin={float(origem_lat):.7f},{float(origem_lon):.7f}"
+        f"&destination={float(destino_lat):.7f},{float(destino_lon):.7f}"
+        "&travelmode=driving"
+    )
+
+    html_mapa = f"""
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+    html, body {{
+        margin:0;
+        padding:0;
+        background:transparent;
+        font-family:Inter, Arial, sans-serif;
+    }}
+    .map-shell {{
+        position:relative;
+        width:100%;
+        height:520px;
+        overflow:hidden;
+        border-radius:20px;
+        border:1px solid #E4E7EB;
+        background:#F4F6F8;
+        box-shadow:0 10px 30px rgba(25,30,38,.10);
+    }}
+    #{mapa_id} {{
+        position:absolute;
+        inset:0;
+        z-index:1;
+    }}
+    .leaflet-control-zoom {{
+        border:0 !important;
+        box-shadow:0 4px 14px rgba(0,0,0,.14) !important;
+        border-radius:12px !important;
+        overflow:hidden;
+        margin-top:16px !important;
+        margin-right:16px !important;
+    }}
+    .leaflet-control-zoom a {{
+        width:34px !important;
+        height:34px !important;
+        line-height:34px !important;
+        border:0 !important;
+        color:#34383F !important;
+    }}
+    .route-card {{
+        position:absolute;
+        top:16px;
+        left:16px;
+        z-index:500;
+        width:min(340px, calc(100% - 86px));
+        padding:13px 14px;
+        border-radius:15px;
+        background:rgba(255,255,255,.96);
+        box-shadow:0 8px 24px rgba(0,0,0,.14);
+        border:1px solid rgba(230,232,236,.95);
+        backdrop-filter:blur(8px);
+    }}
+    .route-title {{
+        display:flex;
+        align-items:center;
+        gap:9px;
+        font-size:13px;
+        font-weight:800;
+        color:#20242A;
+        white-space:nowrap;
+        overflow:hidden;
+        text-overflow:ellipsis;
+    }}
+    .route-dot {{
+        width:10px;
+        height:10px;
+        min-width:10px;
+        border-radius:50%;
+        background:#1A73E8;
+        box-shadow:0 0 0 4px rgba(26,115,232,.12);
+    }}
+    .route-sub {{
+        color:#6F757D;
+        font-size:11px;
+        margin-top:6px;
+        line-height:1.4;
+    }}
+    .route-stats {{
+        display:flex;
+        gap:7px;
+        margin-top:10px;
+    }}
+    .route-stat {{
+        flex:1;
+        background:#F6F8FA;
+        border:1px solid #ECEEF1;
+        border-radius:10px;
+        padding:7px 8px;
+    }}
+    .route-stat b {{
+        display:block;
+        color:#24282E;
+        font-size:12px;
+    }}
+    .route-stat span {{
+        color:#858A91;
+        font-size:9px;
+        text-transform:uppercase;
+        font-weight:700;
+        letter-spacing:.03em;
+    }}
+    .google-link {{
+        position:absolute;
+        right:16px;
+        bottom:18px;
+        z-index:500;
+        display:flex;
+        align-items:center;
+        gap:7px;
+        background:#fff;
+        border:1px solid #E2E5E8;
+        border-radius:999px;
+        padding:8px 13px;
+        color:#1A73E8;
+        text-decoration:none;
+        font-weight:800;
+        font-size:11px;
+        box-shadow:0 4px 16px rgba(0,0,0,.13);
+    }}
+    .pin {{
+        width:30px;
+        height:30px;
+        border-radius:50% 50% 50% 8px;
+        transform:rotate(-45deg);
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        border:3px solid white;
+        box-shadow:0 3px 9px rgba(0,0,0,.28);
+    }}
+    .pin > span {{
+        transform:rotate(45deg);
+        color:#fff;
+        font-size:11px;
+        font-weight:900;
+    }}
+    .pin-origin {{ background:#1A73E8; }}
+    .pin-destination {{ background:#FF4D00; }}
+    .leaflet-popup-content-wrapper {{
+        border-radius:12px;
+    }}
+    .leaflet-popup-content {{
+        margin:10px 12px;
+        font-size:12px;
+        line-height:1.45;
+    }}
+</style>
+</head>
+<body>
+<div class="map-shell">
+    <div id="{mapa_id}"></div>
+
+    <div class="route-card">
+        <div class="route-title">
+            <span class="route-dot"></span>
+            <span>{html.escape(str(nome_instrutor))}</span>
+        </div>
+        <div class="route-sub">
+            Origem do instrutor → PV {html.escape(str(pv_destino))}
+        </div>
+        <div class="route-stats">
+            <div class="route-stat">
+                <span>Distância</span>
+                <b>{distancia_txt}</b>
+            </div>
+            <div class="route-stat">
+                <span>Tempo estimado</span>
+                <b>{tempo_txt}</b>
+            </div>
+        </div>
+    </div>
+
+    <a
+      class="google-link"
+      href="{google_external}"
+      target="_blank"
+      rel="noopener noreferrer"
+    >↗ Abrir no Google Maps</a>
+</div>
+
+<script>
+(function() {{
+    const map = L.map(
+        {json.dumps(mapa_id)},
+        {{
+            zoomControl:false,
+            attributionControl:true,
+            preferCanvas:true
+        }}
+    );
+
+    L.control.zoom({{position:'topright'}}).addTo(map);
+
+    L.tileLayer(
+        'https://{{s}}.basemaps.cartocdn.com/rastertiles/voyager/{{z}}/{{x}}/{{y}}{{r}}.png',
+        {{
+            maxZoom:20,
+            subdomains:'abcd',
+            attribution:'&copy; OpenStreetMap &copy; CARTO'
+        }}
+    ).addTo(map);
+
+    const rota = {rota_json};
+
+    // Sombra curta e controlada, apenas para separar a rota das vias.
+    L.polyline(
+        rota,
+        {{
+            color:'#FFFFFF',
+            weight:7,
+            opacity:.88,
+            lineJoin:'round',
+            lineCap:'round'
+        }}
+    ).addTo(map);
+
+    const linha = L.polyline(
+        rota,
+        {{
+            color:'#1A73E8',
+            weight:4,
+            opacity:.98,
+            lineJoin:'round',
+            lineCap:'round'
+        }}
+    ).addTo(map);
+
+    const iconOrigem = L.divIcon({{
+        className:'',
+        html:'<div class="pin pin-origin"><span>●</span></div>',
+        iconSize:[30,30],
+        iconAnchor:[15,29],
+        popupAnchor:[0,-27]
+    }});
+
+    const iconDestino = L.divIcon({{
+        className:'',
+        html:'<div class="pin pin-destination"><span>PV</span></div>',
+        iconSize:[30,30],
+        iconAnchor:[15,29],
+        popupAnchor:[0,-27]
+    }});
+
+    L.marker(
+        [{float(origem_lat):.7f},{float(origem_lon):.7f}],
+        {{icon:iconOrigem}}
+    )
+    .addTo(map)
+    .bindPopup(
+        '<b>' + {nome_js} + '</b><br>Origem do instrutor'
+    );
+
+    L.marker(
+        [{float(destino_lat):.7f},{float(destino_lon):.7f}],
+        {{icon:iconDestino}}
+    )
+    .addTo(map)
+    .bindPopup(
+        '<b>PV ' + {pv_js} + '</b><br>Destino do treinamento'
+    );
+
+    const bounds = linha.getBounds();
+    if (bounds.isValid()) {{
+        map.fitBounds(
+            bounds,
+            {{
+                paddingTopLeft:[45,115],
+                paddingBottomRight:[45,55],
+                maxZoom:11
+            }}
+        );
+    }} else {{
+        map.setView(
+            [{float(destino_lat):.7f},{float(destino_lon):.7f}],
+            8
+        );
+    }}
+
+    setTimeout(function() {{
+        map.invalidateSize();
+    }}, 250);
+}})();
+</script>
+</body>
+</html>
+"""
+
+    components.html(
+        html_mapa,
+        height=540,
+        scrolling=False,
+    )
+    return "leaflet"
+
+
 def _zoom_para_pontos(pontos):
     """Calcula um zoom aproximado para enquadrar todos os pontos no mapa."""
     if not pontos:
@@ -5292,142 +5754,21 @@ elif modulo == "📍 Calculadora & Otimizador de Custos":
                             )
                             duracao_rota = None
 
-                        # Cor da rota acompanha o instrutor selecionado.
-                        ranking_mapa = int(row_mapa.get("Ranking_Proximidade", 1) or 1)
-                        cores_rota = {
-                            1: [255, 43, 32, 245],    # vermelho AmPm
-                            2: [255, 196, 0, 245],    # amarelo
-                            3: [28, 35, 43, 245],     # carvão
-                        }
-                        cor_rota = cores_rota.get(ranking_mapa, [255, 43, 32, 245])
-
-                        df_rota_mapa = pd.DataFrame([{
-                            "Instrutor": nome_mapa,
-                            "Tipo": tipo_rota,
-                            "path": path,
-                            "cor": [cor_rota],
-                        }])
-
-                        # Marcadores discretos ao longo da rota, como no layout aprovado.
-                        pontos_amostrados = _amostrar_pontos_rota(path, quantidade=14)
-                        registros_pontos_rota = []
-                        for lon_pt, lat_pt in pontos_amostrados:
-                            registros_pontos_rota.append({
-                                "name": nome_mapa,
-                                "tipo": "Rota",
-                                "lat": float(lat_pt),
-                                "lon": float(lon_pt),
-                                "cor": cor_rota,
-                            })
-                        df_pontos_rota = pd.DataFrame(registros_pontos_rota)
-
-                        df_extremos_mapa = pd.DataFrame([
-                            {
-                                "name": nome_mapa,
-                                "tipo": "Origem do instrutor",
-                                "lat": i_lat,
-                                "lon": i_lon,
-                                "cor": cor_rota,
-                            },
-                            {
-                                "name": f"Posto {row_mapa.get('PV_ABADI', '')}",
-                                "tipo": "Destino",
-                                "lat": p_lat,
-                                "lon": p_lon,
-                                "cor": [255, 138, 0, 255],
-                            },
-                        ])
-
-                        # Halo branco fino para separar a rota do mapa sem criar borrão.
-                        layer_rota_halo = pdk.Layer(
-                            "PathLayer",
-                            df_rota_mapa,
-                            get_path="path",
-                            get_color=[255, 255, 255, 235],
-                            get_width=6,
-                            width_units="pixels",
-                            width_min_pixels=5,
-                            width_max_pixels=7,
-                            joint_rounded=True,
-                            cap_rounded=True,
-                            pickable=False,
-                        )
-
-                        # Linha principal: fina e nítida.
-                        layer_rota = pdk.Layer(
-                            "PathLayer",
-                            df_rota_mapa,
-                            get_path="path",
-                            get_color="cor",
-                            get_width=2.8,
-                            width_units="pixels",
-                            width_min_pixels=2,
-                            width_max_pixels=4,
-                            joint_rounded=True,
-                            cap_rounded=True,
-                            pickable=True,
-                        )
-
-                        # Pequenos pontos de referência na rota.
-                        layer_pontos_rota = pdk.Layer(
-                            "ScatterplotLayer",
-                            df_pontos_rota,
-                            get_position="[lon, lat]",
-                            get_fill_color="cor",
-                            get_line_color=[255, 255, 255, 255],
-                            stroked=True,
-                            filled=True,
-                            radius_units="pixels",
-                            get_radius=4.2,
-                            radius_min_pixels=3,
-                            radius_max_pixels=5,
-                            line_width_units="pixels",
-                            get_line_width=1.5,
-                            pickable=False,
-                        )
-
-                        # Origem e destino um pouco maiores.
-                        layer_extremos = pdk.Layer(
-                            "ScatterplotLayer",
-                            df_extremos_mapa,
-                            get_position="[lon, lat]",
-                            get_fill_color="cor",
-                            get_line_color=[255, 255, 255, 255],
-                            stroked=True,
-                            filled=True,
-                            radius_units="pixels",
-                            get_radius=7,
-                            radius_min_pixels=6,
-                            radius_max_pixels=9,
-                            line_width_units="pixels",
-                            get_line_width=2,
-                            pickable=True,
-                        )
-
-                        coords_enquadramento = [(p_lat, p_lon), (i_lat, i_lon)]
-                        centro_lat = (p_lat + i_lat) / 2
-                        centro_lon = (p_lon + i_lon) / 2
-                        zoom_mapa = _zoom_para_pontos(coords_enquadramento)
-
-                        st.pydeck_chart(
-                            pdk.Deck(
-                                map_style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
-                                layers=[
-                                    layer_rota_halo,
-                                    layer_rota,
-                                    layer_pontos_rota,
-                                    layer_extremos,
-                                ],
-                                initial_view_state=pdk.ViewState(
-                                    latitude=centro_lat,
-                                    longitude=centro_lon,
-                                    zoom=zoom_mapa,
-                                    pitch=0,
-                                    bearing=0,
-                                ),
-                                tooltip={"text": "{name}\n{tipo}"},
-                            ),
-                            use_container_width=True,
+                        # =====================================================
+                        # MAPA PREMIUM INTEGRADO
+                        # Mantém a rota, ranking, distância, duração e custos já
+                        # calculados; troca apenas a camada visual do mapa.
+                        # =====================================================
+                        _render_mapa_rota_premium(
+                            path=path,
+                            origem_lat=i_lat,
+                            origem_lon=i_lon,
+                            destino_lat=p_lat,
+                            destino_lon=p_lon,
+                            nome_instrutor=nome_mapa,
+                            pv_destino=row_mapa.get("PV_ABADI", pv_txt),
+                            distancia_km=distancia_rota,
+                            duracao_min=duracao_rota,
                         )
 
                         if duracao_rota is not None:
