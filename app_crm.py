@@ -25,6 +25,29 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# V53 — interface limpa: oculta permanentemente controles nativos do
+# Streamlit Cloud ligados a GitHub/source/deploy, inclusive na tela de login.
+st.markdown(
+    """
+    <style>
+        [data-testid="stToolbar"],
+        [data-testid="stAppDeployButton"],
+        [data-testid="stDecoration"],
+        [data-testid="stStatusWidget"],
+        a[href*="github.com"],
+        button[aria-label*="GitHub"],
+        button[title*="GitHub"],
+        a[aria-label*="GitHub"],
+        a[title*="GitHub"],
+        #MainMenu {
+            display: none !important;
+            visibility: hidden !important;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 CAMINHO_ARQUIVO = "Base_Unificada_AmPm.xlsx"
 CAMINHO_BACKUP = "Base_Unificada_AmPm.backup.xlsx"
 
@@ -4307,26 +4330,8 @@ def render_importador_inteligente():
 
 
 # --- CONTROLE DO MENU SUPERIOR DO STREAMLIT ---
-# O botão de acesso ao código/GitHub é nativo do Streamlit Cloud.
-# Administradores mantêm o toolbar completo; demais usuários recebem
-# toolbar mínimo, sem acesso ao repositório pelo canto superior direito.
-if not usuario_e_admin():
-    st.markdown(
-        """
-        <style>
-            /* Oculta o botão nativo de source/GitHub e ações de deploy para não-admins. */
-            [data-testid="stToolbar"] a[href*="github.com"],
-            [data-testid="stToolbar"] button[aria-label*="GitHub"],
-            [data-testid="stToolbar"] button[title*="GitHub"],
-            [data-testid="stToolbar"] a[aria-label*="GitHub"],
-            [data-testid="stToolbar"] a[title*="GitHub"],
-            [data-testid="stToolbar"] [data-testid="stAppDeployButton"] {
-                display: none !important;
-            }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+# V53: GitHub/source/deploy ficam ocultos para todos os perfis.
+# A regra é aplicada no início do arquivo para funcionar também no login.
 
 # --- SIDEBAR & NAVEGAÇÃO ---
 with st.sidebar:
