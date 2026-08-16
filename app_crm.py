@@ -49,7 +49,8 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# V55 PERFORMANCE: caches e geração sob demanda reduzem trabalho repetido por rerun.\nCAMINHO_ARQUIVO = "Base_Unificada_AmPm.xlsx"
+# V55 PERFORMANCE: caches e geração sob demanda reduzem trabalho repetido por rerun.
+CAMINHO_ARQUIVO = "Base_Unificada_AmPm.xlsx"
 CAMINHO_BACKUP = "Base_Unificada_AmPm.backup.xlsx"
 
 # Banco central online. O Excel permanece apenas como fonte de importação/fallback.
