@@ -388,16 +388,27 @@ BUCKET_FOTOS = "crm-form-fotos"
 
 @st.cache_resource(show_spinner=False)
 def supabase_client():
+    """
+    Usa os mesmos nomes de Secrets aceitos pelo CRM principal.
+    Compatível com:
+    - SUPABASE_SERVICE_ROLE_KEY
+    - SUPABASE_SECRET_KEY
+    """
     try:
         url = str(
             st.secrets.get("SUPABASE_URL", SUPABASE_PROJECT_URL_PADRAO)
             or SUPABASE_PROJECT_URL_PADRAO
         ).strip()
-        chave = str(st.secrets.get("SUPABASE_SERVICE_ROLE_KEY", "") or "").strip()
+
+        chave = (
+            st.secrets.get("SUPABASE_SERVICE_ROLE_KEY")
+            or st.secrets.get("SUPABASE_SECRET_KEY")
+        )
 
         if not chave:
             return None
-        return create_client(url, chave)
+
+        return create_client(url, str(chave).strip())
     except Exception:
         return None
 
