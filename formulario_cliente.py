@@ -283,6 +283,50 @@ st.markdown(
             color:#404449 !important;
         }
 
+        /* =====================================================
+           CONTRASTE DAS OPÇÕES — AZUL IGT
+           Mantém a seleção/acentos do AmPm e melhora a leitura
+           de Sim, Não e demais alternativas.
+        ====================================================== */
+
+        /* Texto das opções dos radios */
+        div[role="radiogroup"] label,
+        div[role="radiogroup"] label p,
+        div[role="radiogroup"] label span {
+            color:#1F4E8C !important;
+            font-weight:700 !important;
+            opacity:1 !important;
+        }
+
+        /* Checkboxes de confirmação */
+        div[data-testid="stCheckbox"] label,
+        div[data-testid="stCheckbox"] label p,
+        div[data-testid="stCheckbox"] label span {
+            color:#1F4E8C !important;
+            font-weight:700 !important;
+            opacity:1 !important;
+        }
+
+        /* Selectboxes: mantém o texto das opções legível */
+        div[data-baseweb="select"] span {
+            color:#1F4E8C !important;
+            font-weight:650 !important;
+            opacity:1 !important;
+        }
+
+        /* Texto auxiliar do upload */
+        div[data-testid="stFileUploader"] small,
+        div[data-testid="stFileUploader"] span {
+            color:#1F4E8C !important;
+            opacity:1 !important;
+        }
+
+        /* Garante leitura no tema escuro do navegador/sistema */
+        div[role="radiogroup"] label *,
+        div[data-testid="stCheckbox"] label * {
+            -webkit-text-fill-color:#1F4E8C !important;
+        }
+
         div[data-testid="stMarkdownContainer"] p {
             line-height:1.4;
         }
