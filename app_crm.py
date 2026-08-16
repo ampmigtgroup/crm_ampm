@@ -49,7 +49,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-CAMINHO_ARQUIVO = "Base_Unificada_AmPm.xlsx"
+# V55 PERFORMANCE: caches e geração sob demanda reduzem trabalho repetido por rerun.\nCAMINHO_ARQUIVO = "Base_Unificada_AmPm.xlsx"
 CAMINHO_BACKUP = "Base_Unificada_AmPm.backup.xlsx"
 
 # Banco central online. O Excel permanece apenas como fonte de importação/fallback.
@@ -541,33 +541,70 @@ def _renderizar_mini_orcamento(posto, pv):
         st.session_state["orcamentos_crm"] = orcamentos
         st.rerun()
 
-    # Exportação somente depois de salvo.
+    # Exportação somente depois de salvo e somente quando solicitada.
     orcamento_atual = st.session_state["orcamentos_crm"].get(chave, orcamento)
     if orcamento_atual.get("itens"):
         st.markdown("#### 📤 Exportar orçamento pronto")
-        excel_orc = _gerar_excel_orcamento(orcamento_atual, posto, pv)
-        pacote = _criar_pacote_orcamento(orcamento_atual, posto, pv)
-        nome_base = re.sub(r"[^A-Za-z0-9_-]", "_", str(orcamento_atual.get("numero", "orcamento")))
+        nome_base = re.sub(
+            r"[^A-Za-z0-9_-]",
+            "_",
+            str(orcamento_atual.get("numero", "orcamento")),
+        )
+
+        chave_excel_orc = f"orc_excel_pronto_{chave}"
+        chave_zip_orc = f"orc_zip_pronto_{chave}"
+        versao_orc = str(orcamento_atual.get("atualizado_em", ""))
+
+        if st.session_state.get(f"orc_versao_{chave}") != versao_orc:
+            st.session_state.pop(chave_excel_orc, None)
+            st.session_state.pop(chave_zip_orc, None)
+            st.session_state[f"orc_versao_{chave}"] = versao_orc
 
         e1, e2 = st.columns(2)
+
         with e1:
-            st.download_button(
-                "📊 Exportar Orçamento em Excel",
-                data=excel_orc,
-                file_name=f"{nome_base}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-                key=f"export_excel_orc_{chave}",
-            )
+            if chave_excel_orc not in st.session_state:
+                if st.button(
+                    "⚡ Preparar Excel do Orçamento",
+                    use_container_width=True,
+                    key=f"prep_excel_orc_{chave}",
+                ):
+                    with st.spinner("Preparando orçamento em Excel..."):
+                        st.session_state[chave_excel_orc] = _gerar_excel_orcamento(
+                            orcamento_atual, posto, pv
+                        )
+                    st.rerun()
+            else:
+                st.download_button(
+                    "📊 Baixar Orçamento em Excel",
+                    data=st.session_state[chave_excel_orc],
+                    file_name=f"{nome_base}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    key=f"export_excel_orc_{chave}",
+                )
+
         with e2:
-            st.download_button(
-                "📦 Exportar Orçamento + Documentos",
-                data=pacote,
-                file_name=f"{nome_base}_com_documentos.zip",
-                mime="application/zip",
-                use_container_width=True,
-                key=f"export_zip_orc_{chave}",
-            )
+            if chave_zip_orc not in st.session_state:
+                if st.button(
+                    "⚡ Preparar Pacote + Documentos",
+                    use_container_width=True,
+                    key=f"prep_zip_orc_{chave}",
+                ):
+                    with st.spinner("Preparando pacote..."):
+                        st.session_state[chave_zip_orc] = _criar_pacote_orcamento(
+                            orcamento_atual, posto, pv
+                        )
+                    st.rerun()
+            else:
+                st.download_button(
+                    "📦 Baixar Orçamento + Documentos",
+                    data=st.session_state[chave_zip_orc],
+                    file_name=f"{nome_base}_com_documentos.zip",
+                    mime="application/zip",
+                    use_container_width=True,
+                    key=f"export_zip_orc_{chave}",
+                )
 
 
 COLUNAS_FILA = [
@@ -1697,6 +1734,7 @@ def _nome_arquivo_seguro(texto):
     return texto or "exportacao"
 
 
+@st.cache_data(show_spinner=False, max_entries=24)
 def _excel_dataframe_bytes(df, nome_aba="Dados"):
     if df is None:
         df = pd.DataFrame()
@@ -1716,11 +1754,19 @@ def _excel_dataframe_bytes(df, nome_aba="Dados"):
     return buffer.getvalue()
 
 
-def render_exportacao_modulo(df, nome_modulo, nome_aba=None, legenda=None):
+@st.cache_data(show_spinner=False, max_entries=32)
+def _csv_dataframe_bytes(df):
     if df is None:
         df = pd.DataFrame()
-    df_export = df.copy()
+    return df.to_csv(index=False).encode("utf-8-sig")
 
+
+def render_exportacao_modulo(df, nome_modulo, nome_aba=None, legenda=None):
+    """Exportação eficiente: CSV imediato e Excel somente quando solicitado."""
+    if df is None:
+        df = pd.DataFrame()
+
+    df_export = df
     st.divider()
     st.markdown("### 📤 Exportar dados deste módulo")
     st.caption(
@@ -1732,10 +1778,24 @@ def render_exportacao_modulo(df, nome_modulo, nome_aba=None, legenda=None):
         return
 
     nome_base = _nome_arquivo_seguro(nome_modulo)
-    csv_bytes = df_export.to_csv(index=False).encode("utf-8-sig")
-    excel_bytes = _excel_dataframe_bytes(df_export, nome_aba or nome_modulo)
+    aba = nome_aba or nome_modulo
+    csv_bytes = _csv_dataframe_bytes(df_export)
+
+    chave_excel = f"excel_pronto_{nome_base}"
+    chave_assinatura = f"excel_assinatura_{nome_base}"
+    assinatura = (
+        len(df_export),
+        tuple(map(str, df_export.columns)),
+        str(df_export.index.min()) if len(df_export) else "",
+        str(df_export.index.max()) if len(df_export) else "",
+    )
+
+    if st.session_state.get(chave_assinatura) != assinatura:
+        st.session_state.pop(chave_excel, None)
+        st.session_state[chave_assinatura] = assinatura
 
     c_csv, c_xlsx = st.columns(2)
+
     with c_csv:
         st.download_button(
             "📄 Exportar CSV",
@@ -1745,16 +1805,27 @@ def render_exportacao_modulo(df, nome_modulo, nome_aba=None, legenda=None):
             use_container_width=True,
             key=f"export_csv_mod_{nome_base}",
         )
-    with c_xlsx:
-        st.download_button(
-            "📊 Exportar Excel",
-            data=excel_bytes,
-            file_name=f"{nome_base}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True,
-            key=f"export_xlsx_mod_{nome_base}",
-        )
 
+    with c_xlsx:
+        if chave_excel not in st.session_state:
+            if st.button(
+                "⚡ Preparar Excel",
+                use_container_width=True,
+                key=f"preparar_xlsx_mod_{nome_base}",
+                help="O Excel é gerado somente quando necessário para manter o CRM mais rápido.",
+            ):
+                with st.spinner("Preparando Excel..."):
+                    st.session_state[chave_excel] = _excel_dataframe_bytes(df_export, aba)
+                st.rerun()
+        else:
+            st.download_button(
+                "📊 Baixar Excel",
+                data=st.session_state[chave_excel],
+                file_name=f"{nome_base}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                key=f"export_xlsx_mod_{nome_base}",
+            )
 
 
 MODELOS_WHATSAPP_PADRAO = {
@@ -1808,6 +1879,7 @@ MODELOS_WHATSAPP_PADRAO = {
 }
 
 
+@st.cache_data(ttl=300, show_spinner=False, max_entries=2)
 def carregar_modelos_whatsapp():
     """Lê os modelos centrais do Supabase; usa defaults locais apenas como fallback."""
     try:
@@ -1861,6 +1933,10 @@ def salvar_modelo_whatsapp(chave, nome, mensagem):
         .execute()
     )
 
+    try:
+        carregar_modelos_whatsapp.clear()
+    except Exception:
+        pass
     st.session_state.pop("modelos_whatsapp_cache", None)
     return registro
 
@@ -2890,6 +2966,7 @@ def _merge_base_por_pv(df_base, df_extra, chave_base, chave_extra):
     return merged
 
 
+@st.cache_data(show_spinner=False, max_entries=8)
 def construir_base_unificada(df_lojas, df_fila, df_inaug):
     """Constrói a visão do PROCV sem perder dados de nenhuma entidade.
     Campos que existem em mais de uma origem são coalescidos por PV.
@@ -3368,9 +3445,14 @@ def _upsert_contatos_supabase(df_contatos, tamanho_lote=500):
             .execute()
         )
         total += len(lote)
+    try:
+        _contar_contatos_supabase.clear()
+    except Exception:
+        pass
     return total
 
 
+@st.cache_data(ttl=180, show_spinner=False, max_entries=2)
 def _contar_contatos_supabase():
     """Conta contatos únicos persistidos. Falha silenciosamente para não derrubar dashboard."""
     try:
@@ -3470,598 +3552,6 @@ def _obter_rota_rodoviaria(lat_origem, lon_origem, lat_destino, lon_destino):
         return None, None, None
 
 
-
-
-def _amostrar_pontos_rota(path, quantidade=14):
-    """Retorna poucos pontos distribuídos ao longo da geometria da rota."""
-    if not path or len(path) < 2:
-        return []
-
-    quantidade = max(2, int(quantidade))
-    if len(path) <= quantidade:
-        return path
-
-    indices = {
-        round(i * (len(path) - 1) / (quantidade - 1))
-        for i in range(quantidade)
-    }
-    return [path[i] for i in sorted(indices)]
-
-
-
-def _google_maps_api_key():
-    """Retorna a chave do Google Maps se configurada no Streamlit Secrets."""
-    try:
-        chave = str(st.secrets.get("GOOGLE_MAPS_API_KEY", "") or "").strip()
-        return chave
-    except Exception:
-        return ""
-
-
-def _render_mapa_rota_premium(
-    path,
-    origem_lat,
-    origem_lon,
-    destino_lat,
-    destino_lon,
-    nome_instrutor,
-    pv_destino,
-    distancia_km=None,
-    duracao_min=None,
-):
-    """
-    Mapa integrado de alto acabamento.
-
-    Prioridade:
-    1. Google Maps Embed Directions quando GOOGLE_MAPS_API_KEY estiver configurada.
-    2. Leaflet + CARTO Voyager, usando a mesma geometria rodoviária já calculada
-       pelo CRM/OSRM.
-
-    Todo o restante da Calculadora permanece independente deste renderizador.
-    """
-    chave_google = _google_maps_api_key()
-
-    # ----------------------------
-    # Google Maps oficial integrado
-    # ----------------------------
-    if chave_google:
-        origem = f"{float(origem_lat):.7f},{float(origem_lon):.7f}"
-        destino = f"{float(destino_lat):.7f},{float(destino_lon):.7f}"
-
-        url_google = (
-            "https://www.google.com/maps/embed/v1/directions"
-            f"?key={chave_google}"
-            f"&origin={origem}"
-            f"&destination={destino}"
-            "&mode=driving"
-            "&maptype=roadmap"
-            "&language=pt-BR"
-            "&region=BR"
-        )
-
-        resumo_dist = (
-            f"{float(distancia_km):.1f} km"
-            if distancia_km is not None
-            else "rota calculada"
-        )
-        resumo_tempo = (
-            f" · {float(duracao_min)/60:.1f} h"
-            if duracao_min is not None
-            else ""
-        )
-
-        st.markdown(
-            f"""
-            <div style="
-                background:#FFFFFF;
-                border:1px solid #E6E8EC;
-                border-radius:20px;
-                padding:12px;
-                box-shadow:0 10px 28px rgba(25,30,38,.08);
-                margin:4px 0 8px;
-            ">
-                <div style="
-                    display:flex;
-                    align-items:center;
-                    justify-content:space-between;
-                    gap:12px;
-                    padding:2px 5px 11px;
-                ">
-                    <div>
-                        <div style="font-weight:800;color:#20242A;font-size:.91rem;">
-                            🚗 {html.escape(str(nome_instrutor))}
-                        </div>
-                        <div style="font-size:.73rem;color:#70757D;margin-top:3px;">
-                            {resumo_dist}{resumo_tempo} · destino PV {html.escape(str(pv_destino))}
-                        </div>
-                    </div>
-                    <div style="
-                        background:#EAF3FD;
-                        color:#0D47A1;
-                        border-radius:999px;
-                        padding:5px 10px;
-                        font-size:.67rem;
-                        font-weight:800;
-                    ">GOOGLE MAPS</div>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        components.iframe(
-            url_google,
-            height=520,
-            scrolling=False,
-        )
-        return "google"
-
-    # ----------------------------------------------------
-    # Fallback premium: Leaflet + CARTO Voyager integrado
-    # ----------------------------------------------------
-    try:
-        path_limpo = []
-        for ponto in path or []:
-            if isinstance(ponto, (list, tuple)) and len(ponto) >= 2:
-                lon, lat = float(ponto[0]), float(ponto[1])
-                path_limpo.append([lat, lon])
-    except Exception:
-        path_limpo = []
-
-    if len(path_limpo) < 2:
-        path_limpo = [
-            [float(origem_lat), float(origem_lon)],
-            [float(destino_lat), float(destino_lon)],
-        ]
-
-    mapa_id = (
-        "mapa_"
-        + re.sub(
-            r"[^A-Za-z0-9_]",
-            "_",
-            f"{pv_destino}_{nome_instrutor}",
-        )[:80]
-    )
-
-    rota_json = json.dumps(path_limpo, ensure_ascii=False)
-    nome_js = json.dumps(str(nome_instrutor), ensure_ascii=False)
-    pv_js = json.dumps(str(pv_destino), ensure_ascii=False)
-
-    distancia_txt = (
-        f"{float(distancia_km):.1f} km"
-        if distancia_km is not None
-        else "—"
-    )
-    tempo_txt = (
-        f"{float(duracao_min)/60:.1f} h"
-        if duracao_min is not None
-        else "—"
-    )
-
-    google_external = (
-        "https://www.google.com/maps/dir/?api=1"
-        f"&origin={float(origem_lat):.7f},{float(origem_lon):.7f}"
-        f"&destination={float(destino_lat):.7f},{float(destino_lon):.7f}"
-        "&travelmode=driving"
-    )
-
-    html_mapa = f"""
-<!doctype html>
-<html>
-<head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
-<link
-  rel="stylesheet"
-  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<style>
-    html, body {{
-        margin:0;
-        padding:0;
-        background:transparent;
-        font-family:Inter, Arial, sans-serif;
-    }}
-    .map-shell {{
-        position:relative;
-        width:100%;
-        height:520px;
-        overflow:hidden;
-        border-radius:20px;
-        border:1px solid #E4E7EB;
-        background:#F4F6F8;
-        box-shadow:0 10px 30px rgba(25,30,38,.10);
-    }}
-    #{mapa_id} {{
-        position:absolute;
-        inset:0;
-        z-index:1;
-    }}
-    .leaflet-control-zoom {{
-        border:0 !important;
-        box-shadow:0 4px 14px rgba(0,0,0,.14) !important;
-        border-radius:12px !important;
-        overflow:hidden;
-        margin-top:16px !important;
-        margin-right:16px !important;
-    }}
-    .leaflet-control-zoom a {{
-        width:34px !important;
-        height:34px !important;
-        line-height:34px !important;
-        border:0 !important;
-        color:#34383F !important;
-    }}
-    .route-card {{
-        position:absolute;
-        top:16px;
-        left:16px;
-        z-index:500;
-        width:min(340px, calc(100% - 86px));
-        padding:13px 14px;
-        border-radius:15px;
-        background:rgba(255,255,255,.96);
-        box-shadow:0 8px 24px rgba(0,0,0,.14);
-        border:1px solid rgba(230,232,236,.95);
-        backdrop-filter:blur(8px);
-    }}
-    .route-title {{
-        display:flex;
-        align-items:center;
-        gap:9px;
-        font-size:13px;
-        font-weight:800;
-        color:#20242A;
-        white-space:nowrap;
-        overflow:hidden;
-        text-overflow:ellipsis;
-    }}
-    .route-dot {{
-        width:10px;
-        height:10px;
-        min-width:10px;
-        border-radius:50%;
-        background:#1A73E8;
-        box-shadow:0 0 0 4px rgba(26,115,232,.12);
-    }}
-    .route-sub {{
-        color:#6F757D;
-        font-size:11px;
-        margin-top:6px;
-        line-height:1.4;
-    }}
-    .route-stats {{
-        display:flex;
-        gap:7px;
-        margin-top:10px;
-    }}
-    .route-stat {{
-        flex:1;
-        background:#F6F8FA;
-        border:1px solid #ECEEF1;
-        border-radius:10px;
-        padding:7px 8px;
-    }}
-    .route-stat b {{
-        display:block;
-        color:#24282E;
-        font-size:12px;
-    }}
-    .route-stat span {{
-        color:#858A91;
-        font-size:9px;
-        text-transform:uppercase;
-        font-weight:700;
-        letter-spacing:.03em;
-    }}
-    .google-link {{
-        position:absolute;
-        right:16px;
-        bottom:18px;
-        z-index:500;
-        display:flex;
-        align-items:center;
-        gap:7px;
-        background:#fff;
-        border:1px solid #E2E5E8;
-        border-radius:999px;
-        padding:8px 13px;
-        color:#1A73E8;
-        text-decoration:none;
-        font-weight:800;
-        font-size:11px;
-        box-shadow:0 4px 16px rgba(0,0,0,.13);
-    }}
-    .pin {{
-        width:30px;
-        height:30px;
-        border-radius:50% 50% 50% 8px;
-        transform:rotate(-45deg);
-        display:flex;
-        align-items:center;
-        justify-content:center;
-        border:3px solid white;
-        box-shadow:0 3px 9px rgba(0,0,0,.28);
-    }}
-    .pin > span {{
-        transform:rotate(45deg);
-        color:#fff;
-        font-size:11px;
-        font-weight:900;
-    }}
-    .pin-origin {{ background:#1A73E8; }}
-    .pin-destination {{ background:#FF4D00; }}
-    .leaflet-popup-content-wrapper {{
-        border-radius:12px;
-    }}
-    .leaflet-popup-content {{
-        margin:10px 12px;
-        font-size:12px;
-        line-height:1.45;
-    }}
-</style>
-</head>
-<body>
-<div class="map-shell">
-    <div id="{mapa_id}"></div>
-
-    <div class="route-card">
-        <div class="route-title">
-            <span class="route-dot"></span>
-            <span>{html.escape(str(nome_instrutor))}</span>
-        </div>
-        <div class="route-sub">
-            Origem do instrutor → PV {html.escape(str(pv_destino))}
-        </div>
-        <div class="route-stats">
-            <div class="route-stat">
-                <span>Distância</span>
-                <b>{distancia_txt}</b>
-            </div>
-            <div class="route-stat">
-                <span>Tempo estimado</span>
-                <b>{tempo_txt}</b>
-            </div>
-        </div>
-    </div>
-
-    <a
-      class="google-link"
-      href="{google_external}"
-      target="_blank"
-      rel="noopener noreferrer"
-    >↗ Abrir no Google Maps</a>
-</div>
-
-<script>
-(function() {{
-    const map = L.map(
-        {json.dumps(mapa_id)},
-        {{
-            zoomControl:false,
-            attributionControl:true,
-            preferCanvas:true
-        }}
-    );
-
-    L.control.zoom({{position:'topright'}}).addTo(map);
-
-    L.tileLayer(
-        'https://{{s}}.basemaps.cartocdn.com/rastertiles/voyager/{{z}}/{{x}}/{{y}}{{r}}.png',
-        {{
-            maxZoom:20,
-            subdomains:'abcd',
-            attribution:'&copy; OpenStreetMap &copy; CARTO'
-        }}
-    ).addTo(map);
-
-    const rota = {rota_json};
-
-    // Sombra curta e controlada, apenas para separar a rota das vias.
-    L.polyline(
-        rota,
-        {{
-            color:'#FFFFFF',
-            weight:7,
-            opacity:.88,
-            lineJoin:'round',
-            lineCap:'round'
-        }}
-    ).addTo(map);
-
-    const linha = L.polyline(
-        rota,
-        {{
-            color:'#1A73E8',
-            weight:4,
-            opacity:.98,
-            lineJoin:'round',
-            lineCap:'round'
-        }}
-    ).addTo(map);
-
-    const iconOrigem = L.divIcon({{
-        className:'',
-        html:'<div class="pin pin-origin"><span>●</span></div>',
-        iconSize:[30,30],
-        iconAnchor:[15,29],
-        popupAnchor:[0,-27]
-    }});
-
-    const iconDestino = L.divIcon({{
-        className:'',
-        html:'<div class="pin pin-destination"><span>PV</span></div>',
-        iconSize:[30,30],
-        iconAnchor:[15,29],
-        popupAnchor:[0,-27]
-    }});
-
-    L.marker(
-        [{float(origem_lat):.7f},{float(origem_lon):.7f}],
-        {{icon:iconOrigem}}
-    )
-    .addTo(map)
-    .bindPopup(
-        '<b>' + {nome_js} + '</b><br>Origem do instrutor'
-    );
-
-    L.marker(
-        [{float(destino_lat):.7f},{float(destino_lon):.7f}],
-        {{icon:iconDestino}}
-    )
-    .addTo(map)
-    .bindPopup(
-        '<b>PV ' + {pv_js} + '</b><br>Destino do treinamento'
-    );
-
-    const bounds = linha.getBounds();
-    if (bounds.isValid()) {{
-        map.fitBounds(
-            bounds,
-            {{
-                paddingTopLeft:[45,115],
-                paddingBottomRight:[45,55],
-                maxZoom:11
-            }}
-        );
-    }} else {{
-        map.setView(
-            [{float(destino_lat):.7f},{float(destino_lon):.7f}],
-            8
-        );
-    }}
-
-    setTimeout(function() {{
-        map.invalidateSize();
-    }}, 250);
-}})();
-</script>
-</body>
-</html>
-"""
-
-    components.html(
-        html_mapa,
-        height=540,
-        scrolling=False,
-    )
-    return "leaflet"
-
-
-def _zoom_para_pontos(pontos):
-    """Calcula um zoom aproximado para enquadrar todos os pontos no mapa."""
-    if not pontos:
-        return 4.0
-
-    lats = [float(p[0]) for p in pontos]
-    lons = [float(p[1]) for p in pontos]
-    lat_span = max(lats) - min(lats)
-    lon_span = max(lons) - min(lons)
-    span = max(lat_span, lon_span)
-
-    if span <= 0.10:
-        return 10.5
-    if span <= 0.30:
-        return 9.0
-    if span <= 0.70:
-        return 7.5
-    if span <= 1.50:
-        return 6.5
-    if span <= 3.00:
-        return 5.5
-    if span <= 6.00:
-        return 4.5
-    if span <= 12.00:
-        return 3.8
-    if span <= 25.00:
-        return 3.1
-    return 2.5
-
-
-def _montar_rotas_mapa(top_instrutores):
-    """
-    Monta as rotas dos 3 instrutores para o posto.
-    Usa OSRM quando disponível; se falhar, mantém uma linha reta visível.
-    """
-    if top_instrutores is None or top_instrutores.empty:
-        return [], [], []
-
-    cores = [
-        [0, 150, 90, 230],
-        [245, 140, 0, 230],
-        [55, 105, 220, 230],
-    ]
-
-    rotas = []
-    pontos = []
-    resumo = []
-
-    primeira = top_instrutores.iloc[0]
-    p_lat = float(primeira["Lat_Loja"])
-    p_lon = float(primeira["Lon_Loja"])
-
-    pontos.append({
-        "name": f"Posto {primeira.get('PV_ABADI', '')}",
-        "tipo": "Posto",
-        "lat": p_lat,
-        "lon": p_lon,
-        "cor": [220, 40, 40, 255],
-    })
-
-    for idx, (_, row) in enumerate(top_instrutores.iterrows()):
-        try:
-            i_lat = float(row["Lat_Instrutor"])
-            i_lon = float(row["Lon_Instrutor"])
-        except Exception:
-            continue
-
-        nome = str(row.get("Instrutor_Sugerido", f"Instrutor {idx + 1}"))
-        cor = cores[min(idx, len(cores) - 1)]
-
-        pontos.append({
-            "name": nome,
-            "tipo": f"Instrutor #{idx + 1}",
-            "lat": i_lat,
-            "lon": i_lon,
-            "cor": cor,
-        })
-
-        rota_coords, rota_km, rota_min = _obter_rota_rodoviaria(
-            i_lat, i_lon, p_lat, p_lon
-        )
-
-        if rota_coords:
-            path = rota_coords
-            tipo_rota = "Rodoviária"
-            km_exibicao = rota_km
-            min_exibicao = rota_min
-        else:
-            # A rota continua visível no mapa mesmo se o servidor OSRM estiver indisponível.
-            path = [[i_lon, i_lat], [p_lon, p_lat]]
-            tipo_rota = "Linha reta (fallback)"
-            km_exibicao = float(row.get("Distancia_km_linha_reta", 0) or 0)
-            min_exibicao = None
-
-        rotas.append({
-            "Instrutor": nome,
-            "Ranking": idx + 1,
-            "path": path,
-            "cor": cor,
-            "largura": max(5, 9 - idx * 2),
-            "Tipo": tipo_rota,
-            "Distancia_km": km_exibicao,
-        })
-
-        resumo.append({
-            "Ranking": idx + 1,
-            "Instrutor": nome,
-            "Rota": tipo_rota,
-            "Distância": km_exibicao,
-            "Tempo_min": min_exibicao,
-        })
-
-    return rotas, pontos, resumo
 
 
 def _haversine_km(lat1, lon1, lat2, lon2):
