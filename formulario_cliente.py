@@ -307,9 +307,8 @@ st.markdown(
             opacity:1 !important;
         }
 
-        /* Selectboxes: mantém o texto das opções legível */
+        /* Selectboxes: o texto interno será definido no bloco azul abaixo */
         div[data-baseweb="select"] span {
-            color:#1F4E8C !important;
             font-weight:650 !important;
             opacity:1 !important;
         }
@@ -325,6 +324,98 @@ st.markdown(
         div[role="radiogroup"] label *,
         div[data-testid="stCheckbox"] label * {
             -webkit-text-fill-color:#1F4E8C !important;
+        }
+
+
+        /* =====================================================
+           CAMPOS DE RESPOSTA — AZUL IGT
+           Troca as caixas escuras/preta por azul institucional,
+           mantendo texto branco e alto contraste.
+        ====================================================== */
+
+        /* Inputs de texto, e-mail, telefone, CNPJ e município */
+        div[data-baseweb="input"] > div {
+            background:#1F4E8C !important;
+            border:1px solid #2E65A8 !important;
+            box-shadow:none !important;
+        }
+
+        div[data-baseweb="input"] input {
+            background:transparent !important;
+            color:#FFFFFF !important;
+            -webkit-text-fill-color:#FFFFFF !important;
+            caret-color:#FFFFFF !important;
+            font-weight:600 !important;
+        }
+
+        div[data-baseweb="input"] input::placeholder {
+            color:#DCEBFA !important;
+            -webkit-text-fill-color:#DCEBFA !important;
+            opacity:1 !important;
+        }
+
+        /* Selectboxes */
+        div[data-baseweb="select"] > div {
+            background:#1F4E8C !important;
+            border-color:#2E65A8 !important;
+            color:#FFFFFF !important;
+        }
+
+        div[data-baseweb="select"] > div * {
+            color:#FFFFFF !important;
+            -webkit-text-fill-color:#FFFFFF !important;
+        }
+
+        /* Textareas */
+        textarea {
+            background:#1F4E8C !important;
+            color:#FFFFFF !important;
+            -webkit-text-fill-color:#FFFFFF !important;
+            border:1px solid #2E65A8 !important;
+            caret-color:#FFFFFF !important;
+            font-weight:600 !important;
+        }
+
+        textarea::placeholder {
+            color:#DCEBFA !important;
+            -webkit-text-fill-color:#DCEBFA !important;
+            opacity:1 !important;
+        }
+
+        /* Campo de data */
+        div[data-testid="stDateInput"] div[data-baseweb="input"] > div {
+            background:#1F4E8C !important;
+            border-color:#2E65A8 !important;
+        }
+
+        div[data-testid="stDateInput"] input {
+            color:#FFFFFF !important;
+            -webkit-text-fill-color:#FFFFFF !important;
+        }
+
+        /* Campo numérico e botões +/- */
+        div[data-testid="stNumberInput"] div[data-baseweb="input"] > div {
+            background:#1F4E8C !important;
+            border-color:#2E65A8 !important;
+        }
+
+        div[data-testid="stNumberInput"] button {
+            background:#173D70 !important;
+            color:#FFFFFF !important;
+            border-color:#2E65A8 !important;
+        }
+
+        div[data-testid="stNumberInput"] button * {
+            color:#FFFFFF !important;
+            fill:#FFFFFF !important;
+        }
+
+        /* Foco dos campos: azul mais vivo, sem preto */
+        div[data-baseweb="input"] > div:focus-within,
+        div[data-baseweb="select"] > div:focus-within,
+        textarea:focus {
+            border-color:#4D8FD1 !important;
+            box-shadow:0 0 0 2px rgba(77,143,209,.20) !important;
         }
 
         div[data-testid="stMarkdownContainer"] p {
