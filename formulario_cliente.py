@@ -5,7 +5,7 @@ from supabase import create_client
 import re
 
 # ============================================================
-# FORMULÁRIO CLIENTE AMPM / IGT — V4.6 SINGLE-FILE
+# FORMULÁRIO CLIENTE AMPM / IGT — V4 SUPABASE
 # Formulário operacional com token individual, Supabase e fotos privadas.
 # ============================================================
 
@@ -283,270 +283,9 @@ st.markdown(
             color:#404449 !important;
         }
 
-        /* =====================================================
-           CONTRASTE DAS OPÇÕES — AZUL IGT
-           Mantém a seleção/acentos do AmPm e melhora a leitura
-           de Sim, Não e demais alternativas.
-        ====================================================== */
-
-        /* Texto das opções dos radios */
-        div[role="radiogroup"] label,
-        div[role="radiogroup"] label p,
-        div[role="radiogroup"] label span {
-            color:#1F4E8C !important;
-            font-weight:700 !important;
-            opacity:1 !important;
-        }
-
-        /* Checkboxes de confirmação */
-        div[data-testid="stCheckbox"] label,
-        div[data-testid="stCheckbox"] label p,
-        div[data-testid="stCheckbox"] label span {
-            color:#1F4E8C !important;
-            font-weight:700 !important;
-            opacity:1 !important;
-        }
-
-        /* Selectboxes: o texto interno será definido no bloco azul abaixo */
-        div[data-baseweb="select"] span {
-            font-weight:650 !important;
-            opacity:1 !important;
-        }
-
-        /* Texto auxiliar do upload */
-        div[data-testid="stFileUploader"] small,
-        div[data-testid="stFileUploader"] span {
-            color:#1F4E8C !important;
-            opacity:1 !important;
-        }
-
-        /* Garante leitura no tema escuro do navegador/sistema */
-        div[role="radiogroup"] label *,
-        div[data-testid="stCheckbox"] label * {
-            -webkit-text-fill-color:#1F4E8C !important;
-        }
-
-
         div[data-testid="stMarkdownContainer"] p {
             line-height:1.4;
         }
-
-
-        /* =====================================================
-           V4.6 SINGLE-FILE — PALETA UNIFICADA
-           Tudo é controlado aqui, sem .streamlit/config.toml.
-        ====================================================== */
-        :root {
-            --igt-blue: #2C63A7;
-            --igt-blue-dark: #214F88;
-            --igt-blue-light: #DCEBFA;
-            --igt-blue-focus: #4D8FD1;
-            --igt-orange: #F36F21;
-            --igt-bg: #F6F7F9;
-            --igt-surface: #FFFFFF;
-            --igt-text: #25272A;
-            --igt-muted: #6F7782;
-            --igt-border: #D7E0EA;
-        }
-
-        /* Fundo geral */
-        .stApp {
-            background:
-                radial-gradient(circle at top right, rgba(255,171,0,.08), transparent 28%),
-                var(--igt-bg) !important;
-        }
-
-        /* -----------------------------------------------------
-           TODOS OS CAMPOS DE RESPOSTA = MESMO AZUL
-        ------------------------------------------------------ */
-
-        /* Text input */
-        .stTextInput [data-baseweb="input"],
-        .stTextInput [data-baseweb="base-input"],
-        .stTextInput [data-baseweb="input"] > div,
-        .stTextInput [data-baseweb="base-input"] > div {
-            background: var(--igt-blue) !important;
-            background-color: var(--igt-blue) !important;
-            border-color: var(--igt-blue) !important;
-            box-shadow: none !important;
-        }
-
-        .stTextInput input {
-            background: transparent !important;
-            color: #FFFFFF !important;
-            -webkit-text-fill-color: #FFFFFF !important;
-            caret-color: #FFFFFF !important;
-        }
-
-        /* Text area */
-        .stTextArea textarea {
-            background: var(--igt-blue) !important;
-            background-color: var(--igt-blue) !important;
-            border-color: var(--igt-blue) !important;
-            color: #FFFFFF !important;
-            -webkit-text-fill-color: #FFFFFF !important;
-            caret-color: #FFFFFF !important;
-        }
-
-        /* Date input */
-        .stDateInput [data-baseweb="input"],
-        .stDateInput [data-baseweb="base-input"],
-        .stDateInput [data-baseweb="input"] > div,
-        .stDateInput [data-baseweb="base-input"] > div,
-        .stDateInput input {
-            background: var(--igt-blue) !important;
-            background-color: var(--igt-blue) !important;
-            border-color: var(--igt-blue) !important;
-            color: #FFFFFF !important;
-            -webkit-text-fill-color: #FFFFFF !important;
-        }
-
-        /* Number input completo */
-        .stNumberInput [data-baseweb="input"],
-        .stNumberInput [data-baseweb="base-input"],
-        .stNumberInput [data-baseweb="input"] > div,
-        .stNumberInput [data-baseweb="base-input"] > div,
-        .stNumberInput input {
-            background: var(--igt-blue) !important;
-            background-color: var(--igt-blue) !important;
-            border-color: var(--igt-blue) !important;
-            color: #FFFFFF !important;
-            -webkit-text-fill-color: #FFFFFF !important;
-        }
-
-        .stNumberInput button,
-        .stNumberInput button:hover,
-        .stNumberInput button:focus,
-        .stNumberInput button:active {
-            background: var(--igt-blue) !important;
-            background-color: var(--igt-blue) !important;
-            border-color: var(--igt-blue) !important;
-            color: #FFFFFF !important;
-            box-shadow: none !important;
-        }
-
-        .stNumberInput button svg,
-        .stNumberInput button svg path {
-            color: #FFFFFF !important;
-            fill: #FFFFFF !important;
-        }
-
-        /* Selectbox fechado */
-        .stSelectbox [data-baseweb="select"],
-        .stSelectbox [data-baseweb="select"] > div,
-        .stSelectbox [data-baseweb="select"] > div > div,
-        .stSelectbox [role="combobox"],
-        .stSelectbox [role="combobox"] > div {
-            background: var(--igt-blue) !important;
-            background-color: var(--igt-blue) !important;
-            border-color: var(--igt-blue) !important;
-            color: #FFFFFF !important;
-            box-shadow: none !important;
-        }
-
-        .stSelectbox [data-baseweb="select"] *,
-        .stSelectbox [role="combobox"] * {
-            color: #FFFFFF !important;
-            -webkit-text-fill-color: #FFFFFF !important;
-        }
-
-        .stSelectbox svg,
-        .stSelectbox svg path {
-            color: #FFFFFF !important;
-            fill: #FFFFFF !important;
-        }
-
-        /* Selectbox aberto / menu */
-        div[data-baseweb="popover"],
-        div[data-baseweb="popover"] > div,
-        div[data-baseweb="menu"],
-        div[data-baseweb="menu"] > div,
-        ul[role="listbox"] {
-            background: var(--igt-blue) !important;
-            background-color: var(--igt-blue) !important;
-        }
-
-        div[data-baseweb="popover"] li,
-        div[data-baseweb="menu"] li,
-        li[role="option"] {
-            background: var(--igt-blue) !important;
-            background-color: var(--igt-blue) !important;
-            color: #FFFFFF !important;
-            -webkit-text-fill-color: #FFFFFF !important;
-        }
-
-        div[data-baseweb="popover"] li:hover,
-        div[data-baseweb="menu"] li:hover,
-        li[role="option"]:hover,
-        li[role="option"][aria-selected="true"] {
-            background: var(--igt-blue-dark) !important;
-            background-color: var(--igt-blue-dark) !important;
-            color: #FFFFFF !important;
-        }
-
-        /* Placeholders */
-        .stTextInput input::placeholder,
-        .stTextArea textarea::placeholder,
-        .stDateInput input::placeholder,
-        .stNumberInput input::placeholder {
-            color: var(--igt-blue-light) !important;
-            -webkit-text-fill-color: var(--igt-blue-light) !important;
-            opacity: 1 !important;
-        }
-
-        /* Ícones dentro dos campos */
-        .stTextInput svg,
-        .stDateInput svg,
-        .stNumberInput svg,
-        .stSelectbox svg {
-            color: #FFFFFF !important;
-            fill: #FFFFFF !important;
-        }
-
-        /* Foco padronizado */
-        .stTextInput [data-baseweb="input"]:focus-within,
-        .stTextArea textarea:focus,
-        .stDateInput [data-baseweb="input"]:focus-within,
-        .stNumberInput [data-baseweb="input"]:focus-within,
-        .stSelectbox [data-baseweb="select"] > div:focus-within {
-            border-color: var(--igt-blue-focus) !important;
-            box-shadow: 0 0 0 2px rgba(77,143,209,.22) !important;
-        }
-
-        /* -----------------------------------------------------
-           RADIOS E CHECKBOXES
-           Fundo continua claro; texto azul IGT.
-        ------------------------------------------------------ */
-        div[role="radiogroup"] label,
-        div[role="radiogroup"] label p,
-        div[role="radiogroup"] label span,
-        div[data-testid="stCheckbox"] label,
-        div[data-testid="stCheckbox"] label p,
-        div[data-testid="stCheckbox"] label span {
-            color: var(--igt-blue-dark) !important;
-            -webkit-text-fill-color: var(--igt-blue-dark) !important;
-            font-weight: 700 !important;
-            opacity: 1 !important;
-        }
-
-        /* Upload permanece claro, mas alinhado à paleta */
-        div[data-testid="stFileUploader"] section {
-            background: #FFFFFF !important;
-            border-color: var(--igt-blue) !important;
-        }
-
-        div[data-testid="stFileUploader"] small,
-        div[data-testid="stFileUploader"] span {
-            color: var(--igt-blue-dark) !important;
-        }
-
-        /* Botão principal AmPm */
-        button[kind="primary"] {
-            background: linear-gradient(90deg, var(--igt-orange), #ff9800) !important;
-            border: none !important;
-            color: #FFFFFF !important;
-        }
-
 
         @media (max-width: 640px) {
             .block-container {
@@ -649,27 +388,16 @@ BUCKET_FOTOS = "crm-form-fotos"
 
 @st.cache_resource(show_spinner=False)
 def supabase_client():
-    """
-    Usa os mesmos nomes de Secrets aceitos pelo CRM principal.
-    Compatível com:
-    - SUPABASE_SERVICE_ROLE_KEY
-    - SUPABASE_SECRET_KEY
-    """
     try:
         url = str(
             st.secrets.get("SUPABASE_URL", SUPABASE_PROJECT_URL_PADRAO)
             or SUPABASE_PROJECT_URL_PADRAO
         ).strip()
-
-        chave = (
-            st.secrets.get("SUPABASE_SERVICE_ROLE_KEY")
-            or st.secrets.get("SUPABASE_SECRET_KEY")
-        )
+        chave = str(st.secrets.get("SUPABASE_SERVICE_ROLE_KEY", "") or "").strip()
 
         if not chave:
             return None
-
-        return create_client(url, str(chave).strip())
+        return create_client(url, chave)
     except Exception:
         return None
 
@@ -1152,6 +880,14 @@ autorizo = st.checkbox(
     key="autorizo_uso",
 )
 
+autoriza_contato_confirmacao = st.radio(
+    "Um agente da IGT Group pode ligar ou entrar em contato por WhatsApp para confirmar detalhes do treinamento? *",
+    ["Sim", "Não"],
+    index=None,
+    horizontal=True,
+    key="autoriza_contato_confirmacao",
+)
+
 if nome_responsavel:
     st.markdown(
         f'<div class="info-box"><strong>Responsável:</strong> {nome_responsavel}<br>'
@@ -1206,6 +942,9 @@ if not confirmo:
 
 if not autorizo:
     erros.append("Autorize o uso das informações para organização do treinamento.")
+
+if autoriza_contato_confirmacao not in ("Sim", "Não"):
+    erros.append("Informe se nossa equipe pode entrar em contato para confirmar detalhes do treinamento.")
 
 # ------------------------------------------------------------
 # AVISO DE PROTÓTIPO
@@ -1307,6 +1046,7 @@ if enviar:
                     "confirmacao": {
                         "confirmou_dados": bool(confirmo),
                         "autorizou_uso": bool(autorizo),
+                        "autoriza_contato_confirmacao": autoriza_contato_confirmacao == "Sim",
                         "nome_confirmacao": nome_responsavel.strip(),
                     },
                 }
