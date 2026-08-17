@@ -1,0 +1,65 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "CRM Operacional AmPm",
+  "version": "6.0.0",
+  "identifier": "br.com.igtgroup.crmampm",
+  "build": {
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "splashscreen",
+        "title": "CRM Operacional AmPm",
+        "url": "splash.html",
+        "width": 620,
+        "height": 390,
+        "center": true,
+        "resizable": false,
+        "fullscreen": false,
+        "decorations": false,
+        "transparent": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "appimage",
+      "deb"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/256x256.png",
+      "icons/icon.ico"
+    ],
+    "category": "Business",
+    "shortDescription": "CRM Operacional AmPm",
+    "longDescription": "Aplicativo corporativo para gestão operacional AmPm, Call Center, Pipeline, treinamentos e administração.",
+    "createUpdaterArtifacts": true,
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": true
+      }
+    },
+    "publisher": "IGT Group",
+    "copyright": "Copyright © 2026 IGT Group"
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFCQUZCRjk2RTdCOERCNEMKUldSTTI3am5scit2cTZjNmw3d3Rycm1JMm5jQk96NFBacjRKRmV3aTY0LzhZUTFVVm9vaUk5aXEK",
+      "endpoints": [
+        "https://github.com/ampmigtgroup/crm_ampm/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}

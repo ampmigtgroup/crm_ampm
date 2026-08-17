@@ -1,0 +1,14 @@
+{
+  "name": "crm-operacional-ampm-desktop",
+  "private": true,
+  "version": "6.0.0",
+  "description": "CRM Operacional AmPm - Desktop Corporativo V6",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

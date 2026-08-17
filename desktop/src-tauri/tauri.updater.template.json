@@ -1,0 +1,16 @@
+{
+  "bundle": {
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "__PUBLIC_KEY_CONTENT__",
+      "endpoints": [
+        "https://github.com/ampmigtgroup/crm_ampm/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}

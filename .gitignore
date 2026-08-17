@@ -11,3 +11,15 @@ orcamentos_crm.json
 documentos_orcamentos/
 permissoes_usuarios_ampm.json
 usuarios_ampm.json
+
+# CRM Desktop / Tauri
+desktop/node_modules/
+desktop/src-tauri/target/
+desktop/release/
+desktop/backup_*/
+desktop/.env
+desktop/.env.*
+desktop/**/*.key
+desktop/**/*.pem
+desktop/**/*.p12
+desktop/**/*.pfx

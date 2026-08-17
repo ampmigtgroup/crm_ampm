@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sobre</title>
+<style>
+:root{--orange:#F36F21;--yellow:#FFC20E;--blue:#245A9B;--ink:#232D38;--muted:#708092}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif}
+body{
+  min-height:100vh;display:grid;place-items:center;padding:26px;color:var(--ink);
+  background:
+    radial-gradient(circle at 90% 10%,rgba(255,194,14,.19),transparent 25%),
+    #F6F8FB;
+}
+.card{width:100%;max-width:470px;background:#fff;border:1px solid #E6EAF0;border-radius:22px;padding:28px;box-shadow:0 18px 48px rgba(25,38,55,.12)}
+.head{display:flex;gap:15px;align-items:center}
+.icon{width:58px;height:58px;border-radius:17px;background:linear-gradient(145deg,var(--orange),#FF8A20);display:grid;place-items:center;color:white;font-weight:900;box-shadow:0 12px 25px rgba(243,111,33,.24);position:relative}
+.icon:after{content:"";position:absolute;bottom:10px;width:30px;height:6px;background:var(--yellow);border-radius:99px}
+.icon span{margin-top:-7px}
+h1{font-size:21px;margin:0;letter-spacing:-.35px}
+.sub{margin:5px 0 0;color:var(--muted);font-size:12px;font-weight:650}
+.info{margin-top:24px;border-top:1px solid #EEF1F4;padding-top:20px}
+.row{display:flex;justify-content:space-between;gap:20px;padding:7px 0;font-size:12px}
+.row b{color:#526170}.row span{font-weight:750;text-align:right}
+.badge{display:inline-flex;margin-top:18px;padding:7px 10px;border-radius:999px;background:#EEF5FC;color:var(--blue);font-size:11px;font-weight:850}
+.note{margin:18px 0 0;color:var(--muted);font-size:11px;line-height:1.55}
+.brand{margin-top:22px;color:var(--blue);font-size:11px;font-weight:900;letter-spacing:.09em}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="head">
+    <div class="icon"><span>CRM</span></div>
+    <div>
+      <h1>CRM Operacional AmPm</h1>
+      <p class="sub">Aplicativo desktop corporativo</p>
+    </div>
+  </div>
+  <div class="info">
+    <div class="row"><b>Versão</b><span>6.0.0</span></div>
+    <div class="row"><b>Edição</b><span>Desktop Corporativo</span></div>
+    <div class="row"><b>Plataforma</b><span>Tauri 2</span></div>
+    <div class="row"><b>Dados</b><span>CRM online / Supabase</span></div>
+  </div>
+  <div class="badge">● Sistema corporativo online</div>
+  <p class="note">O aplicativo é um cliente desktop do CRM centralizado. Atualizações de regras, cadastros e módulos do CRM permanecem centralizadas no servidor.</p>
+  <div class="brand">IGT GROUP • AMPM</div>
+</div>
+</body>
+</html>

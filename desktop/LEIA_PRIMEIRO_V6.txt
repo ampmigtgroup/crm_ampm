@@ -1,0 +1,47 @@
+CRM OPERACIONAL AMPM — V6 DISTRIBUIÇÃO CORPORATIVA
+
+OBJETIVO
+Padronizar a distribuição Windows + Linux sem mexer no updater já validado.
+
+LINUX
+- AppImage
+- .deb
+- bundleMediaFramework=true
+- updater assinado
+
+WINDOWS
+- NSIS -setup.exe
+- currentUser
+- Português do Brasil + Inglês
+- WebView2 downloadBootstrapper
+- updater passive
+
+PASSOS
+
+1. Extraia o ZIP para:
+   ~/Documentos/crm_ampm_desktop_v5
+
+2. Rode:
+   cd ~/Documentos/crm_ampm_desktop_v5
+   python3 aplicar_v6_distribuicao.py
+
+3. Valide:
+   python3 validar_v6.py
+
+4. Teste:
+   npm run dev
+
+5. Em Ajuda > Sobre o CRM deve aparecer 6.0.0.
+
+6. Feche com Ctrl+C.
+
+7. Build Linux assinado:
+   chmod +x gerar_v6_linux.sh
+   ./gerar_v6_linux.sh
+
+NÃO publique a V6 ainda.
+
+PRÓXIMA ETAPA
+Depois do Linux validado, colocaremos o projeto desktop no GitHub em pasta própria
+e ativaremos o workflow release-v6.yml para gerar o Windows Setup.exe e o Linux
+AppImage/.deb. Antes disso, configuraremos os Secrets do updater no GitHub Actions.

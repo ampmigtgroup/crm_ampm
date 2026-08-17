@@ -1,0 +1,21 @@
+[package]
+name = "crm_operacional_ampm"
+version = "6.0.0"
+description = "CRM Operacional AmPm - Desktop Executivo"
+authors = ["IGT Group"]
+edition = "2021"
+
+[lib]
+name = "crm_operacional_ampm_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-single-instance = "2"
+url = "2"
+
+tauri-plugin-updater = "2"
+serde_json = "1.0.151"

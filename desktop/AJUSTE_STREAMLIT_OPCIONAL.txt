@@ -1,0 +1,17 @@
+AJUSTE OPCIONAL NO STREAMLIT
+
+O desktop já faz a limpeza sozinho.
+
+Se você também quiser reduzir a barra técnica quando o CRM for aberto
+diretamente em um navegador, adicione logo após:
+
+    import streamlit as st
+
+a linha:
+
+    st.set_option("client.toolbarMode", "minimal")
+
+Isso usa a configuração oficial do Streamlit.
+
+Ocultar botões é acabamento visual. As permissões reais continuam sendo
+controladas por GitHub, Streamlit, autenticação do CRM e Supabase.

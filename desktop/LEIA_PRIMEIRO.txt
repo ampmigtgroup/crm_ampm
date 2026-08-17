@@ -1,0 +1,19 @@
+CRM OPERACIONAL AMPM — V5.3.1 MODO FECHADO
+
+1. Extraia este ZIP para:
+   ~/Documentos/crm_ampm_desktop_v5
+
+2. Rode:
+   cd ~/Documentos/crm_ampm_desktop_v5
+   python3 aplicar_modo_fechado_v5_3_1.py
+
+3. Teste:
+   npm run dev
+
+4. Confira especialmente o canto inferior direito da tela de login.
+
+5. Se os ícones técnicos sumirem, feche com Ctrl+C.
+
+6. Gere novamente o build assinado da V5.3.1 antes de criar a Release.
+
+O script não altera a chave pública, endpoint do updater, banco ou login.
