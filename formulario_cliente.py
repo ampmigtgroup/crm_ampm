@@ -283,6 +283,25 @@ st.markdown(
             color:#404449 !important;
         }
 
+        /* V4.9 — Legibilidade de opções Sim/Não, radios e checkboxes.
+           O tema do Streamlit pode herdar branco nesses textos; forçamos
+           contraste escuro sobre o fundo claro do formulário. */
+        div[data-testid="stRadio"] div[role="radiogroup"] label,
+        div[data-testid="stRadio"] div[role="radiogroup"] label p,
+        div[data-testid="stRadio"] div[role="radiogroup"] label span,
+        div[data-testid="stCheckbox"] label,
+        div[data-testid="stCheckbox"] label p,
+        div[data-testid="stCheckbox"] label span {
+            color:#2F343A !important;
+            -webkit-text-fill-color:#2F343A !important;
+            opacity:1 !important;
+        }
+
+        div[data-testid="stRadio"] div[role="radiogroup"] label p,
+        div[data-testid="stCheckbox"] label p {
+            font-weight:650 !important;
+        }
+
         div[data-testid="stMarkdownContainer"] p {
             line-height:1.4;
         }
