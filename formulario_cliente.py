@@ -5,7 +5,7 @@ from supabase import create_client
 import re
 
 # ============================================================
-# FORMULÁRIO CLIENTE AMPM / IGT — V4 SUPABASE
+# FORMULÁRIO CLIENTE AMPM / IGT — V4.6 SINGLE-FILE
 # Formulário operacional com token individual, Supabase e fotos privadas.
 # ============================================================
 
@@ -327,115 +327,226 @@ st.markdown(
         }
 
 
-        /* =====================================================
-           CAMPOS DE RESPOSTA — AZUL UNIFICADO
-           Todas as caixas ficam na mesma cor para padronização.
-        ====================================================== */
-
-        :root {
-            --igt-field-bg: #2C63A7;
-            --igt-field-border: #2C63A7;
-            --igt-field-focus: #3C79C6;
-            --igt-field-text: #FFFFFF;
-            --igt-field-placeholder: #D9E8FB;
-            --igt-field-btn: #2C63A7;
-            --igt-field-btn-hover: #245792;
-        }
-
-        /* Wrapper comum dos inputs */
-        div[data-baseweb="input"] > div,
-        div[data-testid="stDateInput"] div[data-baseweb="input"] > div,
-        div[data-testid="stNumberInput"] div[data-baseweb="input"] > div {
-            background: var(--igt-field-bg) !important;
-            border: 1px solid var(--igt-field-border) !important;
-            box-shadow: none !important;
-            border-radius: 10px !important;
-        }
-
-        /* Inputs internos */
-        div[data-baseweb="input"] input,
-        div[data-testid="stDateInput"] input,
-        div[data-testid="stNumberInput"] input {
-            background: transparent !important;
-            color: var(--igt-field-text) !important;
-            -webkit-text-fill-color: var(--igt-field-text) !important;
-            caret-color: var(--igt-field-text) !important;
-            font-weight: 600 !important;
-        }
-
-        div[data-baseweb="input"] input::placeholder,
-        textarea::placeholder {
-            color: var(--igt-field-placeholder) !important;
-            -webkit-text-fill-color: var(--igt-field-placeholder) !important;
-            opacity: 1 !important;
-        }
-
-        /* Selectboxes */
-        div[data-baseweb="select"] > div {
-            background: var(--igt-field-bg) !important;
-            border: 1px solid var(--igt-field-border) !important;
-            border-radius: 10px !important;
-            box-shadow: none !important;
-        }
-
-        div[data-baseweb="select"] > div *,
-        div[data-baseweb="select"] span,
-        div[data-baseweb="select"] svg {
-            color: var(--igt-field-text) !important;
-            fill: var(--igt-field-text) !important;
-            -webkit-text-fill-color: var(--igt-field-text) !important;
-        }
-
-        /* Área de texto */
-        textarea {
-            background: var(--igt-field-bg) !important;
-            color: var(--igt-field-text) !important;
-            -webkit-text-fill-color: var(--igt-field-text) !important;
-            border: 1px solid var(--igt-field-border) !important;
-            caret-color: var(--igt-field-text) !important;
-            font-weight: 600 !important;
-            border-radius: 10px !important;
-        }
-
-        /* Botões + / - do number input */
-        div[data-testid="stNumberInput"] button {
-            background: var(--igt-field-btn) !important;
-            color: var(--igt-field-text) !important;
-            border: 1px solid var(--igt-field-border) !important;
-        }
-
-        div[data-testid="stNumberInput"] button:hover {
-            background: var(--igt-field-btn-hover) !important;
-        }
-
-        div[data-testid="stNumberInput"] button * {
-            color: var(--igt-field-text) !important;
-            fill: var(--igt-field-text) !important;
-        }
-
-        /* Calendário / ícones auxiliares */
-        div[data-testid="stDateInput"] svg,
-        div[data-baseweb="input"] svg {
-            fill: var(--igt-field-text) !important;
-            color: var(--igt-field-text) !important;
-        }
-
-        /* Estado de foco unificado */
-        div[data-baseweb="input"] > div:focus-within,
-        div[data-baseweb="select"] > div:focus-within,
-        div[data-testid="stDateInput"] div[data-baseweb="input"] > div:focus-within,
-        div[data-testid="stNumberInput"] div[data-baseweb="input"] > div:focus-within,
-        textarea:focus {
-            border-color: var(--igt-field-focus) !important;
-            box-shadow: 0 0 0 2px rgba(60, 121, 198, .20) !important;
-        }
-
-
-        
-
         div[data-testid="stMarkdownContainer"] p {
             line-height:1.4;
         }
+
+
+        /* =====================================================
+           V4.6 SINGLE-FILE — PALETA UNIFICADA
+           Tudo é controlado aqui, sem .streamlit/config.toml.
+        ====================================================== */
+        :root {
+            --igt-blue: #2C63A7;
+            --igt-blue-dark: #214F88;
+            --igt-blue-light: #DCEBFA;
+            --igt-blue-focus: #4D8FD1;
+            --igt-orange: #F36F21;
+            --igt-bg: #F6F7F9;
+            --igt-surface: #FFFFFF;
+            --igt-text: #25272A;
+            --igt-muted: #6F7782;
+            --igt-border: #D7E0EA;
+        }
+
+        /* Fundo geral */
+        .stApp {
+            background:
+                radial-gradient(circle at top right, rgba(255,171,0,.08), transparent 28%),
+                var(--igt-bg) !important;
+        }
+
+        /* -----------------------------------------------------
+           TODOS OS CAMPOS DE RESPOSTA = MESMO AZUL
+        ------------------------------------------------------ */
+
+        /* Text input */
+        .stTextInput [data-baseweb="input"],
+        .stTextInput [data-baseweb="base-input"],
+        .stTextInput [data-baseweb="input"] > div,
+        .stTextInput [data-baseweb="base-input"] > div {
+            background: var(--igt-blue) !important;
+            background-color: var(--igt-blue) !important;
+            border-color: var(--igt-blue) !important;
+            box-shadow: none !important;
+        }
+
+        .stTextInput input {
+            background: transparent !important;
+            color: #FFFFFF !important;
+            -webkit-text-fill-color: #FFFFFF !important;
+            caret-color: #FFFFFF !important;
+        }
+
+        /* Text area */
+        .stTextArea textarea {
+            background: var(--igt-blue) !important;
+            background-color: var(--igt-blue) !important;
+            border-color: var(--igt-blue) !important;
+            color: #FFFFFF !important;
+            -webkit-text-fill-color: #FFFFFF !important;
+            caret-color: #FFFFFF !important;
+        }
+
+        /* Date input */
+        .stDateInput [data-baseweb="input"],
+        .stDateInput [data-baseweb="base-input"],
+        .stDateInput [data-baseweb="input"] > div,
+        .stDateInput [data-baseweb="base-input"] > div,
+        .stDateInput input {
+            background: var(--igt-blue) !important;
+            background-color: var(--igt-blue) !important;
+            border-color: var(--igt-blue) !important;
+            color: #FFFFFF !important;
+            -webkit-text-fill-color: #FFFFFF !important;
+        }
+
+        /* Number input completo */
+        .stNumberInput [data-baseweb="input"],
+        .stNumberInput [data-baseweb="base-input"],
+        .stNumberInput [data-baseweb="input"] > div,
+        .stNumberInput [data-baseweb="base-input"] > div,
+        .stNumberInput input {
+            background: var(--igt-blue) !important;
+            background-color: var(--igt-blue) !important;
+            border-color: var(--igt-blue) !important;
+            color: #FFFFFF !important;
+            -webkit-text-fill-color: #FFFFFF !important;
+        }
+
+        .stNumberInput button,
+        .stNumberInput button:hover,
+        .stNumberInput button:focus,
+        .stNumberInput button:active {
+            background: var(--igt-blue) !important;
+            background-color: var(--igt-blue) !important;
+            border-color: var(--igt-blue) !important;
+            color: #FFFFFF !important;
+            box-shadow: none !important;
+        }
+
+        .stNumberInput button svg,
+        .stNumberInput button svg path {
+            color: #FFFFFF !important;
+            fill: #FFFFFF !important;
+        }
+
+        /* Selectbox fechado */
+        .stSelectbox [data-baseweb="select"],
+        .stSelectbox [data-baseweb="select"] > div,
+        .stSelectbox [data-baseweb="select"] > div > div,
+        .stSelectbox [role="combobox"],
+        .stSelectbox [role="combobox"] > div {
+            background: var(--igt-blue) !important;
+            background-color: var(--igt-blue) !important;
+            border-color: var(--igt-blue) !important;
+            color: #FFFFFF !important;
+            box-shadow: none !important;
+        }
+
+        .stSelectbox [data-baseweb="select"] *,
+        .stSelectbox [role="combobox"] * {
+            color: #FFFFFF !important;
+            -webkit-text-fill-color: #FFFFFF !important;
+        }
+
+        .stSelectbox svg,
+        .stSelectbox svg path {
+            color: #FFFFFF !important;
+            fill: #FFFFFF !important;
+        }
+
+        /* Selectbox aberto / menu */
+        div[data-baseweb="popover"],
+        div[data-baseweb="popover"] > div,
+        div[data-baseweb="menu"],
+        div[data-baseweb="menu"] > div,
+        ul[role="listbox"] {
+            background: var(--igt-blue) !important;
+            background-color: var(--igt-blue) !important;
+        }
+
+        div[data-baseweb="popover"] li,
+        div[data-baseweb="menu"] li,
+        li[role="option"] {
+            background: var(--igt-blue) !important;
+            background-color: var(--igt-blue) !important;
+            color: #FFFFFF !important;
+            -webkit-text-fill-color: #FFFFFF !important;
+        }
+
+        div[data-baseweb="popover"] li:hover,
+        div[data-baseweb="menu"] li:hover,
+        li[role="option"]:hover,
+        li[role="option"][aria-selected="true"] {
+            background: var(--igt-blue-dark) !important;
+            background-color: var(--igt-blue-dark) !important;
+            color: #FFFFFF !important;
+        }
+
+        /* Placeholders */
+        .stTextInput input::placeholder,
+        .stTextArea textarea::placeholder,
+        .stDateInput input::placeholder,
+        .stNumberInput input::placeholder {
+            color: var(--igt-blue-light) !important;
+            -webkit-text-fill-color: var(--igt-blue-light) !important;
+            opacity: 1 !important;
+        }
+
+        /* Ícones dentro dos campos */
+        .stTextInput svg,
+        .stDateInput svg,
+        .stNumberInput svg,
+        .stSelectbox svg {
+            color: #FFFFFF !important;
+            fill: #FFFFFF !important;
+        }
+
+        /* Foco padronizado */
+        .stTextInput [data-baseweb="input"]:focus-within,
+        .stTextArea textarea:focus,
+        .stDateInput [data-baseweb="input"]:focus-within,
+        .stNumberInput [data-baseweb="input"]:focus-within,
+        .stSelectbox [data-baseweb="select"] > div:focus-within {
+            border-color: var(--igt-blue-focus) !important;
+            box-shadow: 0 0 0 2px rgba(77,143,209,.22) !important;
+        }
+
+        /* -----------------------------------------------------
+           RADIOS E CHECKBOXES
+           Fundo continua claro; texto azul IGT.
+        ------------------------------------------------------ */
+        div[role="radiogroup"] label,
+        div[role="radiogroup"] label p,
+        div[role="radiogroup"] label span,
+        div[data-testid="stCheckbox"] label,
+        div[data-testid="stCheckbox"] label p,
+        div[data-testid="stCheckbox"] label span {
+            color: var(--igt-blue-dark) !important;
+            -webkit-text-fill-color: var(--igt-blue-dark) !important;
+            font-weight: 700 !important;
+            opacity: 1 !important;
+        }
+
+        /* Upload permanece claro, mas alinhado à paleta */
+        div[data-testid="stFileUploader"] section {
+            background: #FFFFFF !important;
+            border-color: var(--igt-blue) !important;
+        }
+
+        div[data-testid="stFileUploader"] small,
+        div[data-testid="stFileUploader"] span {
+            color: var(--igt-blue-dark) !important;
+        }
+
+        /* Botão principal AmPm */
+        button[kind="primary"] {
+            background: linear-gradient(90deg, var(--igt-orange), #ff9800) !important;
+            border: none !important;
+            color: #FFFFFF !important;
+        }
+
 
         @media (max-width: 640px) {
             .block-container {
