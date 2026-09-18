@@ -55,6 +55,22 @@ CAMINHO_BACKUP = "Base_Unificada_AmPm.backup.xlsx"
 
 # Banco central online. O Excel permanece apenas como fonte de importação/fallback.
 SUPABASE_PROJECT_URL_PADRAO = "https://nptazzfvwhhmotfrvgdj.supabase.co"
+def _igt_logo_data_uri():
+    """Retorna a logo oficial IGT Group incorporada no HTML; usa fallback visual se o arquivo não existir."""
+    try:
+        import base64 as _base64
+        caminho = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "assets",
+            "logo_igt_group.png",
+        )
+        with open(caminho, "rb") as arquivo_logo:
+            conteudo = _base64.b64encode(arquivo_logo.read()).decode("ascii")
+        return f"data:image/png;base64,{conteudo}"
+    except Exception:
+        return ""
+
+
 SUPABASE_TABLES = {
     "lojas": "crm_lojas",
     "fila": "crm_fila_callcenter",
@@ -965,13 +981,33 @@ div[data-testid="stAlert"] {
 .brand-top-right {
     display:flex; align-items:center; gap:18px;
 }
-.igt-wordmark {
-    color:#16181C; line-height:.8; text-align:center;
-    font-weight:900; font-size:2.2rem; letter-spacing:-.12rem;
+.igt-logo-top-wrap {
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    min-width:118px;
 }
-.igt-wordmark small {
-    display:block; font-size:.48rem; letter-spacing:.16rem;
-    font-weight:750; margin-top:9px;
+.igt-logo-top {
+    display:block;
+    width:auto;
+    height:46px;
+    max-width:180px;
+    object-fit:contain;
+}
+.igt-logo-fallback {
+    color:#16181C;
+    line-height:.8;
+    text-align:center;
+    font-weight:900;
+    font-size:2.2rem;
+    letter-spacing:-.12rem;
+}
+.igt-logo-fallback small {
+    display:block;
+    font-size:.48rem;
+    letter-spacing:.16rem;
+    font-weight:750;
+    margin-top:9px;
 }
 .top-user-chip {
     background:#F5F6F8;
@@ -1004,12 +1040,25 @@ section[data-testid="stSidebar"] .sidebar-brand {
     border-top:1px solid rgba(255,255,255,.12);
     color:#fff;
 }
-.sidebar-igt-logo {
-    font-size:2rem; font-weight:900; letter-spacing:-.08rem;
-    line-height:1; color:#fff;
+.sidebar-igt-logo-img {
+    display:block;
+    width:176px;
+    max-width:100%;
+    height:auto;
+    object-fit:contain;
+    margin:0;
 }
-.sidebar-igt-logo span {
-    font-size:.67rem; letter-spacing:.10rem; font-weight:650;
+.sidebar-igt-logo-fallback {
+    font-size:2rem;
+    font-weight:900;
+    letter-spacing:-.08rem;
+    line-height:1;
+    color:#fff;
+}
+.sidebar-igt-logo-fallback span {
+    font-size:.67rem;
+    letter-spacing:.10rem;
+    font-weight:650;
 }
 .sidebar-igt p {
     font-size:.72rem !important;
@@ -5014,9 +5063,15 @@ with st.sidebar:
         [nome for _, nome in opcoes_modulos]
     )
 
-    st.markdown("""
+    _igt_logo_sidebar = _igt_logo_data_uri()
+    _igt_sidebar_html = (
+        f'<img class="sidebar-igt-logo-img" src="{_igt_logo_sidebar}" alt="IGT Group">'
+        if _igt_logo_sidebar
+        else '<div class="sidebar-igt-logo-fallback">igt <span>IGT GROUP</span></div>'
+    )
+    st.markdown(f"""
         <div class="sidebar-igt">
-            <div class="sidebar-igt-logo">igt <span>IGT GROUP</span></div>
+            {_igt_sidebar_html}
             <p>Excelência em Treinamentos.<br>Resultados que transformam.</p>
         </div>
     """, unsafe_allow_html=True)
@@ -5081,7 +5136,13 @@ st.markdown(
             </div>
         </div>
         <div class="brand-top-right">
-            <div class="igt-wordmark">igt<small>IGT GROUP</small></div>
+            <div class="igt-logo-top-wrap">
+                {
+                    f'<img class="igt-logo-top" src="{_igt_logo_data_uri()}" alt="IGT Group">'
+                    if _igt_logo_data_uri()
+                    else '<div class="igt-logo-fallback">igt<small>IGT GROUP</small></div>'
+                }
+            </div>
             <div class="top-user-chip">👤 {_nome_topo}</div>
         </div>
     </div>
