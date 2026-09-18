@@ -1794,55 +1794,76 @@ def filtrar_instrutores_ativos(df):
     return df.loc[status_normalizado.eq("ativo")].copy()
 
 
-def adicionar_instrutor_admin(nome, telefone="", email="", cidade="", uf=""):
-    """Adiciona ou atualiza um instrutor como ATIVO no banco, somente após validação de admin."""
+def adicionar_instrutor_admin(
+    nome,
+    telefone="",
+    email="",
+    cidade="",
+    uf="",
+    status_inicial="Ativo",
+):
+    """Cadastra ou atualiza um instrutor diretamente no Supabase."""
     if not usuario_e_admin():
         raise PermissionError("Somente administradores podem cadastrar instrutores.")
 
     nome = str(nome or "").strip()
+    telefone = str(telefone or "").strip()
+    email = str(email or "").strip()
+    cidade = str(cidade or "").strip()
+    uf = str(uf or "").strip().upper()
+    status_inicial = str(status_inicial or "Ativo").strip()
+
     if not nome:
         raise ValueError("Informe o nome completo do instrutor.")
 
-    bases = st.session_state["bases"]
-    df = bases.get("instrutores", pd.DataFrame()).copy()
+    if status_inicial not in {"Ativo", "Saiu"}:
+        raise ValueError("Status inicial inválido.")
 
-    colunas_padrao = ["NOME_COMPLETO", "STATUS", "TELEFONE", "EMAIL", "Cidade", "UF"]
-    for coluna in colunas_padrao:
-        if coluna not in df.columns:
-            df[coluna] = ""
+    client = _supabase_client()
 
-    # Garante que novos cadastros entrem como ativos.
-    dados_novo = {
-        "NOME_COMPLETO": nome,
-        "STATUS": "Ativo",
-        "TELEFONE": str(telefone or "").strip(),
-        "EMAIL": str(email or "").strip(),
-        "Cidade": str(cidade or "").strip(),
-        "UF": str(uf or "").strip().upper(),
+    # Evita duplicidade por nome. Se já existir, atualiza o mesmo registro.
+    existentes = (
+        client.table("crm_instrutores")
+        .select("id,nome_completo")
+        .execute()
+    ).data or []
+
+    existente = next(
+        (
+            item for item in existentes
+            if str(item.get("nome_completo") or "").strip().casefold()
+            == nome.casefold()
+        ),
+        None,
+    )
+
+    dados = {
+        "nome_completo": nome,
+        "status": status_inicial,
+        "telefone": telefone,
+        "email": email,
+        "cidade": cidade,
+        "uf": uf,
     }
 
-    nomes_existentes = (
-        df["NOME_COMPLETO"]
-        .map(_texto_seguro_instrutor)
-        .str.strip()
-        .str.casefold()
-    )
-    mask = nomes_existentes.eq(nome.casefold())
-
-    if mask.any():
-        # Se já existe, atualiza o cadastro e reativa o instrutor.
-        idx = df.index[mask][0]
-        for coluna, valor in dados_novo.items():
-            df.at[idx, coluna] = valor
-        acao = "atualizado e reativado"
+    if existente:
+        (
+            client.table("crm_instrutores")
+            .update(dados)
+            .eq("id", existente["id"])
+            .execute()
+        )
+        acao = "atualizado"
     else:
-        df = pd.concat([df, pd.DataFrame([dados_novo])], ignore_index=True)
+        # O campo id de crm_instrutores é IDENTITY no Supabase.
+        # Não enviamos id=None: o banco gera o próximo ID automaticamente.
+        client.table("crm_instrutores").insert(dados).execute()
         acao = "adicionado"
 
-    bases["instrutores"] = df
-    st.session_state["bases"] = bases
-    salvar_bases_combinadas_no_disco(bases)
-    _sincronizar_modulos_apos_mutacao("instrutores")
+    # Recarrega a fonte oficial imediatamente após a gravação.
+    st.session_state["bases"] = carregar_bases_supabase()
+    st.session_state["fonte_dados"] = "Supabase"
+    st.session_state["erro_carga"] = None
 
     return acao
 
@@ -6507,8 +6528,8 @@ elif modulo == "👔 Equipe de Instrutores":
         if usuario_e_admin():
             st.markdown("### ➕ Cadastrar novo instrutor")
             st.caption(
-                "Novos instrutores entram inicialmente como Ativo e podem ser "
-                "desativados depois nas caixas acima."
+                "Cadastre o instrutor e escolha o status inicial. "
+                "O status pode ser alterado depois no controle de atividade."
             )
 
             with st.form("form_novo_instrutor", clear_on_submit=True):
@@ -6538,10 +6559,15 @@ elif modulo == "👔 Equipe de Instrutores":
                         max_chars=2,
                         placeholder="RJ"
                     )
-                    st.text_input(
+                    novo_status = st.selectbox(
                         "Status inicial",
-                        value="Ativo",
-                        disabled=True
+                        ["Ativo", "Saiu"],
+                        index=0,
+                        help=(
+                            "Ativo: participa da operação. "
+                            "Saiu: permanece no histórico, mas não aparece "
+                            "entre os instrutores ativos."
+                        ),
                     )
 
                 cadastrar = st.form_submit_button(
@@ -6557,9 +6583,11 @@ elif modulo == "👔 Equipe de Instrutores":
                         novo_email,
                         nova_cidade,
                         nova_uf,
+                        novo_status,
                     )
-                    st.session_state["bases"] = carregar_bases_supabase()
-                    st.success(f"✅ Instrutor {acao} com STATUS = Ativo.")
+                    st.success(
+                        f"✅ Instrutor {acao} com STATUS = {novo_status}."
+                    )
                     st.rerun()
                 except PermissionError as exc:
                     st.error(f"🚫 {exc}")
