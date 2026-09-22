@@ -1249,7 +1249,6 @@ div[data-baseweb="select"] > div,
 </style>
 """, unsafe_allow_html=True)
 
-# --- AUTENTICAÇÃO ---
 # --- AUTENTICAÇÃO CENTRALIZADA NO SUPABASE ---
 
 
@@ -1441,18 +1440,10 @@ def exigir_login():
         )
         st.stop()
 
-    credenciais_arquivo = carregar_usuarios_arquivo()
-    try:
-        credenciais_secrets = _secrets_para_dict(st.secrets["credentials"])
-    except Exception:
-        credenciais_secrets = {"usernames": {}}
-
-    credenciais = {
-        "usernames": {
-            **credenciais_arquivo.get("usernames", {}),
-            **credenciais_secrets.get("usernames", {}),
-        }
-    }
+    # A autenticação operacional vem exclusivamente do Supabase.
+    # Secrets só participa da migração inicial, executada uma única vez quando
+    # a tabela crm_usuarios ainda está vazia.
+    credenciais = carregar_usuarios_arquivo()
 
     try:
         dominios_permitidos_raw = st.secrets.get("ALLOWED_EMAIL_DOMAINS", "")
