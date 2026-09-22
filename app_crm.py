@@ -965,13 +965,33 @@ div[data-testid="stAlert"] {
 .brand-top-right {
     display:flex; align-items:center; gap:18px;
 }
-.igt-wordmark {
-    color:#16181C; line-height:.8; text-align:center;
-    font-weight:900; font-size:2.2rem; letter-spacing:-.12rem;
+.igt-logo-badge {
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    width:126px;
+    height:52px;
+    border-radius:12px;
+    background:#173C52;
+    box-shadow:0 3px 10px rgba(0,0,0,.10);
+    overflow:hidden;
 }
-.igt-wordmark small {
-    display:block; font-size:.48rem; letter-spacing:.16rem;
-    font-weight:750; margin-top:9px;
+.igt-logo-svg {
+    display:block;
+    width:112px;
+    height:46px;
+}
+.sidebar-igt-logo {
+    display:flex;
+    align-items:center;
+    justify-content:flex-start;
+    width:100%;
+    min-height:54px;
+}
+.sidebar-igt-logo svg {
+    display:block;
+    width:176px;
+    height:auto;
 }
 .top-user-chip {
     background:#F5F6F8;
@@ -5016,7 +5036,13 @@ with st.sidebar:
 
     st.markdown("""
         <div class="sidebar-igt">
-            <div class="sidebar-igt-logo">igt <span>IGT GROUP</span></div>
+            <div class="sidebar-igt-logo"><svg class="igt-logo-svg" viewBox="0 0 240 88" xmlns="http://www.w3.org/2000/svg" aria-label="IGT Group">
+<rect x="1" y="1" width="238" height="86" rx="14" fill="#173C52"/>
+<circle cx="39" cy="44" r="24" fill="#F58220"/>
+<path d="M39 20 L42 35 L55 28 L47 40 L62 44 L47 48 L55 60 L42 53 L39 68 L36 53 L23 60 L31 48 L16 44 L31 40 L23 28 L36 35 Z" fill="#fff"/>
+<text x="72" y="55" font-family="Arial, Helvetica, sans-serif" font-size="43" font-weight="700" fill="#fff">igt</text>
+<text x="151" y="70" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" letter-spacing="3" fill="#F58220">GROUP</text>
+</svg></div>
             <p>Excelência em Treinamentos.<br>Resultados que transformam.</p>
         </div>
     """, unsafe_allow_html=True)
@@ -5081,7 +5107,13 @@ st.markdown(
             </div>
         </div>
         <div class="brand-top-right">
-            <div class="igt-wordmark">igt<small>IGT GROUP</small></div>
+            <div class="igt-logo-badge"><svg class="igt-logo-svg" viewBox="0 0 240 88" xmlns="http://www.w3.org/2000/svg" aria-label="IGT Group">
+<rect x="1" y="1" width="238" height="86" rx="14" fill="#173C52"/>
+<circle cx="39" cy="44" r="24" fill="#F58220"/>
+<path d="M39 20 L42 35 L55 28 L47 40 L62 44 L47 48 L55 60 L42 53 L39 68 L36 53 L23 60 L31 48 L16 44 L31 40 L23 28 L36 35 Z" fill="#fff"/>
+<text x="72" y="55" font-family="Arial, Helvetica, sans-serif" font-size="43" font-weight="700" fill="#fff">igt</text>
+<text x="151" y="70" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" letter-spacing="3" fill="#F58220">GROUP</text>
+</svg></div>
             <div class="top-user-chip">👤 {_nome_topo}</div>
         </div>
     </div>
