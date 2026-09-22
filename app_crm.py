@@ -1252,6 +1252,25 @@ div[data-baseweb="select"] > div,
 # --- AUTENTICAÇÃO CENTRALIZADA NO SUPABASE ---
 
 
+@st.cache_resource(show_spinner=False)
+def _supabase_auth_client():
+    """Cliente server-side do CRM para autenticação e controle de acesso."""
+    try:
+        url = str(
+            st.secrets.get("SUPABASE_URL", SUPABASE_PROJECT_URL_PADRAO)
+            or SUPABASE_PROJECT_URL_PADRAO
+        ).strip()
+        chave = str(
+            st.secrets.get("SUPABASE_SERVICE_ROLE_KEY", "")
+            or ""
+        ).strip()
+        if not chave:
+            return None
+        return create_client(url, chave)
+    except Exception:
+        return None
+
+
 def _bootstrap_usuarios_secrets():
     """Migração única dos usuários antigos definidos em Secrets para o banco.
 
