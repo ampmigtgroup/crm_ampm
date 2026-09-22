@@ -1004,11 +1004,7 @@ div[data-testid="stAlert"] {
     box-shadow:0 2px 8px rgba(0,0,0,.04);
 }
 
-.st-key-acao_rapida_callcenter button,
-.st-key-acao_rapida_pipeline button,
-.st-key-acao_rapida_procv button,
-.st-key-acao_rapida_custos button,
-.st-key-acao_rapida_relatorios button {
+.st-key-acoes_rapidas button {
     min-height:58px;
     border-radius:14px !important;
     border:1px solid #E6E9EE !important;
@@ -1017,20 +1013,12 @@ div[data-testid="stAlert"] {
     font-weight:800 !important;
     box-shadow:0 3px 12px rgba(20,30,40,.06) !important;
 }
-.st-key-acao_rapida_callcenter button:hover,
-.st-key-acao_rapida_pipeline button:hover,
-.st-key-acao_rapida_procv button:hover,
-.st-key-acao_rapida_custos button:hover,
-.st-key-acao_rapida_relatorios button:hover {
+.st-key-acoes_rapidas button:hover {
     border-color:#F58220 !important;
     box-shadow:0 5px 16px rgba(245,130,32,.16) !important;
     transform:translateY(-1px);
 }
-.st-key-acao_rapida_callcenter button:disabled,
-.st-key-acao_rapida_pipeline button:disabled,
-.st-key-acao_rapida_procv button:disabled,
-.st-key-acao_rapida_custos button:disabled,
-.st-key-acao_rapida_relatorios button:disabled {
+.st-key-acoes_rapidas button:disabled {
     opacity:.52 !important;
 }
 
@@ -5629,21 +5617,24 @@ elif modulo == "📊 Dashboard Executivo":
             ("🧮 Calculadora de Custos", "custos"),
             ("📊 Relatórios Gerenciais", "relatorios"),
         ]
-        _row_rapida_1 = st.columns(3)
-        _row_rapida_2 = st.columns(3)
-        for _col, (_rotulo, _chave) in zip(_row_rapida_1 + _row_rapida_2, _acoes_rapidas):
-            _permitido = usuario_tem_permissao(_chave)
-            with _col:
-                st.button(
-                    _rotulo,
-                    key=f"acao_rapida_{_chave}",
-                    type="secondary",
-                    width="stretch",
-                    disabled=not _permitido,
-                    help=None if _permitido else "Módulo sem permissão para este usuário.",
-                    on_click=_navegar_para_modulo,
-                    args=(_chave,),
-                )
+        with st.container(key="acoes_rapidas"):
+            _row_rapida_1 = st.columns(3)
+            _row_rapida_2 = st.columns(3)
+            for _idx, (_col, (_rotulo, _chave)) in enumerate(
+                zip(_row_rapida_1 + _row_rapida_2, _acoes_rapidas)
+            ):
+                _permitido = usuario_tem_permissao(_chave)
+                with _col:
+                    st.button(
+                        _rotulo,
+                        key=f"acao_rapida_{_chave}_{_idx}",
+                        type="secondary",
+                        width="stretch",
+                        disabled=not _permitido,
+                        help=None if _permitido else "Módulo sem permissão para este usuário.",
+                        on_click=_navegar_para_modulo,
+                        args=(_chave,),
+                    )
 
         render_exportacao_modulo(
             df_dash,
