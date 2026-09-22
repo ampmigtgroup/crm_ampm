@@ -1249,15 +1249,12 @@ div[data-baseweb="select"] > div,
 </style>
 """, unsafe_allow_html=True)
 
-# --- AUTENTICAÇÃO ---
-CAMINHO_USUARIOS = "usuarios_ampm.json"
+# --- AUTENTICAÇÃO CENTRALIZADA NO SUPABASE ---
+
 
 @st.cache_resource(show_spinner=False)
 def _supabase_auth_client():
-    """
-    Cliente central usado antes mesmo do login.
-    Usuários e permissões ficam no Supabase para sobreviver a reboot/deploy.
-    """
+    """Cliente server-side do CRM para autenticação e controle de acesso."""
     try:
         url = str(
             st.secrets.get("SUPABASE_URL", SUPABASE_PROJECT_URL_PADRAO)
@@ -1274,20 +1271,85 @@ def _supabase_auth_client():
         return None
 
 
+def _bootstrap_usuarios_secrets():
+    """Migração única dos usuários antigos definidos em Secrets para o banco.
+
+    Depois que o primeiro registro existir no Supabase, Secrets deixa de ser
+    fonte de usuários. Senhas nunca são convertidas para texto puro: o hash
+    existente do streamlit-authenticator é persistido no campo credential.
+    """
+    client = _supabase_auth_client()
+    if client is None:
+        return
+
+    try:
+        existentes = (
+            client.table("crm_usuarios")
+            .select("username")
+            .limit(1)
+            .execute()
+        ).data or []
+        if existentes:
+            return
+
+        credenciais = _secrets_para_dict(st.secrets.get("credentials", {}))
+        usernames = credenciais.get("usernames", {}) if isinstance(credenciais, dict) else {}
+        if not isinstance(usernames, dict) or not usernames:
+            return
+
+        bruto_admins = st.secrets.get("ADMIN_USERNAMES", "admin")
+        if isinstance(bruto_admins, str):
+            admins = {
+                item.strip().lower()
+                for item in bruto_admins.replace(";", ",").split(",")
+                if item.strip()
+            }
+        else:
+            admins = {str(item).strip().lower() for item in (bruto_admins or []) if str(item).strip()}
+
+        registros = []
+        for username, credential in usernames.items():
+            username = str(username or "").strip().lower()
+            if not username or not isinstance(credential, dict):
+                continue
+            registros.append({
+                "username": username,
+                "credential": credential,
+                "email": str(credential.get("email", "") or "").strip().lower(),
+                "nome": str(credential.get("name") or "").strip(),
+                "perfil": "admin" if username in admins else "usuario",
+                "ativo": True,
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat(),
+            })
+
+        if registros:
+            client.table("crm_usuarios").upsert(
+                registros,
+                on_conflict="username",
+            ).execute()
+    except Exception:
+        # O login exibirá a indisponibilidade do banco sem criar arquivo local.
+        pass
+
+
 def _carregar_usuarios_supabase():
     client = _supabase_auth_client()
     if client is None:
         return {"usernames": {}}
 
+    _bootstrap_usuarios_secrets()
+
     try:
         resp = (
             client.table("crm_usuarios")
-            .select("username,credential")
+            .select("username,credential,ativo")
+            .eq("ativo", True)
             .execute()
         )
         usernames = {}
         for row in resp.data or []:
-            username = str(row.get("username", "") or "").strip()
+            username = str(row.get("username", "") or "").strip().lower()
             cred = row.get("credential")
             if username and isinstance(cred, dict):
                 usernames[username] = cred
@@ -1299,108 +1361,42 @@ def _carregar_usuarios_supabase():
 def _salvar_usuarios_supabase(credenciais_completas):
     client = _supabase_auth_client()
     if client is None:
-        raise RuntimeError("Supabase indisponível para persistência de usuários.")
-
-    secrets_usernames = set()
-    try:
-        secrets_usernames = set(
-            _secrets_para_dict(st.secrets["credentials"])
-            .get("usernames", {})
-            .keys()
-        )
-    except Exception:
-        pass
+        raise RuntimeError("Supabase indisponível. O cadastro não foi salvo.")
 
     registros = []
     for usuario, dados in credenciais_completas.get("usernames", {}).items():
-        usuario_txt = str(usuario or "").strip()
-        if not usuario_txt or usuario_txt in secrets_usernames:
-            continue
-        if not isinstance(dados, dict):
+        usuario_txt = str(usuario or "").strip().lower()
+        if not usuario_txt or not isinstance(dados, dict):
             continue
         registros.append({
             "username": usuario_txt,
             "credential": dados,
+            "email": str(dados.get("email", "") or "").strip().lower(),
+            "nome": str(dados.get("name") or "").strip(),
             "updated_at": datetime.now().isoformat(),
         })
 
     if registros:
-        (
-            client.table("crm_usuarios")
-            .upsert(registros, on_conflict="username")
-            .execute()
-        )
+        client.table("crm_usuarios").upsert(
+            registros,
+            on_conflict="username",
+        ).execute()
 
 
-def _migrar_usuarios_locais_para_supabase():
-    if not os.path.exists(CAMINHO_USUARIOS):
+def _registrar_login_supabase(username, autenticador):
+    """Persiste o estado de autenticação sem armazenar senha em texto."""
+    client = _supabase_auth_client()
+    username = str(username or "").strip().lower()
+    if client is None or not username:
         return
     try:
-        with open(CAMINHO_USUARIOS, "r", encoding="utf-8") as f:
-            dados = json.load(f)
-        if isinstance(dados, dict) and dados.get("usernames"):
-            _salvar_usuarios_supabase(dados)
-    except Exception:
-        pass
-
-
-def _carregar_permissoes_supabase():
-    client = _supabase_auth_client()
-    padrao = {"admins": {}, "usuarios": {}}
-    if client is None:
-        return padrao
-
-    try:
-        resp = (
-            client.table("crm_permissoes_usuarios")
-            .select("username,permissoes")
-            .execute()
-        )
-        usuarios = {}
-        for row in resp.data or []:
-            username = str(row.get("username", "") or "").strip().lower()
-            permissoes = row.get("permissoes")
-            if username and isinstance(permissoes, dict):
-                usuarios[username] = permissoes
-        return {"admins": {}, "usuarios": usuarios}
-    except Exception:
-        return padrao
-
-
-def _salvar_permissoes_supabase(permissoes):
-    client = _supabase_auth_client()
-    if client is None:
-        raise RuntimeError("Supabase indisponível para persistência de permissões.")
-
-    registros = []
-    for username, flags in permissoes.get("usuarios", {}).items():
-        username = str(username or "").strip().lower()
-        if username and isinstance(flags, dict):
-            registros.append({
-                "username": username,
-                "permissoes": {
-                    str(chave): bool(valor)
-                    for chave, valor in flags.items()
-                },
-                "updated_at": datetime.now().isoformat(),
-            })
-
-    if registros:
-        (
-            client.table("crm_permissoes_usuarios")
-            .upsert(registros, on_conflict="username")
-            .execute()
-        )
-
-
-def _migrar_permissoes_locais_para_supabase():
-    if not os.path.exists("permissoes_usuarios_ampm.json"):
-        return
-    try:
-        with open("permissoes_usuarios_ampm.json", "r", encoding="utf-8") as f:
-            dados = json.load(f)
-        if isinstance(dados, dict) and dados.get("usuarios"):
-            _salvar_permissoes_supabase(dados)
+        credenciais = autenticador.authentication_controller.authentication_model.credentials
+        cred = credenciais.get("usernames", {}).get(username, {})
+        client.table("crm_usuarios").update({
+            "credential": cred,
+            "last_login_at": datetime.now().isoformat(),
+            "updated_at": datetime.now().isoformat(),
+        }).eq("username", username).execute()
     except Exception:
         pass
 
@@ -1410,57 +1406,31 @@ def _secrets_para_dict(obj):
         return {chave: _secrets_para_dict(valor) for chave, valor in obj.items()}
     return obj
 
+
 def carregar_usuarios_arquivo():
-    """Fonte principal: Supabase. JSON local fica apenas como fallback/migração."""
-    _migrar_usuarios_locais_para_supabase()
+    """Mantém o nome legado da função: a fonte oficial é exclusivamente o Supabase."""
+    return _carregar_usuarios_supabase()
 
-    remoto = _carregar_usuarios_supabase()
-    if remoto.get("usernames"):
-        return remoto
-
-    if os.path.exists(CAMINHO_USUARIOS):
-        try:
-            with open(CAMINHO_USUARIOS, "r", encoding="utf-8") as f:
-                dados = json.load(f)
-            if isinstance(dados, dict) and "usernames" in dados:
-                return dados
-        except Exception:
-            pass
-
-    return {"usernames": {}}
 
 def salvar_usuarios_arquivo(credenciais_completas):
-    """Mantém o nome antigo, mas a gravação oficial agora é no Supabase."""
+    """Mantém o nome legado da função, mas grava exclusivamente no Supabase."""
+    _salvar_usuarios_supabase(credenciais_completas)
+
+
+def _listar_registros_usuarios_supabase():
+    client = _supabase_auth_client()
+    if client is None:
+        return []
     try:
-        _salvar_usuarios_supabase(credenciais_completas)
-    except Exception as e:
-        try:
-            secrets_usernames = set()
-            try:
-                secrets_usernames = set(
-                    _secrets_para_dict(st.secrets["credentials"])
-                    .get("usernames", {})
-                    .keys()
-                )
-            except Exception:
-                pass
+        return (
+            client.table("crm_usuarios")
+            .select("username,email,nome,perfil,ativo,created_at,last_login_at,updated_at")
+            .order("username")
+            .execute()
+        ).data or []
+    except Exception:
+        return []
 
-            usernames_para_salvar = {
-                usuario: dados
-                for usuario, dados in credenciais_completas.get("usernames", {}).items()
-                if usuario not in secrets_usernames
-            }
-
-            with open(CAMINHO_USUARIOS, "w", encoding="utf-8") as f:
-                json.dump(
-                    {"usernames": usernames_para_salvar},
-                    f,
-                    ensure_ascii=False,
-                    indent=2,
-                )
-        except Exception:
-            pass
-        st.toast(f"⚠️ Cadastro salvo em fallback local: {e}", icon="⚠️")
 
 def _tela_marca_login(subtitulo):
     st.markdown(f"""
@@ -1489,18 +1459,10 @@ def exigir_login():
         )
         st.stop()
 
-    credenciais_arquivo = carregar_usuarios_arquivo()
-    try:
-        credenciais_secrets = _secrets_para_dict(st.secrets["credentials"])
-    except Exception:
-        credenciais_secrets = {"usernames": {}}
-
-    credenciais = {
-        "usernames": {
-            **credenciais_arquivo.get("usernames", {}),
-            **credenciais_secrets.get("usernames", {}),
-        }
-    }
+    # A autenticação operacional vem exclusivamente do Supabase.
+    # Secrets só participa da migração inicial, executada uma única vez quando
+    # a tabela crm_usuarios ainda está vazia.
+    credenciais = carregar_usuarios_arquivo()
 
     try:
         dominios_permitidos_raw = st.secrets.get("ALLOWED_EMAIL_DOMAINS", "")
@@ -1521,7 +1483,14 @@ def exigir_login():
         aba_login, aba_cadastro = st.tabs(["🔑 Entrar", "🆕 Criar conta"])
 
         with aba_login:
-            autenticador.login(location="main", key="LoginPrincipal")
+            try:
+                autenticador.login(
+                    location="main",
+                    max_login_attempts=5,
+                    key="LoginPrincipal",
+                )
+            except Exception as exc:
+                st.error(f"❌ Não foi possível processar o login: {exc}")
 
         with aba_cadastro:
             if dominios_permitidos:
@@ -1558,6 +1527,18 @@ def exigir_login():
                     st.error(f"❌ Não foi possível criar a conta: {msg}")
 
     status_login = st.session_state.get("authentication_status")
+    if status_login is not None:
+        usuario_login = str(st.session_state.get("username") or "").strip().lower()
+        if usuario_login:
+            try:
+                salvar_usuarios_arquivo(
+                    autenticador.authentication_controller.authentication_model.credentials
+                )
+                if status_login:
+                    _registrar_login_supabase(usuario_login, autenticador)
+            except Exception as exc:
+                if status_login:
+                    st.error(f"❌ O acesso foi autenticado, mas não foi possível atualizar o registro no banco: {exc}")
     if status_login is False:
         st.error("❌ Usuário ou senha incorretos.")
         st.stop()
@@ -1580,7 +1561,7 @@ def _usuario_atual():
     )
 
 
-CAMINHO_PERMISSOES = "permissoes_usuarios_ampm.json"
+CAMINHO_PERMISSOES = "permissoes_usuarios_ampm.json"  # legado; não é mais utilizado
 
 MODULOS_PERMISSOES = {
     "dashboard": "📊 Dashboard Executivo",
@@ -1602,58 +1583,82 @@ def _usuario_atual():
     )
 
 
-def _lista_admins_configurada():
-    """Administradores definidos no Streamlit Secrets, nunca por senha no código."""
-    try:
-        bruto = st.secrets.get("ADMIN_USERNAMES", "admin")
-    except Exception:
-        bruto = "admin"
+def _registro_usuario_atual():
+    username = str(_usuario_atual()).strip().lower()
+    if not username:
+        return None
+    for registro in _listar_registros_usuarios_supabase():
+        if str(registro.get("username") or "").strip().lower() == username:
+            return registro
+    return None
 
-    if isinstance(bruto, str):
-        return {
-            item.strip().lower()
-            for item in bruto.replace(";", ",").split(",")
-            if item.strip()
-        }
-    if isinstance(bruto, (list, tuple, set)):
-        return {str(item).strip().lower() for item in bruto if str(item).strip()}
-    return {"admin"}
+
+def _lista_admins_configurada():
+    """Lista administradores exclusivamente do banco central."""
+    return {
+        str(registro.get("username") or "").strip().lower()
+        for registro in _listar_registros_usuarios_supabase()
+        if str(registro.get("perfil") or "").strip().lower() == "admin"
+        and bool(registro.get("ativo", True))
+    }
 
 
 def usuario_e_admin():
-    return str(_usuario_atual()).strip().lower() in _lista_admins_configurada()
+    registro = _registro_usuario_atual()
+    return bool(
+        registro
+        and registro.get("ativo", True)
+        and str(registro.get("perfil") or "").strip().lower() == "admin"
+    )
 
 
 def carregar_permissoes_usuarios():
+    """Permissões de módulos: exclusivamente Supabase, sem arquivo local."""
+    client = _supabase_auth_client()
     padrao = {"admins": {}, "usuarios": {}}
-
-    _migrar_permissoes_locais_para_supabase()
-    remoto = _carregar_permissoes_supabase()
-    if remoto.get("usuarios"):
-        return remoto
-
-    if not os.path.exists(CAMINHO_PERMISSOES):
+    if client is None:
         return padrao
-
     try:
-        with open(CAMINHO_PERMISSOES, "r", encoding="utf-8") as f:
-            dados = json.load(f)
-        if not isinstance(dados, dict):
-            return padrao
-        dados.setdefault("admins", {})
-        dados.setdefault("usuarios", {})
-        return dados
+        resp = (
+            client.table("crm_permissoes_usuarios")
+            .select("username,permissoes")
+            .execute()
+        )
+        usuarios = {}
+        for row in resp.data or []:
+            username = str(row.get("username", "") or "").strip().lower()
+            permissoes = row.get("permissoes")
+            if username and isinstance(permissoes, dict):
+                usuarios[username] = permissoes
+        return {"admins": {}, "usuarios": usuarios}
     except Exception:
         return padrao
 
 
 def salvar_permissoes_usuarios(permissoes):
-    """Persiste permissões no Supabase; arquivo local fica somente como fallback."""
-    try:
-        _salvar_permissoes_supabase(permissoes)
-    except Exception:
-        with open(CAMINHO_PERMISSOES, "w", encoding="utf-8") as f:
-            json.dump(permissoes, f, ensure_ascii=False, indent=2)
+    """Persiste permissões exclusivamente no Supabase."""
+    client = _supabase_auth_client()
+    if client is None:
+        raise RuntimeError("Supabase indisponível. As permissões não foram salvas.")
+
+    registros = []
+    for username, flags in permissoes.get("usuarios", {}).items():
+        username = str(username or "").strip().lower()
+        if username and isinstance(flags, dict):
+            registros.append({
+                "username": username,
+                "permissoes": {
+                    str(chave): bool(valor)
+                    for chave, valor in flags.items()
+                },
+                "updated_at": datetime.now().isoformat(),
+            })
+
+    if registros:
+        client.table("crm_permissoes_usuarios").upsert(
+            registros,
+            on_conflict="username",
+        ).execute()
 
 
 def permissoes_do_usuario(username=None):
@@ -1689,25 +1694,11 @@ def garantir_usuario_no_controle(username):
 
 
 def listar_usuarios_cadastrados():
-    """Lista Supabase + Secrets sem expor hashes/senhas."""
-    encontrados = set()
-
-    remoto = _carregar_usuarios_supabase()
-    encontrados.update(remoto.get("usernames", {}).keys())
-
-    arquivo = carregar_usuarios_arquivo()
-    encontrados.update(arquivo.get("usernames", {}).keys())
-
-    try:
-        secrets_cred = _secrets_para_dict(st.secrets.get("credentials", {}))
-        encontrados.update(secrets_cred.get("usernames", {}).keys())
-    except Exception:
-        pass
-
+    """Lista somente metadados de usuários; nunca retorna hashes/senhas."""
     return sorted(
-        str(u).strip().lower()
-        for u in encontrados
-        if str(u).strip()
+        str(registro.get("username") or "").strip().lower()
+        for registro in _listar_registros_usuarios_supabase()
+        if str(registro.get("username") or "").strip()
     )
 
 
@@ -1720,7 +1711,6 @@ def salvar_permissoes_admin(username, novas_permissoes):
         raise ValueError("Usuário inválido.")
 
     if username in _lista_admins_configurada():
-        # Admins continuam com acesso total e não podem ser bloqueados por flags.
         return
 
     dados = carregar_permissoes_usuarios()
@@ -1744,8 +1734,8 @@ def render_administracao():
 
     st.info(
         "🔐 Os administradores possuem acesso total. "
-        "Para usuários comuns, marque nas caixas abaixo exatamente quais módulos "
-        "eles podem acessar. Senhas não são exibidas nem armazenadas neste arquivo."
+        "Usuários comuns recebem somente os módulos liberados pelo administrador. "
+        "Credenciais e permissões são persistidas exclusivamente no Supabase."
     )
 
     usuarios = listar_usuarios_cadastrados()
@@ -1761,9 +1751,7 @@ def render_administracao():
 
     if usuario_selecionado in _lista_admins_configurada():
         st.success("🛡️ Este usuário é administrador e possui acesso total.")
-        st.caption(
-            "Acesso de administrador é definido em ADMIN_USERNAMES nos Secrets."
-        )
+        st.caption("O perfil de administrador é controlado pelo registro do usuário no Supabase.")
         return
 
     garantir_usuario_no_controle(usuario_selecionado)
