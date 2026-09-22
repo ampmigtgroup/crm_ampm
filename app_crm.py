@@ -1004,6 +1004,24 @@ div[data-testid="stAlert"] {
     box-shadow:0 2px 8px rgba(0,0,0,.04);
 }
 
+.st-key-acoes_rapidas button {
+    min-height:58px;
+    border-radius:14px !important;
+    border:1px solid #E6E9EE !important;
+    background:#FFFFFF !important;
+    color:#173C52 !important;
+    font-weight:800 !important;
+    box-shadow:0 3px 12px rgba(20,30,40,.06) !important;
+}
+.st-key-acoes_rapidas button:hover {
+    border-color:#F58220 !important;
+    box-shadow:0 5px 16px rgba(245,130,32,.16) !important;
+    transform:translateY(-1px);
+}
+.st-key-acoes_rapidas button:disabled {
+    opacity:.52 !important;
+}
+
 /* Sidebar aprovada */
 section[data-testid="stSidebar"] {
     background: linear-gradient(180deg, #171A20 0%, #20242C 100%) !important;
@@ -4985,6 +5003,13 @@ def render_importador_inteligente():
 # V53: GitHub/source/deploy ficam ocultos para todos os perfis.
 # A regra é aplicada no início do arquivo para funcionar também no login.
 
+def _navegar_para_modulo(chave):
+    """Navega pelas Ações Rápidas usando o mesmo controle de módulos."""
+    nome_modulo = MODULOS_PERMISSOES.get(chave)
+    if nome_modulo and usuario_tem_permissao(chave):
+        st.session_state["modulo_navegacao"] = nome_modulo
+
+
 # --- SIDEBAR & NAVEGAÇÃO ---
 with st.sidebar:
     st.caption(f"🗄️ Fonte de dados: {st.session_state.get('fonte_dados', '-')}")
@@ -5029,19 +5054,30 @@ with st.sidebar:
         st.warning("🔒 Seu usuário ainda não possui módulos liberados.")
         st.stop()
 
+    _nomes_modulos = [nome for _, nome in opcoes_modulos]
+    _modulo_salvo = st.session_state.get("modulo_navegacao")
+    if _modulo_salvo not in _nomes_modulos:
+        _modulo_salvo = _nomes_modulos[0]
+
     modulo = st.radio(
         "📌 **Módulos do Sistema:**",
-        [nome for _, nome in opcoes_modulos]
+        _nomes_modulos,
+        index=_nomes_modulos.index(_modulo_salvo),
+        key="modulo_navegacao",
     )
 
     st.markdown("""
         <div class="sidebar-igt">
-            <div class="sidebar-igt-logo"><svg class="igt-logo-svg" viewBox="0 0 240 88" xmlns="http://www.w3.org/2000/svg" aria-label="IGT Group">
-<rect x="1" y="1" width="238" height="86" rx="14" fill="#173C52"/>
-<circle cx="39" cy="44" r="24" fill="#F58220"/>
-<path d="M39 20 L42 35 L55 28 L47 40 L62 44 L47 48 L55 60 L42 53 L39 68 L36 53 L23 60 L31 48 L16 44 L31 40 L23 28 L36 35 Z" fill="#fff"/>
-<text x="72" y="55" font-family="Arial, Helvetica, sans-serif" font-size="43" font-weight="700" fill="#fff">igt</text>
-<text x="151" y="70" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" letter-spacing="3" fill="#F58220">GROUP</text>
+            <div class="sidebar-igt-logo"><svg class="igt-logo-svg" viewBox="0 0 240 88" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="IGT Group">
+<rect x="0" y="0" width="240" height="88" rx="14" fill="#173C52"/>
+<circle cx="43" cy="44" r="25" fill="none" stroke="#F58220" stroke-width="5"/>
+<g stroke="#F58220" stroke-width="5" stroke-linecap="round">
+  <path d="M43 23V65"/><path d="M22 44H64"/>
+  <path d="M28 29L58 59"/><path d="M58 29L28 59"/>
+</g>
+<circle cx="43" cy="44" r="4" fill="#F58220"/>
+<text x="82" y="57" font-family="Arial, Helvetica, sans-serif" font-size="45" font-weight="700" fill="#FFFFFF">igt</text>
+<text x="165" y="73" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" letter-spacing="2.5" fill="#F58220">group</text>
 </svg></div>
             <p>Excelência em Treinamentos.<br>Resultados que transformam.</p>
         </div>
@@ -5107,12 +5143,16 @@ st.markdown(
             </div>
         </div>
         <div class="brand-top-right">
-            <div class="igt-logo-badge"><svg class="igt-logo-svg" viewBox="0 0 240 88" xmlns="http://www.w3.org/2000/svg" aria-label="IGT Group">
-<rect x="1" y="1" width="238" height="86" rx="14" fill="#173C52"/>
-<circle cx="39" cy="44" r="24" fill="#F58220"/>
-<path d="M39 20 L42 35 L55 28 L47 40 L62 44 L47 48 L55 60 L42 53 L39 68 L36 53 L23 60 L31 48 L16 44 L31 40 L23 28 L36 35 Z" fill="#fff"/>
-<text x="72" y="55" font-family="Arial, Helvetica, sans-serif" font-size="43" font-weight="700" fill="#fff">igt</text>
-<text x="151" y="70" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" letter-spacing="3" fill="#F58220">GROUP</text>
+            <div class="igt-logo-badge"><svg class="igt-logo-svg" viewBox="0 0 240 88" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="IGT Group">
+<rect x="0" y="0" width="240" height="88" rx="14" fill="#173C52"/>
+<circle cx="43" cy="44" r="25" fill="none" stroke="#F58220" stroke-width="5"/>
+<g stroke="#F58220" stroke-width="5" stroke-linecap="round">
+  <path d="M43 23V65"/><path d="M22 44H64"/>
+  <path d="M28 29L58 59"/><path d="M58 29L28 59"/>
+</g>
+<circle cx="43" cy="44" r="4" fill="#F58220"/>
+<text x="82" y="57" font-family="Arial, Helvetica, sans-serif" font-size="45" font-weight="700" fill="#FFFFFF">igt</text>
+<text x="165" y="73" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" letter-spacing="2.5" fill="#F58220">group</text>
 </svg></div>
             <div class="top-user-chip">👤 {_nome_topo}</div>
         </div>
@@ -5565,16 +5605,36 @@ elif modulo == "📊 Dashboard Executivo":
         _render_html_dashboard(
             """
             <div class="dashboard-panel-title">Ações Rápidas</div>
-            <div class="quick-actions-grid">
-                <div class="quick-action-card"><span>📞</span>Registrar<br>Novo Contato</div>
-                <div class="quick-action-card"><span>📅</span>Agendar<br>Treinamento</div>
-                <div class="quick-action-card"><span>📄</span>Nova Solicitação<br>de Orçamento</div>
-                <div class="quick-action-card"><span>🔎</span>Consultar<br>PROCV</div>
-                <div class="quick-action-card"><span>🧮</span>Calculadora<br>de Custos</div>
-                <div class="quick-action-card"><span>📊</span>Relatórios<br>Gerenciais</div>
-            </div>
+            <div class="dashboard-mini-sub" style="margin-bottom:8px;">Atalhos operacionais — clique para abrir o módulo correspondente.</div>
             """,
         )
+
+        _acoes_rapidas = [
+            ("📞 Registrar Novo Contato", "callcenter"),
+            ("📅 Agendar Treinamento", "pipeline"),
+            ("📄 Nova Solicitação de Orçamento", "callcenter"),
+            ("🔎 Consultar PROCV", "procv"),
+            ("🧮 Calculadora de Custos", "custos"),
+            ("📊 Relatórios Gerenciais", "relatorios"),
+        ]
+        with st.container(key="acoes_rapidas"):
+            _row_rapida_1 = st.columns(3)
+            _row_rapida_2 = st.columns(3)
+            for _idx, (_col, (_rotulo, _chave)) in enumerate(
+                zip(_row_rapida_1 + _row_rapida_2, _acoes_rapidas)
+            ):
+                _permitido = usuario_tem_permissao(_chave)
+                with _col:
+                    st.button(
+                        _rotulo,
+                        key=f"acao_rapida_{_chave}_{_idx}",
+                        type="secondary",
+                        width="stretch",
+                        disabled=not _permitido,
+                        help=None if _permitido else "Módulo sem permissão para este usuário.",
+                        on_click=_navegar_para_modulo,
+                        args=(_chave,),
+                    )
 
         render_exportacao_modulo(
             df_dash,
