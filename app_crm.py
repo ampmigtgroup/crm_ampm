@@ -1702,6 +1702,44 @@ def listar_usuarios_cadastrados():
     )
 
 
+def salvar_usuario_admin(username, ativo, perfil):
+    """Atualiza status e perfil do usuário diretamente no Supabase."""
+    if not usuario_e_admin():
+        raise PermissionError("Somente administradores podem alterar usuários.")
+
+    username = str(username or "").strip().lower()
+    perfil = str(perfil or "usuario").strip().lower()
+    ativo = bool(ativo)
+
+    if not username:
+        raise ValueError("Usuário inválido.")
+    if perfil not in {"admin", "usuario"}:
+        raise ValueError("Perfil inválido.")
+
+    atual = _registro_usuario_atual()
+    usuario_logado = str(_usuario_atual()).strip().lower()
+    if username == usuario_logado and (not ativo or perfil != "admin"):
+        raise PermissionError("O administrador atualmente conectado não pode remover o próprio acesso administrativo.")
+
+    client = _supabase_auth_client()
+    if client is None:
+        raise RuntimeError("Supabase indisponível. A alteração não foi salva.")
+
+    resposta = (
+        client.table("crm_usuarios")
+        .update({
+            "ativo": ativo,
+            "perfil": perfil,
+            "updated_at": datetime.now().isoformat(),
+        })
+        .eq("username", username)
+        .execute()
+    )
+
+    if not resposta.data:
+        raise ValueError("Usuário não encontrado no banco.")
+
+
 def salvar_permissoes_admin(username, novas_permissoes):
     if not usuario_e_admin():
         raise PermissionError("Somente administradores podem alterar permissões.")
@@ -1748,6 +1786,53 @@ def render_administracao():
         usuarios,
         format_func=lambda u: f"{u} {'(ADMIN)' if u in _lista_admins_configurada() else ''}"
     )
+
+    registros_usuarios = {
+        str(registro.get("username") or "").strip().lower(): registro
+        for registro in _listar_registros_usuarios_supabase()
+    }
+    registro_selecionado = registros_usuarios.get(usuario_selecionado, {})
+
+    st.markdown("### 👤 Cadastro corporativo")
+    with st.form(f"form_usuario_admin_{usuario_selecionado}"):
+        c1, c2 = st.columns(2)
+        with c1:
+            st.text_input(
+                "E-mail",
+                value=str(registro_selecionado.get("email") or ""),
+                disabled=True,
+            )
+            st.text_input(
+                "Nome",
+                value=str(registro_selecionado.get("nome") or ""),
+                disabled=True,
+            )
+        with c2:
+            perfil_atual = str(registro_selecionado.get("perfil") or "usuario").lower()
+            perfil_novo = st.selectbox(
+                "Perfil",
+                ["usuario", "admin"],
+                index=1 if perfil_atual == "admin" else 0,
+            )
+            ativo_novo = st.checkbox(
+                "Usuário ativo",
+                value=bool(registro_selecionado.get("ativo", True)),
+                help="Usuários inativos permanecem no histórico, mas não conseguem iniciar sessão.",
+            )
+
+        salvar_cadastro = st.form_submit_button(
+            "💾 Salvar cadastro",
+            use_container_width=True,
+            type="primary",
+        )
+
+    if salvar_cadastro:
+        try:
+            salvar_usuario_admin(usuario_selecionado, ativo_novo, perfil_novo)
+            st.success(f"✅ Cadastro de **{usuario_selecionado}** atualizado no Supabase.")
+            st.rerun()
+        except Exception as exc:
+            st.error(f"❌ Não foi possível atualizar o cadastro: {exc}")
 
     if usuario_selecionado in _lista_admins_configurada():
         st.success("🛡️ Este usuário é administrador e possui acesso total.")
