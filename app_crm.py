@@ -5629,7 +5629,7 @@ elif modulo == "📊 Dashboard Executivo":
                         _rotulo,
                         key=f"acao_rapida_{_chave}_{_idx}",
                         type="secondary",
-                        width="stretch",
+                        use_container_width=True,
                         disabled=not _permitido,
                         help=None if _permitido else "Módulo sem permissão para este usuário.",
                         on_click=_navegar_para_modulo,
