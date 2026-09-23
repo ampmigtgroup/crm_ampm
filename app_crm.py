@@ -15,7 +15,6 @@ import re
 import unicodedata
 import html
 from difflib import SequenceMatcher
-import streamlit_authenticator as stauth
 from supabase import create_client, Client
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
@@ -1468,104 +1467,11 @@ def _tela_marca_login(subtitulo):
     """, unsafe_allow_html=True)
 
 def exigir_login():
-    try:
-        cookie_key = st.secrets["COOKIE_KEY"]
-    except Exception:
-        _tela_marca_login("Configuração de acesso pendente")
-        st.warning("🔒 O login ainda não foi configurado neste app.")
-        st.markdown(
-            "Configure a chave `COOKIE_KEY` em **⋮ → Settings → Secrets** no Streamlit Cloud "
-            "para habilitar o acesso."
-        )
-        st.stop()
-
-    # A autenticação operacional vem exclusivamente do Supabase.
-    # Secrets só participa da migração inicial, executada uma única vez quando
-    # a tabela crm_usuarios ainda está vazia.
-    credenciais = carregar_usuarios_arquivo()
-
-    try:
-        dominios_permitidos_raw = st.secrets.get("ALLOWED_EMAIL_DOMAINS", "")
-    except Exception:
-        dominios_permitidos_raw = ""
-    dominios_permitidos = [d.strip() for d in str(dominios_permitidos_raw).split(",") if d.strip()] or None
-
-    autenticador = stauth.Authenticate(
-        credenciais,
-        cookie_name="crm_ampm_auth",
-        cookie_key=cookie_key,
-        cookie_expiry_days=7,
-        auto_hash=True,
-    )
-
-    if not st.session_state.get("authentication_status"):
-        _tela_marca_login("Acesso restrito — faça login ou crie sua conta")
-        aba_login, aba_cadastro = st.tabs(["🔑 Entrar", "🆕 Criar conta"])
-
-        with aba_login:
-            try:
-                autenticador.login(
-                    location="main",
-                    max_login_attempts=5,
-                    key="LoginPrincipal",
-                )
-            except Exception as exc:
-                st.error(f"❌ Não foi possível processar o login: {exc}")
-
-        with aba_cadastro:
-            if dominios_permitidos:
-                st.caption(f"✉️ Cadastro liberado apenas para e-mails: {', '.join(dominios_permitidos)}")
-            try:
-                email_novo, usuario_novo, nome_novo = autenticador.register_user(
-                    location="main",
-                    domains=dominios_permitidos,
-                    password_hint=False,
-                    fields={
-                        "Form name": "Criar minha conta",
-                        "First name": "Nome",
-                        "Last name": "Sobrenome",
-                        "Email": "E-mail",
-                        "Username": "Usuário (para login)",
-                        "Password": "Senha",
-                        "Repeat password": "Repita a senha",
-                        "Register": "Criar conta",
-                    },
-                    captcha=False,
-                )
-                if email_novo:
-                    salvar_usuarios_arquivo(autenticador.authentication_controller.authentication_model.credentials)
-                    st.success(f"✅ Conta criada para **{nome_novo}**! Vá até a aba '🔑 Entrar' e faça login.")
-            except Exception as e:
-                msg = str(e)
-                if "domain" in msg.lower():
-                    st.error(f"❌ Esse e-mail não pertence a um domínio autorizado ({', '.join(dominios_permitidos or [])}).")
-                elif "already taken" in msg.lower() or "already exists" in msg.lower():
-                    st.error("❌ Esse usuário ou e-mail já está cadastrado.")
-                elif "match" in msg.lower():
-                    st.error("❌ As senhas digitadas não coincidem.")
-                else:
-                    st.error(f"❌ Não foi possível criar a conta: {msg}")
-
-    status_login = st.session_state.get("authentication_status")
-    if status_login is not None:
-        usuario_login = str(st.session_state.get("username") or "").strip().lower()
-        if usuario_login:
-            try:
-                salvar_usuarios_arquivo(
-                    autenticador.authentication_controller.authentication_model.credentials
-                )
-                if status_login:
-                    _registrar_login_supabase(usuario_login, autenticador)
-            except Exception as exc:
-                if status_login:
-                    st.error(f"❌ O acesso foi autenticado, mas não foi possível atualizar o registro no banco: {exc}")
-    if status_login is False:
-        st.error("❌ Usuário ou senha incorretos.")
-        st.stop()
-    elif status_login is None:
-        st.stop()
-
-    return autenticador
+    """Modo operacional aberto, sem tela de login e sem senha."""
+    st.session_state["authentication_status"] = True
+    st.session_state["username"] = "admin"
+    st.session_state["name"] = "Administrador"
+    return None
 
 
 AUTENTICADOR = exigir_login()
@@ -1624,12 +1530,8 @@ def _lista_admins_configurada():
 
 
 def usuario_e_admin():
-    registro = _registro_usuario_atual()
-    return bool(
-        registro
-        and registro.get("ativo", True)
-        and str(registro.get("perfil") or "").strip().lower() == "admin"
-    )
+    """No modo aberto, o usuário operacional possui perfil administrativo."""
+    return True
 
 
 def carregar_permissoes_usuarios():
@@ -5129,7 +5031,7 @@ with st.sidebar:
             <span>👤 <b>{st.session_state.get('name', 'Usuário')}</b></span>
         </div>
     """, unsafe_allow_html=True)
-    AUTENTICADOR.logout("🚪 Sair", "sidebar")
+    st.caption("🔓 Acesso aberto — autenticação desativada")
 
     st.divider()
 
