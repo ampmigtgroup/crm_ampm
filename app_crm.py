@@ -1437,10 +1437,25 @@ def _listar_registros_usuarios_supabase():
 def _tela_marca_login(subtitulo):
     st.markdown(f"""
         <div style="display:flex; justify-content:center; margin: 40px 0 24px 0;">
-            <div style="display:flex; align-items:center; gap:14px; background:var(--bg-surface);
+            <div style="display:flex; align-items:center; gap:16px; background:var(--bg-surface);
                         border:1px solid var(--border-subtle); border-radius:var(--radius-lg);
-                        padding:18px 28px; box-shadow:var(--shadow-md);">
-                <div class="logo-chip" style="width:46px; height:46px; font-size:1.4rem;">⛽</div>
+                        padding:14px 22px; box-shadow:var(--shadow-md);">
+                <div style="width:132px; height:58px; display:flex; align-items:center; justify-content:center;
+                            border-radius:10px; overflow:hidden; background:#173C52;">
+                    <svg viewBox="0 0 189 82" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="IGT Group"
+                         style="display:block; width:132px; height:auto;">
+                        <rect x="0" y="0" width="189" height="82" rx="4" fill="#173C52"/>
+                        <circle cx="40.5" cy="41" r="25" fill="none" stroke="#F58220" stroke-width="4.5"/>
+                        <g stroke="#F58220" stroke-width="4.5" stroke-linecap="round">
+                          <path d="M40.5 20V62"/><path d="M19.5 41H61.5"/>
+                          <path d="M25.5 26L55.5 56"/><path d="M55.5 26L25.5 56"/>
+                        </g>
+                        <circle cx="40.5" cy="41" r="3.7" fill="#F58220"/>
+                        <text x="77" y="56" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="700" fill="#F58220">i</text>
+                        <text x="91" y="56" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="700" fill="#FFFFFF">gt</text>
+                        <text x="151" y="68" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="700" letter-spacing="1.6" fill="#F58220">group</text>
+                    </svg>
+                </div>
                 <div>
                     <div style="font-weight:800; font-size:1.35rem; color:var(--text-primary);">CRM AmPm</div>
                     <div style="font-size:0.82rem; color:var(--text-tertiary);">{subtitulo}</div>
