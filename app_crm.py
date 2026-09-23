@@ -979,7 +979,9 @@ div[data-testid="stAlert"] {
 .igt-logo-svg {
     display:block;
     width:112px;
-    height:46px;
+    height:auto;
+    max-height:48px;
+    object-fit:contain;
 }
 .sidebar-igt-logo {
     display:flex;
@@ -5141,16 +5143,17 @@ with st.sidebar:
 
     st.markdown("""
         <div class="sidebar-igt">
-            <div class="sidebar-igt-logo"><svg class="igt-logo-svg" viewBox="0 0 240 88" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="IGT Group">
-<rect x="0" y="0" width="240" height="88" rx="14" fill="#173C52"/>
-<circle cx="43" cy="44" r="25" fill="none" stroke="#F58220" stroke-width="5"/>
-<g stroke="#F58220" stroke-width="5" stroke-linecap="round">
-  <path d="M43 23V65"/><path d="M22 44H64"/>
-  <path d="M28 29L58 59"/><path d="M58 29L28 59"/>
+            <div class="sidebar-igt-logo"><svg class="igt-logo-svg" viewBox="0 0 189 82" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="IGT Group">
+<rect x="0" y="0" width="189" height="82" rx="4" fill="#173C52"/>
+<circle cx="40.5" cy="41" r="25" fill="none" stroke="#F58220" stroke-width="4.5"/>
+<g stroke="#F58220" stroke-width="4.5" stroke-linecap="round">
+  <path d="M40.5 20V62"/><path d="M19.5 41H61.5"/>
+  <path d="M25.5 26L55.5 56"/><path d="M55.5 26L25.5 56"/>
 </g>
-<circle cx="43" cy="44" r="4" fill="#F58220"/>
-<text x="82" y="57" font-family="Arial, Helvetica, sans-serif" font-size="45" font-weight="700" fill="#FFFFFF">igt</text>
-<text x="165" y="73" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" letter-spacing="2.5" fill="#F58220">group</text>
+<circle cx="40.5" cy="41" r="3.7" fill="#F58220"/>
+<text x="77" y="56" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="700" fill="#F58220">i</text>
+<text x="91" y="56" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="700" fill="#FFFFFF">gt</text>
+<text x="151" y="68" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="700" letter-spacing="1.6" fill="#F58220">group</text>
 </svg></div>
             <p>Excelência em Treinamentos.<br>Resultados que transformam.</p>
         </div>
@@ -5216,16 +5219,17 @@ st.markdown(
             </div>
         </div>
         <div class="brand-top-right">
-            <div class="igt-logo-badge"><svg class="igt-logo-svg" viewBox="0 0 240 88" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="IGT Group">
-<rect x="0" y="0" width="240" height="88" rx="14" fill="#173C52"/>
-<circle cx="43" cy="44" r="25" fill="none" stroke="#F58220" stroke-width="5"/>
-<g stroke="#F58220" stroke-width="5" stroke-linecap="round">
-  <path d="M43 23V65"/><path d="M22 44H64"/>
-  <path d="M28 29L58 59"/><path d="M58 29L28 59"/>
+            <div class="igt-logo-badge"><svg class="igt-logo-svg" viewBox="0 0 189 82" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="IGT Group">
+<rect x="0" y="0" width="189" height="82" rx="4" fill="#173C52"/>
+<circle cx="40.5" cy="41" r="25" fill="none" stroke="#F58220" stroke-width="4.5"/>
+<g stroke="#F58220" stroke-width="4.5" stroke-linecap="round">
+  <path d="M40.5 20V62"/><path d="M19.5 41H61.5"/>
+  <path d="M25.5 26L55.5 56"/><path d="M55.5 26L25.5 56"/>
 </g>
-<circle cx="43" cy="44" r="4" fill="#F58220"/>
-<text x="82" y="57" font-family="Arial, Helvetica, sans-serif" font-size="45" font-weight="700" fill="#FFFFFF">igt</text>
-<text x="165" y="73" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" letter-spacing="2.5" fill="#F58220">group</text>
+<circle cx="40.5" cy="41" r="3.7" fill="#F58220"/>
+<text x="77" y="56" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="700" fill="#F58220">i</text>
+<text x="91" y="56" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="700" fill="#FFFFFF">gt</text>
+<text x="151" y="68" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="700" letter-spacing="1.6" fill="#F58220">group</text>
 </svg></div>
             <div class="top-user-chip">👤 {_nome_topo}</div>
         </div>
