@@ -1262,8 +1262,11 @@ def _supabase_auth_client():
             st.secrets.get("SUPABASE_URL", SUPABASE_PROJECT_URL_PADRAO)
             or SUPABASE_PROJECT_URL_PADRAO
         ).strip()
+        # Suporta a chave secreta atual do Supabase e mantém compatibilidade
+        # com a antiga service_role. A chave nunca fica no código-fonte.
         chave = str(
-            st.secrets.get("SUPABASE_SERVICE_ROLE_KEY", "")
+            st.secrets.get("SUPABASE_SECRET_KEY", "")
+            or st.secrets.get("SUPABASE_SERVICE_ROLE_KEY", "")
             or ""
         ).strip()
         if not chave:
