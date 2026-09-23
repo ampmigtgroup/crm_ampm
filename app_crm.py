@@ -476,6 +476,8 @@ def _renderizar_mini_orcamento(posto, pv):
 
     if uploads:
         if st.button("📥 Salvar documentos anexados", key=f"salvar_docs_{chave}"):
+            # Garante que o orçamento exista no banco antes de registrar os documentos.
+            _salvar_orcamentos({chave: orcamento})
             novos = _salvar_documentos_orcamento(pv, uploads, orcamento.get("id"))
             documentos.extend(novos)
             orcamento["documentos"] = documentos
