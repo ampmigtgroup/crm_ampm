@@ -1,4 +1,20 @@
 import streamlit as st
+
+def _igt_logo_data_uri():
+    """Retorna a logo oficial IGT Group incorporada no HTML."""
+    try:
+        import os as _os
+        import base64 as _base64
+        caminho = _os.path.join(
+            _os.path.dirname(_os.path.abspath(__file__)),
+            "assets",
+            "logo_igt_group.png",
+        )
+        with open(caminho, "rb") as f:
+            conteudo = _base64.b64encode(f.read()).decode("ascii")
+        return f"data:image/png;base64,{conteudo}"
+    except Exception:
+        return ""
 import streamlit.components.v1 as components
 import pandas as pd
 import os
@@ -975,7 +991,7 @@ div[data-testid="stAlert"] {
     box-shadow:0 3px 10px rgba(0,0,0,.10);
     overflow:hidden;
 }
-.igt-logo-svg {
+.igt-logo-img {
     display:block;
     width:112px;
     height:auto;
@@ -989,10 +1005,12 @@ div[data-testid="stAlert"] {
     width:100%;
     min-height:54px;
 }
-.sidebar-igt-logo svg {
+.sidebar-igt-logo img {
     display:block;
     width:176px;
     height:auto;
+    max-width:100%;
+    object-fit:contain;
 }
 .top-user-chip {
     background:#F5F6F8;
@@ -5061,20 +5079,9 @@ with st.sidebar:
         key="modulo_navegacao",
     )
 
-    st.markdown("""
+    st.markdown(f"""
         <div class="sidebar-igt">
-            <div class="sidebar-igt-logo"><svg class="igt-logo-svg" viewBox="0 0 189 82" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="IGT Group">
-<rect x="0" y="0" width="189" height="82" rx="4" fill="#173C52"/>
-<circle cx="40.5" cy="41" r="25" fill="none" stroke="#F58220" stroke-width="4.5"/>
-<g stroke="#F58220" stroke-width="4.5" stroke-linecap="round">
-  <path d="M40.5 20V62"/><path d="M19.5 41H61.5"/>
-  <path d="M25.5 26L55.5 56"/><path d="M55.5 26L25.5 56"/>
-</g>
-<circle cx="40.5" cy="41" r="3.7" fill="#F58220"/>
-<text x="77" y="56" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="700" fill="#F58220">i</text>
-<text x="91" y="56" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="700" fill="#FFFFFF">gt</text>
-<text x="151" y="68" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="700" letter-spacing="1.6" fill="#F58220">group</text>
-</svg></div>
+            <div class="sidebar-igt-logo"><img class="igt-logo-img" src="{_igt_logo_data_uri()}" alt="IGT Group"></div>
             <p>Excelência em Treinamentos.<br>Resultados que transformam.</p>
         </div>
     """, unsafe_allow_html=True)
@@ -5139,18 +5146,7 @@ st.markdown(
             </div>
         </div>
         <div class="brand-top-right">
-            <div class="igt-logo-badge"><svg class="igt-logo-svg" viewBox="0 0 189 82" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="IGT Group">
-<rect x="0" y="0" width="189" height="82" rx="4" fill="#173C52"/>
-<circle cx="40.5" cy="41" r="25" fill="none" stroke="#F58220" stroke-width="4.5"/>
-<g stroke="#F58220" stroke-width="4.5" stroke-linecap="round">
-  <path d="M40.5 20V62"/><path d="M19.5 41H61.5"/>
-  <path d="M25.5 26L55.5 56"/><path d="M55.5 26L25.5 56"/>
-</g>
-<circle cx="40.5" cy="41" r="3.7" fill="#F58220"/>
-<text x="77" y="56" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="700" fill="#F58220">i</text>
-<text x="91" y="56" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="700" fill="#FFFFFF">gt</text>
-<text x="151" y="68" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="700" letter-spacing="1.6" fill="#F58220">group</text>
-</svg></div>
+            <div class="igt-logo-badge"><img class="igt-logo-img" src="{_igt_logo_data_uri()}" alt="IGT Group"></div>
             <div class="top-user-chip">👤 {_nome_topo}</div>
         </div>
     </div>
