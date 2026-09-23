@@ -32,6 +32,14 @@ import unicodedata
 import html
 from difflib import SequenceMatcher
 from supabase import create_client, Client
+from crm_data_hub import (
+    load_budgets,
+    save_budgets,
+    upload_budget_documents,
+    download_budget_document,
+    registrar_evento,
+    load_unified_view,
+)
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(
@@ -78,24 +86,22 @@ SUPABASE_TABLES = {
     "rec": "crm_recomendacao_deslocamento",
 }
 
-CAMINHO_ORCAMENTOS = "orcamentos_crm.json"
-PASTA_DOCUMENTOS_ORCAMENTO = "documentos_orcamentos"
+CAMINHO_ORCAMENTOS = ""  # legado; persistência oficial no Supabase
+PASTA_DOCUMENTOS_ORCAMENTO = ""  # legado; arquivos oficiais no Supabase Storage
 
 
 def _carregar_orcamentos():
-    if not os.path.exists(CAMINHO_ORCAMENTOS):
-        return {}
+    """Fonte oficial dos orçamentos: Supabase/PostgreSQL."""
     try:
-        with open(CAMINHO_ORCAMENTOS, "r", encoding="utf-8") as arquivo:
-            dados = json.load(arquivo)
-            return dados if isinstance(dados, dict) else {}
-    except Exception:
+        return load_budgets()
+    except Exception as exc:
+        st.warning(f"⚠️ Não foi possível carregar os orçamentos do banco central: {exc}")
         return {}
 
 
 def _salvar_orcamentos(dados):
-    with open(CAMINHO_ORCAMENTOS, "w", encoding="utf-8") as arquivo:
-        json.dump(dados, arquivo, ensure_ascii=False, indent=2, default=str)
+    """Persistência oficial dos orçamentos: Supabase/PostgreSQL."""
+    save_budgets(dados)
 
 
 def _chave_orcamento(pv):
@@ -136,6 +142,7 @@ UNIDADES_ORCAMENTO = [
 def _orcamento_vazio(posto):
     agora = datetime.now()
     return {
+        "id": str(uuid.uuid4()),
         "numero": f"ORC-{agora.strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}",
         "titulo": f"Orçamento - {posto.get('Razão Social', '')}",
         "responsavel": "",
@@ -270,24 +277,9 @@ def _gerar_excel_orcamento(orcamento, posto, pv):
     return buffer.getvalue()
 
 
-def _salvar_documentos_orcamento(pv, arquivos):
-    pasta = os.path.join(PASTA_DOCUMENTOS_ORCAMENTO, _chave_orcamento(pv).replace("/", "_"))
-    os.makedirs(pasta, exist_ok=True)
-    salvos = []
-
-    for arquivo in arquivos or []:
-        nome_original = os.path.basename(arquivo.name)
-        nome_seguro = re.sub(r"[^A-Za-z0-9._ -]", "_", nome_original).strip() or "documento"
-        nome_final = f"{uuid.uuid4().hex[:8]}_{nome_seguro}"
-        caminho = os.path.join(pasta, nome_final)
-        with open(caminho, "wb") as destino:
-            destino.write(arquivo.getbuffer())
-        salvos.append({
-            "nome": nome_original,
-            "arquivo": caminho,
-            "tamanho": os.path.getsize(caminho),
-        })
-    return salvos
+def _salvar_documentos_orcamento(pv, arquivos, orcamento_id):
+    """Arquiva documentos no Supabase Storage e registra metadados no banco."""
+    return upload_budget_documents(pv, orcamento_id, arquivos)
 
 
 def _criar_pacote_orcamento(orcamento, posto, pv):
@@ -308,9 +300,14 @@ def _criar_pacote_orcamento(orcamento, posto, pv):
         zf.writestr(f"{nome_base}/LEIA-ME.txt", resumo_txt)
 
         for doc in orcamento.get("documentos", []):
-            caminho = doc.get("arquivo", "")
-            if caminho and os.path.exists(caminho):
-                zf.write(caminho, arcname=f"{nome_base}/Documentos/{doc.get('nome', os.path.basename(caminho))}")
+            storage_path = str(doc.get("storage_path") or "").strip()
+            if storage_path:
+                try:
+                    conteudo_doc = download_budget_document(storage_path)
+                    nome_doc = doc.get("nome", "Documento")
+                    zf.writestr(f"{nome_base}/Documentos/{nome_doc}", conteudo_doc)
+                except Exception:
+                    pass
 
     pacote.seek(0)
     return pacote.getvalue()
@@ -479,7 +476,7 @@ def _renderizar_mini_orcamento(posto, pv):
 
     if uploads:
         if st.button("📥 Salvar documentos anexados", key=f"salvar_docs_{chave}"):
-            novos = _salvar_documentos_orcamento(pv, uploads)
+            novos = _salvar_documentos_orcamento(pv, uploads, orcamento.get("id"))
             documentos.extend(novos)
             orcamento["documentos"] = documentos
             orcamentos[chave] = orcamento
@@ -490,17 +487,21 @@ def _renderizar_mini_orcamento(posto, pv):
 
     if documentos:
         for doc in documentos:
-            caminho = doc.get("arquivo", "")
-            if caminho and os.path.exists(caminho):
-                with open(caminho, "rb") as arquivo:
+            storage_path = str(doc.get("storage_path") or "").strip()
+            if storage_path:
+                try:
+                    dados_doc = download_budget_document(storage_path)
                     st.download_button(
                         f"⬇️ {doc.get('nome', 'Documento')}",
-                        data=arquivo.read(),
+                        data=dados_doc,
                         file_name=doc.get("nome", "Documento"),
-                        key=f"download_doc_{chave}_{doc.get('arquivo')}",
+                        mime=doc.get("mime_type") or "application/octet-stream",
+                        key=f"download_doc_{chave}_{storage_path}",
                     )
+                except Exception as exc:
+                    st.caption(f"⚠️ Não foi possível baixar {doc.get('nome', 'Documento')}: {exc}")
             else:
-                st.caption(f"⚠️ Arquivo não encontrado: {doc.get('nome', 'Documento')}")
+                st.caption(f"⚠️ Documento sem referência no Storage: {doc.get('nome', 'Documento')}")
 
     st.divider()
     b1, b2 = st.columns(2)
@@ -4492,6 +4493,15 @@ def atualizar_fila(pv_abadi, campos: dict):
 
     st.session_state['bases']['fila'] = df_fila
     salvar_fila_no_disco()
+    try:
+        registrar_evento(
+            str(pv_abadi),
+            "callcenter_atualizado",
+            "callcenter",
+            {"campos": list(campos.keys())},
+        )
+    except Exception:
+        pass
     _sincronizar_modulos_apos_mutacao("fila")
 
 def _bases_vazias():
@@ -4515,6 +4525,10 @@ def inicializar_estado():
         st.session_state['bases'] = carregar_bases_supabase()
         st.session_state['erro_carga'] = None
         st.session_state['fonte_dados'] = "Supabase"
+        try:
+            st.session_state["visao_unificada"] = load_unified_view()
+        except Exception:
+            st.session_state["visao_unificada"] = []
         return
     except Exception as e_supabase:
         # Fallback temporário para não derrubar o app enquanto os Secrets
