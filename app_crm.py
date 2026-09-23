@@ -2005,31 +2005,90 @@ def _nome_arquivo_seguro(texto):
     return texto or "exportacao"
 
 
+def _nome_aba_excel_seguro(nome):
+    """Garante um nome de aba válido para o Excel."""
+    nome = re.sub(r"[:\\/?*\\[\\]]", "_", str(nome or "Dados")).strip()
+    return (nome or "Dados")[:31]
+
+
+def _normalizar_dataframe_exportacao(df):
+    """Prepara a base para CSV/XLSX sem alterar os dados da operação."""
+    if df is None:
+        return pd.DataFrame()
+
+    saida = df.copy()
+    saida.columns = [str(col) for col in saida.columns]
+
+    # Excel não trabalha com datetimes com timezone; preserva o instante
+    # como texto ISO, evitando falha na geração do .xlsx.
+    for coluna in saida.columns:
+        try:
+            serie = saida[coluna]
+            if pd.api.types.is_datetime64tz_dtype(serie.dtype):
+                saida[coluna] = serie.map(
+                    lambda valor: valor.isoformat() if pd.notna(valor) else None
+                )
+        except Exception:
+            pass
+
+    # Objetos compostos (listas/dicionários) viram texto legível.
+    for coluna in saida.columns:
+        if saida[coluna].dtype == "object":
+            def _serializar(valor):
+                if valor is None:
+                    return None
+                try:
+                    if pd.isna(valor):
+                        return None
+                except Exception:
+                    pass
+                if isinstance(valor, (dict, list, tuple, set)):
+                    try:
+                        return json.dumps(valor, ensure_ascii=False, default=str)
+                    except Exception:
+                        return str(valor)
+                return valor
+            saida[coluna] = saida[coluna].map(_serializar)
+
+    return saida.replace([float("inf"), float("-inf")], pd.NA)
+
+
 @st.cache_data(show_spinner=False, max_entries=24)
 def _excel_dataframe_bytes(df, nome_aba="Dados"):
-    if df is None:
-        df = pd.DataFrame()
+    df_export = _normalizar_dataframe_exportacao(df)
     buffer = io.BytesIO()
-    aba = str(nome_aba or "Dados")[:31]
+    aba = _nome_aba_excel_seguro(nome_aba)
+
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-        df.copy().to_excel(writer, index=False, sheet_name=aba)
+        df_export.to_excel(writer, index=False, sheet_name=aba)
         ws = writer.sheets[aba]
         ws.freeze_panes = "A2"
-        if ws.max_column:
+        if ws.max_row > 1 and ws.max_column:
             ws.auto_filter.ref = ws.dimensions
+
+        # Cabeçalho legível e largura controlada.
+        from openpyxl.styles import Font, PatternFill, Alignment
+
+        for celula in ws[1]:
+            celula.font = Font(bold=True, color="FFFFFF")
+            celula.fill = PatternFill(fill_type="solid", fgColor="173C52")
+            celula.alignment = Alignment(vertical="center")
+
         for col in ws.columns:
             letra = col[0].column_letter
-            maior = max([len(str(c.value or "")) for c in list(col)[:300]] + [10])
-            ws.column_dimensions[letra].width = min(maior + 2, 45)
+            maior = max(
+                [len(str(c.value or "")) for c in list(col)[:300]] + [10]
+            )
+            ws.column_dimensions[letra].width = min(max(maior + 2, 10), 45)
+
     buffer.seek(0)
     return buffer.getvalue()
 
 
 @st.cache_data(show_spinner=False, max_entries=32)
 def _csv_dataframe_bytes(df):
-    if df is None:
-        df = pd.DataFrame()
-    return df.to_csv(index=False).encode("utf-8-sig")
+    df_export = _normalizar_dataframe_exportacao(df)
+    return df_export.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
 
 
 def render_exportacao_modulo(df, nome_modulo, nome_aba=None, legenda=None):
@@ -6694,52 +6753,64 @@ elif modulo == "📂 Relatórios & Exportação":
 
     st.markdown("### 📥 Exportar base do CRM")
 
-    # CSV: formato simples e compatível com praticamente qualquer sistema.
-    csv_buffer = df_base.to_csv(index=False).encode("utf-8-sig")
+    if df_base is None or df_base.empty:
+        st.info("📭 A base está vazia. Não há registros para exportar.")
+    else:
+        nome_base_export = "Base_CRM_AmPm"
+        csv_buffer = _csv_dataframe_bytes(df_base)
 
-    # Excel: gera um .xlsx real em memória, sem criar arquivo temporário no servidor.
-    # O openpyxl é usado pelo pandas para gravar o arquivo Excel.
-    excel_buffer = io.BytesIO()
-    with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
-        df_base.to_excel(writer, index=False, sheet_name="Base CRM")
-
-        # Ajustes simples de apresentação da planilha.
-        worksheet = writer.sheets["Base CRM"]
-        worksheet.freeze_panes = "A2"
-        worksheet.auto_filter.ref = worksheet.dimensions
-
-        # Limita a largura automática para evitar colunas gigantes.
-        for coluna in worksheet.columns:
-            max_len = 0
-            letra = coluna[0].column_letter
-            for celula in coluna[:200]:
-                valor = "" if celula.value is None else str(celula.value)
-                max_len = max(max_len, len(valor))
-            worksheet.column_dimensions[letra].width = min(max(max_len + 2, 10), 45)
-
-    excel_buffer.seek(0)
-
-    col_csv, col_excel = st.columns(2)
-
-    with col_csv:
-        st.download_button(
-            label="📄 Baixar Base em CSV",
-            data=csv_buffer,
-            file_name=f"Base_CRM_AmPm_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-            mime="text/csv",
-            use_container_width=True,
+        # O Excel é preparado somente quando solicitado, evitando custo de
+        # processamento a cada rerun do Streamlit.
+        chave_excel_export = "excel_pronto_relatorios_crm"
+        chave_assinatura_export = "excel_assinatura_relatorios_crm"
+        assinatura_export = (
+            len(df_base),
+            tuple(map(str, df_base.columns)),
+            str(df_base.index.min()),
+            str(df_base.index.max()),
         )
 
-    with col_excel:
-        st.download_button(
-            label="📊 Baixar Base em Excel",
-            data=excel_buffer.getvalue(),
-            file_name=f"Base_CRM_AmPm_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True,
-        )
+        if st.session_state.get(chave_assinatura_export) != assinatura_export:
+            st.session_state.pop(chave_excel_export, None)
+            st.session_state[chave_assinatura_export] = assinatura_export
 
-    st.caption(
-        f"Base pronta para exportação: {len(df_base):,} registros e "
-        f"{len(df_base.columns):,} colunas."
-    )
+        col_csv, col_excel = st.columns(2)
+
+        with col_csv:
+            st.download_button(
+                label="📄 Baixar Base em CSV",
+                data=csv_buffer,
+                file_name=f"{nome_base_export}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                mime="text/csv",
+                use_container_width=True,
+                key="download_base_crm_csv_v2",
+            )
+
+        with col_excel:
+            if chave_excel_export not in st.session_state:
+                if st.button(
+                    "⚡ Preparar Excel",
+                    use_container_width=True,
+                    key="preparar_base_crm_excel_v2",
+                    help="Gera o .xlsx somente quando solicitado para manter o CRM rápido.",
+                ):
+                    with st.spinner("Preparando Excel da base CRM..."):
+                        st.session_state[chave_excel_export] = _excel_dataframe_bytes(
+                            df_base,
+                            "Base CRM",
+                        )
+                    st.rerun()
+            else:
+                st.download_button(
+                    label="📊 Baixar Base em Excel",
+                    data=st.session_state[chave_excel_export],
+                    file_name=f"{nome_base_export}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    key="download_base_crm_excel_v2",
+                )
+
+        st.caption(
+            f"Base pronta para exportação: {len(df_base):,} registros e "
+            f"{len(df_base.columns):,} colunas."
+        )
