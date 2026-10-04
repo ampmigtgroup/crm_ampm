@@ -1,6 +1,6 @@
 [package]
 name = "crm_operacional_ampm"
-version = "6.2.4"
+version = "6.2.5"
 description = "CRM Operacional AmPm - Desktop Executivo"
 authors = ["IGT Group"]
 edition = "2021"
