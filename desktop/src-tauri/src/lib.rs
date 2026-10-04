@@ -9,7 +9,7 @@ use tauri_plugin_updater::UpdaterExt;
 
 const CRM_URL: &str = "https://email-campaign-19.preview.emergentagent.com";
 
-const DEMO_CREDENTIALS_GUARD = r#"(() => {
+const DEMO_CREDENTIALS_GUARD: &str = r#"(() => {
     const scrub = () => {
         const nodes = Array.from(document.querySelectorAll('body *'));
         for (const el of nodes) {
