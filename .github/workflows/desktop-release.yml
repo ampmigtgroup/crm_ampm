@@ -1,6 +1,8 @@
 name: CRM Desktop - Build e Release
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -55,7 +57,7 @@ jobs:
         working-directory: desktop
         run: npm ci
 
-      - name: Build e criar Draft Release
+      - name: Build e publicar Release
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -68,7 +70,7 @@ jobs:
           releaseBody: |
             CRM Operacional AmPm Desktop.
             Build corporativo Windows e Linux.
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
           uploadUpdaterJson: true
           uploadUpdaterSignatures: true
