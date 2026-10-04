@@ -9,38 +9,6 @@ use tauri_plugin_updater::UpdaterExt;
 
 const CRM_URL: &str = "https://email-campaign-19.preview.emergentagent.com";
 
-const DEMO_CREDENTIALS_GUARD: &str = r#"(() => {
-    const scrub = () => {
-        const nodes = Array.from(document.querySelectorAll('body *'));
-        for (const el of nodes) {
-            const text = (el.textContent || '').trim();
-            if (/Credenciais de demonstração/i.test(text) && el.children.length < 8) {
-                let target = el;
-                for (let i = 0; i < 4 && target.parentElement; i++) {
-                    const parent = target.parentElement;
-                    const parentText = (parent.innerText || '').trim();
-                    if (parentText.length <= 900) target = parent;
-                }
-                target.style.display = 'none';
-            }
-        }
-        for (const input of document.querySelectorAll('input')) {
-            if (/juniorjtm@gmail\.com/i.test(input.value) || /operador@ampm\.com\.br/i.test(input.value)) {
-                input.value = '';
-                input.dispatchEvent(new Event('input', { bubbles: true }));
-                input.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-        }
-    };
-    scrub();
-    if (!window.__crmDemoGuard) {
-        window.__crmDemoGuard = new MutationObserver(scrub);
-        window.__crmDemoGuard.observe(document.documentElement, { subtree: true, childList: true });
-    }
-})();
-"#;
-
-
 fn show_main(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.unminimize();
@@ -261,13 +229,14 @@ fn setup_application(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Err
 
     let _tray = tray_builder.build(app)?;
 
-    // Janela principal remota: sem capacidades Tauri extras.
+    // A janela principal usa exatamente o mesmo frontend React publicado no ambiente web.
+    let remote_url = CRM_URL.parse().expect("URL do CRM inválida");
     let splash = app.get_webview_window("splashscreen");
 
     WebviewWindowBuilder::new(
         app,
         "main",
-        WebviewUrl::App("index.html".into()),
+        WebviewUrl::External(remote_url),
     )
     .title("CRM Operacional AmPm")
         .inner_size(1440.0, 900.0)
@@ -275,10 +244,9 @@ fn setup_application(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Err
     .center()
     .resizable(true)
     .maximized(true)
-    .visible(true)
+    .visible(false)
     .on_page_load(move |window, payload| {
-        if matches!(payload.event(), PageLoadEvent::Started | PageLoadEvent::Finished) {
-            let _ = window.eval(DEMO_CREDENTIALS_GUARD);
+        if matches!(payload.event(), PageLoadEvent::Finished) {
             let _ = window.show();
             let _ = window.set_focus();
 
