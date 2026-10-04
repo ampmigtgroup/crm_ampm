@@ -35,7 +35,7 @@ def audit(entidade, entidade_id, acao, antes=None, depois=None):
         a = antes or {}
         d = depois or {}
         diff = {k: {"de": a.get(k), "para": d.get(k)} for k in set(a) | set(d) if str(a.get(k)) != str(d.get(k))}
-        c.table("crm_auditoria").insert({
+        c.table("crm_eventos").insert({
             "entidade": entidade, "entidade_id": str(entidade_id), "acao": acao,
             "usuario": _user(), "antes": a, "depois": d, "diff": diff
         }).execute()
@@ -233,7 +233,7 @@ def render(df_base, df_lojas=None, df_instrutores=None):
         if not c: st.info("Supabase indisponível.")
         else:
             try:
-                data=c.table("crm_auditoria").select("*").order("criado_em",desc=True).limit(500).execute().data or []
+                data=c.table("crm_eventos").select("*").order("criado_em",desc=True).limit(500).execute().data or []
                 if data:
                     st.dataframe(pd.DataFrame(data)[[k for k in ["criado_em","usuario","entidade","entidade_id","acao","desfeito"] if k in data[0]]],use_container_width=True,hide_index=True)
                     st.json(data[0])
