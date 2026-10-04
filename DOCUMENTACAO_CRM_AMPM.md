@@ -1,67 +1,44 @@
-# CRM AmPm · IGT Group — Documentação de Operação
+# CRM AmPm · IGT Group — Arquitetura Nova
 
-## Estado atual
+## Arquitetura ativa
+- Backend: FastAPI.
+- Banco: MongoDB.
+- Frontend: React 19 + Vite.
+- UI: Tailwind CSS v4 + componentes no padrão shadcn/ui.
+- PWA: manifest instalável.
+- Autenticação: JWT.
+- Auditoria: eventos de criação, edição e exclusão registrados pela API.
 
-O CRM oficial deste repositório continua baseado em **Streamlit + Supabase**, com a camada Enterprise/ Gestão 360 integrada na branch `feat/enterprise-crm-2026-10-03`.
+## Interface visual
+A referência visual aprovada foi preservada: fundo claro, sidebar grafite, identidade AmPm em amarelo/laranja, identidade IGT em azul, cards arredondados, sombras suaves, cabeçalho superior, filtros, KPIs, gráficos, tabelas e ações rápidas.
 
-### Módulos Enterprise
-- Dashboard executivo.
-- Agenda inteligente por proximidade.
-- Carteira por consultor.
-- SLA configurável (padrão: 180 dias).
-- Auditoria de alterações no Supabase.
-- Mala direta / prévia de e-mail.
-- Modelos e abertura de WhatsApp.
-- Gerador de orçamento com itens, desconto, anexos e exportação.
-- Integração centralizada com Supabase.
-- Identidade visual IGT Group.
+## Módulos
+Dashboard Executivo; Pipeline AmPm; PROCV Gestão e Franquia AMPM; Calculadora & Otimizador de Custos; Call Center; Equipe de Instrutores; Orçamentos; Relatórios & Exportação; Agenda Inteligente; Lojas & Mapa; Mala Direta; WhatsApp; Carteira; Resumo Semanal; Auditoria; Usuários; SLA.
 
-### Dados e tabelas principais
-- `crm_lojas`
-- `crm_fila_callcenter`
-- `crm_contatos`
-- `crm_instrutores`
-- `crm_agenda`
-- `crm_recomendacao_deslocamento`
-- `crm_orcamentos`
-- `crm_orcamento_itens`
-- `crm_orcamento_documentos`
-- `crm_eventos`
-- `crm_configuracoes`
-- `crm_templates_email`
-- `crm_campanhas_email`
-- `crm_campanha_envios`
-- `crm_resumo_envios`
-- `crm_modelos_whatsapp`
-- `crm_usuarios`
-- `crm_permissoes_usuarios`
+## API
+- /api/auth/login
+- /api/auth/me
+- /api/dashboard
+- /api/lojas
+- /api/contatos
+- /api/instrutores
+- /api/agenda
+- /api/pipeline
+- /api/orcamentos
+- /api/campanhas
+- /api/auditoria
+- /api/relatorios
+- /api/usuarios
+- /api/sla
+
+## Banco
+Coleções MongoDB: users, sessions, lojas, contatos, instrutores, agenda, oportunidades, orcamentos, campanhas, auditoria, relatorios, carteira, resumo_semanal e sla.
 
 ## Segurança
+Nenhuma senha, token ou chave privada deve ser commitada. O administrador inicial é provisionado somente quando ADMIN_USERNAME e ADMIN_PASSWORD são fornecidos via ambiente/Secrets.
 
-- Segredos não devem ser gravados no código nem neste documento.
-- Credenciais administrativas devem permanecer em Secrets/.env.
-- A função de sincronização do formulário não é executável diretamente por usuários públicos.
-- A view unificada usa `security_invoker`.
-- Tabelas comerciais, auditoria, agenda, configuração e campanhas estão protegidas por RLS.
-- Índices de chaves estrangeiras foram reforçados.
+## Backup
+A implementação anterior permanece preservada em: backup-streamlit-supabase-2026-10-04.
 
-## Custos configuráveis
-
-- Km: R$ 2,20.
-- Diária do instrutor: R$ 550,00.
-- Hospedagem: R$ 280,00/noite.
-- Limite de pernoite: 250 km.
-
-## Operação
-
-A aplicação usa o projeto Supabase `nptazzfvwhhmotfrvgdj` e deve receber URL/chaves por Secrets. Não publicar senhas, tokens ou chaves no GitHub.
-
-## Validação
-
-Executar:
-
-```bash
-python scripts/validate_crm.py app_crm.py
-```
-
-A documentação descreve a arquitetura efetivamente presente no repositório; funcionalidades de uma arquitetura FastAPI/React/MongoDB não devem ser tratadas como presentes neste código Streamlit até que sejam migradas de forma explícita.
+## Referência visual
+A arquitetura visual enviada pelo usuário foi a referência do novo frontend, incluindo o Dashboard Executivo, sidebar AmPm/IGT, KPIs, gráficos, filtros e ações rápidas.
