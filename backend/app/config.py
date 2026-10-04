@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     mongo_db: str = "crm_ampm"
     jwt_secret: str = "change-me-in-production"
     jwt_expire_minutes: int = 480
-    frontend_origin: str = "*"
+    frontend_origin: str = "*"\n    admin_username: str = ""\n    admin_password: str = ""\n    admin_name: str = "Administrador"\n    admin_email: str = "admin@ampm.com"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
