@@ -1,9 +1,0 @@
-streamlit
-supabase
-pandas
-numpy
-openpyxl
-pydeck
-plotly
-fpdf
-requests
