@@ -32,6 +32,7 @@ import unicodedata
 import html
 from difflib import SequenceMatcher
 from supabase import create_client, Client
+from crm_enterprise_features import MODULE_LABEL, MODULE_KEY, render as render_gestao_360
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(
@@ -1515,6 +1516,7 @@ MODULOS_PERMISSOES = {
     "callcenter": "📞 Call Center & Timeline WhatsApp",
     "instrutores": "👔 Equipe de Instrutores",
     "relatorios": "📂 Relatórios & Exportação",
+    MODULE_KEY: MODULE_LABEL,
 }
 
 
@@ -5215,6 +5217,13 @@ st.markdown(
 
 if modulo == "🛡️ Administração":
     render_administracao()
+
+elif modulo == MODULE_LABEL:
+    render_gestao_360(
+        df_base,
+        df_lojas if "df_lojas" in globals() else df_base,
+        df_instrutores if "df_instrutores" in globals() else pd.DataFrame(),
+    )
 
 elif modulo == "📊 Dashboard Executivo":
     if df_base.empty:
