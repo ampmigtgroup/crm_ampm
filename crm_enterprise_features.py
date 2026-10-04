@@ -36,8 +36,11 @@ def audit(entidade, entidade_id, acao, antes=None, depois=None):
         d = depois or {}
         diff = {k: {"de": a.get(k), "para": d.get(k)} for k in set(a) | set(d) if str(a.get(k)) != str(d.get(k))}
         c.table("crm_eventos").insert({
-            "entidade": entidade, "entidade_id": str(entidade_id), "acao": acao,
-            "usuario": _user(), "antes": a, "depois": d, "diff": diff
+            "pv_abadi": str(entidade_id) if str(entidade) in {"loja","contato","orcamento","oportunidade"} else None,
+            "tipo": str(acao),
+            "origem": "gestao360",
+            "usuario": _user(),
+            "payload": {"entidade": entidade, "entidade_id": str(entidade_id), "antes": a, "depois": d, "diff": diff},
         }).execute()
         return True
     except Exception:
@@ -233,10 +236,10 @@ def render(df_base, df_lojas=None, df_instrutores=None):
         if not c: st.info("Supabase indisponível.")
         else:
             try:
-                data=c.table("crm_eventos").select("*").order("criado_em",desc=True).limit(500).execute().data or []
+                data=c.table("crm_eventos").select("*").order("created_at",desc=True).limit(500).execute().data or []
                 if data:
-                    st.dataframe(pd.DataFrame(data)[[k for k in ["criado_em","usuario","entidade","entidade_id","acao","desfeito"] if k in data[0]]],use_container_width=True,hide_index=True)
-                    st.json(data[0])
+                    st.dataframe(pd.DataFrame(data)[[k for k in ["created_at","usuario","tipo","origem","pv_abadi"] if k in data[0]]],use_container_width=True,hide_index=True)
+                    st.json(data[0].get("payload", {}))
                 else: st.info("Nenhuma alteração auditada ainda.")
             except Exception as e: st.error(f"Falha na auditoria: {e}")
 
