@@ -72,8 +72,20 @@ jobs:
       - name: Empacotar frontend no Desktop
         shell: bash
         run: |
-          rm -rf desktop/dist/assets
+          # O Desktop deve conter exclusivamente o build React recém-gerado.
+          rm -rf desktop/dist
+          mkdir -p desktop/dist
           cp -R frontend/dist/. desktop/dist/
+
+      - name: Validar frontend embarcado no Desktop
+        shell: bash
+        run: |
+          test -f desktop/dist/index.html
+          test -d desktop/dist/assets
+          grep -q '<div id="root"></div>' desktop/dist/index.html
+          ! grep -q 'Verifique sua conexão com a internet' desktop/dist/index.html
+          ! grep -q 'Abrir CRM' desktop/dist/index.html
+          echo "Frontend React premium validado em desktop/dist"
 
       - name: Build e publicar Release
         uses: tauri-apps/tauri-action@v1
