@@ -139,12 +139,12 @@ def _agenda(df_lojas, df_instrutores, inicio):
         instr = instr[instr["Status"].astype(str).str.contains("ativ", case=False, na=False)]
     rows = []
     for _, i in instr.iterrows():
-        ilat, ilon = i.get("Lat_Instrutor", i.get("lat")), i.get("Lon_Instrutor", i.get("lon"))
+        ilat, ilon = i.get("Lat_Instrutor", i.get("Lat", i.get("lat"))), i.get("Lon_Instrutor", i.get("Lon", i.get("lon")))
         if pd.isna(ilat) or pd.isna(ilon):
             continue
         candidatos = []
         for _, l in lojas.head(500).iterrows():
-            llat, llon = l.get("Lat_Loja", l.get("lat")), l.get("Lon_Loja", l.get("lon"))
+            llat, llon = l.get("Lat_Loja", l.get("Lat", l.get("lat"))), l.get("Lon_Loja", l.get("Lon", l.get("lon")))
             if pd.isna(llat) or pd.isna(llon):
                 continue
             km = _km(float(ilat), float(ilon), float(llat), float(llon))
