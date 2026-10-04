@@ -61,6 +61,20 @@ jobs:
         working-directory: desktop
         run: npm ci
 
+      - name: Build frontend React para o Desktop
+        working-directory: frontend
+        env:
+          VITE_API_URL: https://email-campaign-19.preview.emergentagent.com/api
+        run: |
+          npm install
+          npm run build
+
+      - name: Empacotar frontend no Desktop
+        shell: bash
+        run: |
+          rm -rf desktop/dist/assets
+          cp -R frontend/dist/. desktop/dist/
+
       - name: Build e publicar Release
         uses: tauri-apps/tauri-action@v1
         env:
