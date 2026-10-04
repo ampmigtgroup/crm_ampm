@@ -262,13 +262,12 @@ fn setup_application(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Err
     let _tray = tray_builder.build(app)?;
 
     // Janela principal remota: sem capacidades Tauri extras.
-    let remote_url = CRM_URL.parse().expect("URL do CRM inválida");
     let splash = app.get_webview_window("splashscreen");
 
     WebviewWindowBuilder::new(
         app,
         "main",
-        WebviewUrl::External(remote_url),
+        WebviewUrl::App("index.html".into()),
     )
     .title("CRM Operacional AmPm")
         .inner_size(1440.0, 900.0)
