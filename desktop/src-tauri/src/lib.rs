@@ -7,7 +7,7 @@ use tauri::{
 
 use tauri_plugin_updater::UpdaterExt;
 
-const CRM_URL: &str = "https://crmampm-operacional.streamlit.app/";
+const CRM_URL: &str = "https://email-campaign-19.preview.emergentagent.com";
 
 
 const CRM_RESILIENCE_SCRIPT: &str = r#"
